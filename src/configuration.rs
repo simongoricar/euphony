@@ -1,0 +1,70 @@
+use std::borrow::{Borrow, BorrowMut};
+use std::fs;
+use std::path::Path;
+use std::collections::HashMap;
+use serde::{Deserialize};
+
+
+#[derive(Deserialize, Debug)]
+pub struct Config {
+    pub basics: ConfigBasics,
+    pub libraries: HashMap<String, ConfigLibrary>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ConfigBasics {
+    pub root_library_path: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ConfigLibrary {
+    pub name: String,
+    pub path: String,
+}
+
+
+pub fn get_configuration_file_path() -> String {
+    let configuration_filepath = Path::new("./data/configuration.toml");
+    if !configuration_filepath.exists() {
+        panic!("Could not find configuration.toml in data directory.");
+    }
+
+    String::from(
+        configuration_filepath.to_str()
+            .expect("Could not convert configuration file path to string!")
+    )
+}
+
+pub fn load_configuration(configuration_filepath: String) -> Config {
+    // Read the configuration file into memory.
+    let configuration_string = fs::read_to_string(configuration_filepath)
+        .expect("Could not read configuration file!");
+
+    // Parse the string into a structure.
+    let mut config: Config = toml::from_str(&configuration_string)
+        .expect("Could not load configuration file!");
+
+    // Parse paths inside the configuration before returning.
+    for (_, mut library) in config.libraries.borrow_mut() {
+        library.path = library.path.replace(
+            "{ROOT}",
+            &config.basics.root_library_path
+        );
+
+        // Ensure the path is valid
+        let true_path = Path::new(&library.path);
+        if !true_path.exists() {
+            panic!("Library \"{}\" does not exist (path: \"{}\")!", library.name, library.path);
+        }
+    }
+
+    config
+}
+
+pub fn print_libraries(libraries: HashMap<String, ConfigLibrary>) {
+    println!("Available libraries:");
+    for (_, library) in libraries.borrow() {
+        println!("  {}: {}", library.name, library.path);
+    }
+    println!();
+}

@@ -1,0 +1,27 @@
+####
+# BASICS
+####
+[basics]
+# Available as a "{ROOT}" placeholder below.
+root_library_path = "D:/_temp/MusicTesting"
+
+####
+# LIBRARY CONFIGURATION
+####
+[libraries]
+
+[libraries.lossless]
+name = "Lossless"
+path = "{ROOT}/MusicLibraryLossless"
+
+[libraries.lossless_private]
+name = "Lossless Private"
+path = "{ROOT}/MusicLibraryLosslessPrivate"
+
+[libraries.standard]
+name = "Standard"
+path = "{ROOT}/MusicLibraryStandard"
+
+[libraries.standard_private]
+name = "Standard Private"
+path = "{ROOT}/MusicLibraryStandardPrivate"
