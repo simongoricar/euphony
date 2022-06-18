@@ -6,6 +6,13 @@
 root_library_path = "D:/_temp/MusicTesting"
 
 ####
+# VALIDATION GENERAL CONFIGURATION
+####
+[validation]
+audio_file_extensions = ["mp3", "flac"]
+ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
+
+####
 # LIBRARY CONFIGURATION
 ####
 [libraries]
@@ -13,15 +20,23 @@ root_library_path = "D:/_temp/MusicTesting"
 [libraries.lossless]
 name = "Lossless"
 path = "{ROOT}/MusicLibraryLossless"
+audio_file_extensions = ["flac"]
+must_not_contain_extensions = ["mp3", "m4a", "opus", "aac"]
 
 [libraries.lossless_private]
 name = "Lossless Private"
 path = "{ROOT}/MusicLibraryLosslessPrivate"
+audio_file_extensions = ["flac"]
+must_not_contain_extensions = ["mp3", "m4a", "opus", "aac"]
 
 [libraries.standard]
 name = "Standard"
 path = "{ROOT}/MusicLibraryStandard"
+audio_file_extensions = ["mp3", "m4a", "opus", "aac"]
+must_not_contain_extensions = ["flac"]
 
 [libraries.standard_private]
 name = "Standard Private"
 path = "{ROOT}/MusicLibraryStandardPrivate"
+audio_file_extensions = ["mp3", "m4a", "opus", "aac"]
+must_not_contain_extensions = ["flac"]
