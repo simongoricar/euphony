@@ -175,6 +175,7 @@ pub fn cmd_validate(config: &Config) {
 
     // 2. check if there were any errors during collision checks.
     console::new_line();
+    console::horizontal_line(None, None);
     console::horizontal_line_with_text("LIBRARY VALIDATION (2/2: collisions)", None, None, None, None);
 
     if collision_checker.collisions.len() == 0 {
@@ -186,7 +187,9 @@ pub fn cmd_validate(config: &Config) {
                 "{} - {}",
                 collision.artist, collision.album
             );
-            let collision_title = collision_title.bright_cyan();
+            let collision_title = collision_title.bold();
+            let collision_title = collision_title.bright_blue();
+            let collision_title = collision_title.underline();
 
             let collision_description = format!(
                 "{} {} {} {}",
