@@ -55,3 +55,22 @@ pub fn get_dir_entry_file_extension(dir_entry: &DirEntry) -> Result<String, Erro
         None => Err(Error::new(ErrorKind::Other, "Could not get file extension.")),
     }
 }
+
+/// Given a DirEntry, find and return its bare name (file / directory name).
+pub fn get_dir_entry_name(dir_entry: &DirEntry) -> Result<String, Error> {
+    match dir_entry.path().file_name() {
+        Some(name) => {
+            match name.to_str() {
+                Some(name) => {
+                    Ok(name.to_string())
+                },
+                None => {
+                    Err(Error::new(ErrorKind::Other, "Could not get entry name."))
+                }
+            }
+        },
+        None => {
+            Err(Error::new(ErrorKind::Other, "Could not get entry name."))
+        }
+    }
+}

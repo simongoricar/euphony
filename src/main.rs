@@ -7,6 +7,7 @@ use configuration::Config;
 mod configuration;
 mod filesystem;
 mod commands;
+mod console;
 
 #[derive(Parser, Debug)]
 struct CLIArgs {
