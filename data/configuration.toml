@@ -15,6 +15,17 @@ ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u
 ####
 # LIBRARY CONFIGURATION
 ####
+# Library structure is expected to be:
+#  <library directory>
+#  |-- <artist>
+#  |   |-- <album>
+#  |   |   |-- <... audio files>
+#  |   |   |-- <... cover art>
+#  |   |   |-- <... possibly some album-related README, etc.>
+#  |   |   |-- <... possibly other directory that don't matter>
+#  |   |-- <... possibly some artist-related README, etc.>
+#  | ...
+#  |--
 [libraries]
 
 [libraries.lossless]
