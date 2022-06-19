@@ -8,6 +8,14 @@ lazy_static! {
     static ref DEFAULT_WIDTH: usize = 50;
 }
 
+/// Print out a horizontal line.
+/// `width` and `style` are optional arguments, specify None to get program-wide defaults.
+///
+/// # Example
+/// ```
+/// // Prints a horizontal line (50 characters wide and bright black by default).
+/// horizontal_line(None, None)
+/// ```
 pub fn horizontal_line(width: Option<usize>, style: Option<Style>) {
     let style = style.unwrap_or(*DEFAULT_LINE_STYLE);
 
@@ -21,6 +29,13 @@ pub fn horizontal_line(width: Option<usize>, style: Option<Style>) {
     }
 }
 
+/// Print out a centered text message with short horizontal lines on each side.
+/// `header` is the text you want to print and `header_style` is its associated style.
+/// `total_width` is the total width of the line (horizontal lines will adapt to fit this width).
+/// `line_style` is the style for the lines on each side.
+/// `margin` is the spacing between the text and horizontal lines on each side of the text.
+///
+/// All but `header` are optional, use None to get program-wide defaults.
 pub fn horizontal_line_with_text(
     header: &str,
     header_style: Option<Style>,
@@ -36,28 +51,38 @@ pub fn horizontal_line_with_text(
 
     let wider_than_total_width = header.len() >= total_width;
 
-    let line_width_per_side = if wider_than_total_width {
-        0
-    } else {
-        total_width.saturating_sub(header.len()).saturating_sub(2 * margin) / 2
+    // Separate line widths ensure correctness on both odd and even lengths.
+    let line_width_left = if wider_than_total_width { 0 } else {
+        total_width
+            .saturating_sub(header.len())
+            .saturating_sub(2 * margin) / 2
+    };
+    let line_width_right = if wider_than_total_width { 0 } else {
+        total_width
+            .saturating_sub(header.len())
+            .saturating_sub(line_width_left)
     };
 
-    let line_str = DEFAULT_LINE_CHAR.repeat(line_width_per_side);
+    let line_str_left = DEFAULT_LINE_CHAR.repeat(line_width_left);
+    let line_str_right = DEFAULT_LINE_CHAR.repeat(line_width_right);
 
     let margin_str = if wider_than_total_width {
-        "".to_string()
+        String::from("")
     } else {
         " ".repeat(margin)
     };
 
     println!(
         "{}{}{}{}{}",
-        line_str.style(line_style), margin_str,
+        line_str_left.style(line_style),
+        margin_str,
         header.style(text_style),
-        margin_str, line_str.style(line_style)
+        margin_str,
+        line_str_right.style(line_style),
     );
 }
 
+/// Simple println!() abstraction for adding new lines.
 #[inline(always)]
 pub fn new_line() {
     println!();
