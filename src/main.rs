@@ -1,6 +1,8 @@
+extern crate core;
+
 use std::env;
 
-use clap::Parser;
+use clap::{ArgEnum, Parser};
 
 use configuration::Config;
 
@@ -9,9 +11,17 @@ mod filesystem;
 mod commands;
 mod console;
 
-#[derive(Parser, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
+enum CLICommand {
+    Convert,
+    Validate,
+    ShowConfig
+}
+
+#[derive(Parser)]
 struct CLIArgs {
-    command: String,
+    #[clap(arg_enum)]
+    command: CLICommand,
 }
 
 
@@ -22,9 +32,13 @@ fn main() {
     let current_directory = env::current_dir()
         .expect("Could not get current directory!");
 
-    if args.command.eq("convert") {
+    if args.command == CLICommand::Convert {
         commands::cmd_convert(&current_directory, &config);
-    } else if args.command.eq("validate") {
+    } else if args.command == CLICommand::Validate {
         commands::cmd_validate(&config);
+    } else if args.command == CLICommand::ShowConfig {
+        todo!();
+    } else {
+        panic!("Unexpected command!");
     }
 }
