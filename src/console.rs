@@ -13,7 +13,7 @@ lazy_static! {
 }
 
 /// Calculate the "true" string length by ignoring any colour escape codes.
-fn get_true_string_grapheme_count(string: &str) -> usize {
+pub fn get_true_string_grapheme_count(string: &str) -> usize {
     let no_color = (*COLOR_REGEX).replace_all(string, "");
     no_color.graphemes(true).count()
 }

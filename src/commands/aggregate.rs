@@ -5,7 +5,7 @@ use std::process::exit;
 use super::super::configuration::Config;
 
 // TODO
-pub fn cmd_convert(directory: &PathBuf, _config: &Config) {
+pub fn cmd_aggregate(directory: &PathBuf, _config: &Config) {
     if !directory.is_dir() {
         println!("Current directory is invalid.");
         exit(1);

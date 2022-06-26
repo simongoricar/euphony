@@ -1,4 +1,3 @@
-use std::borrow::{Borrow, BorrowMut};
 use std::fs;
 use std::path::Path;
 use std::collections::HashMap;
@@ -10,6 +9,7 @@ pub struct Config {
     pub basics: ConfigBasics,
     pub validation: ConfigValidation,
     pub libraries: HashMap<String, ConfigLibrary>,
+    pub aggregated_library: ConfigAggregated,
 }
 
 #[derive(Deserialize, Debug)]
@@ -30,6 +30,11 @@ pub struct ConfigLibrary {
 
     pub audio_file_extensions: Vec<String>,
     pub must_not_contain_extensions: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ConfigAggregated {
+    pub path: String,
 }
 
 
@@ -65,7 +70,7 @@ impl Config {
         }
 
         // Parse paths inside the configuration before returning.
-        for (_, mut library) in config.libraries.borrow_mut() {
+        for (_, mut library) in &mut config.libraries {
             library.path = library.path.replace(
                 "{ROOT}",
                 &config.basics.root_library_path
@@ -87,19 +92,16 @@ impl Config {
             }
         }
 
+        config.aggregated_library.path = config.aggregated_library.path.replace(
+            "{ROOT}",
+            &config.basics.root_library_path,
+        );
+
         config
     }
 
     pub fn load() -> Config {
         let configuration_filepath = get_configuration_file_path();
         Config::load_from_path(configuration_filepath)
-    }
-
-    pub fn print_libraries(&self) {
-        println!("Available libraries:");
-        for (_, library) in self.libraries.borrow() {
-            println!("  {}: {}", library.name, library.path);
-        }
-        println!();
     }
 }

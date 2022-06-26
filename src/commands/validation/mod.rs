@@ -23,7 +23,7 @@ enum Validation {
 /// Validation is done in multiple steps:
 ///  1. each library is checked for unusual or forbidden files (see configuration file),
 ///  2. validate that there are no collisions between any of the libraries.
-pub fn cmd_validate(config: &Config) {
+pub fn cmd_validate(config: &Config) -> bool {
     console::horizontal_line(None, None);
     console::horizontal_line_with_text(
         &format!(
@@ -36,6 +36,7 @@ pub fn cmd_validate(config: &Config) {
         ),
         None, None, None
     );
+    console::horizontal_line(None, None);
     console::new_line();
 
     let mut collision_checker = CollisionChecker::new();
@@ -146,6 +147,7 @@ pub fn cmd_validate(config: &Config) {
     }
 
     console::horizontal_line(None, None);
+    step_1_errors || step_2_errors
 }
 
 fn validate_library(

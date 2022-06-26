@@ -6,14 +6,22 @@
 root_library_path = "D:/_temp/MusicTesting"
 
 ####
-# VALIDATION GENERAL CONFIGURATION
+# END OF BASICS
+####
+
+####
+# GENERAL VALIDATION
 ####
 [validation]
 audio_file_extensions = ["mp3", "flac"]
 ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
 
+###
+# END OF GENERAL VALIDATION
+###
+
 ####
-# LIBRARY CONFIGURATION
+# LIBRARY
 ####
 # Library structure is expected to be:
 #  <library directory>
@@ -26,6 +34,8 @@ ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u
 #  |   |-- <... possibly some artist-related README, etc.>
 #  | ...
 #  |--
+#
+# Add additional libraries (as many as you need) by adding keys to the "libraries" key as shown below.
 [libraries]
 
 [libraries.lossless]
@@ -51,3 +61,17 @@ name = "Standard Private"
 path = "{ROOT}/MusicLibraryStandardPrivate"
 audio_file_extensions = ["mp3", "m4a", "opus", "aac"]
 must_not_contain_extensions = ["flac"]
+
+###
+# END OF LIBRARY
+###
+
+####
+# AGGREGATED LIBRARY
+####
+[aggregated_library]
+path = "{ROOT}/MusicLibrary"
+
+####
+# END OF AGGREGATED LIBRARY
+####
