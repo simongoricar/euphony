@@ -4,6 +4,9 @@ use std::process::exit;
 
 use super::super::configuration::Config;
 
+mod meta;
+
+
 // TODO
 pub fn cmd_aggregate(directory: &PathBuf, _config: &Config) {
     if !directory.is_dir() {
