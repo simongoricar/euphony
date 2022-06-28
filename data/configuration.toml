@@ -9,16 +9,32 @@ root_library_path = "D:/_temp/MusicTesting"
 # END OF BASICS
 ####
 
+
+####
+# TOOLS
+####
+[tools]
+
+[tools.ffmpeg]
+binary = "./tools/ffmpeg/bin/ffmpeg.exe"
+to_mp3_v0_args = ["-i", "{INPUT_FILE}", "-vn", "-codec:a", "libmp3lame", "-q:a", "0", "-y", "{OUTPUT_FILE}"]
+
+####
+# END OF TOOLS
+####
+
+
 ####
 # GENERAL VALIDATION
 ####
 [validation]
-audio_file_extensions = ["mp3", "flac"]
+audio_file_extensions = ["mp3", "flac", "aac", "ogg", "m4a"]
 ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
 
 ###
 # END OF GENERAL VALIDATION
 ###
+
 
 ####
 # LIBRARY
@@ -66,6 +82,7 @@ must_not_contain_extensions = ["flac"]
 # END OF LIBRARY
 ###
 
+
 ####
 # AGGREGATED LIBRARY
 ####
@@ -74,4 +91,20 @@ path = "{ROOT}/MusicLibrary"
 
 ####
 # END OF AGGREGATED LIBRARY
+####
+
+
+####
+# FILE METADATA
+####
+[file_metadata]
+tracked_audio_extensions = [
+    "mp3", "flac", "alac", "m4a", "ogg"
+]
+tracked_data_extensions = [
+    "png", "jpg", "jpeg", "gif"
+]
+
+####
+# END OF FILE METADATA
 ####
