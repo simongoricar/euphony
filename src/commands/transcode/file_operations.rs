@@ -3,10 +3,9 @@ use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::commands::transcode::directories::DirectoryInfo;
 
 use crate::Config;
-
-use super::directories as dirs;
 
 fn get_output_file_path(
     file_name: &OsStr,
@@ -28,65 +27,37 @@ fn get_output_file_path(
     }
 }
 
-fn get_output_file_path_from_album_file(source_album_file_path: &Path, config: &Config) -> Result<PathBuf, Error> {
-    // The parent should be an album directory (the source file should be one of the files).
-    let containing_directory = source_album_file_path.parent()
-        .expect("No parent directory for source file!");
-
-    let dir_info = dirs::get_directory_artist_and_album(
-        config,
-        containing_directory,
-    )?;
-
-    let output_file_pathbuf = get_output_file_path(
-        source_album_file_path.file_name().expect("Could not get source file name."),
-        config,
-        &dir_info.artist,
-        &dir_info.album,
-        None,
-    );
-
-    Ok(output_file_pathbuf)
-}
-
-pub fn transcode_audio_file_into_mp3_v0(file_path: &Path, config: &Config) -> Result<(), Error> {
+pub fn transcode_audio_file_into_mp3_v0(source_file_path: &Path, config: &Config) -> Result<(), Error> {
     // Compute input and output file paths.
-    let file_name = file_path
+    let file_name = source_file_path
         .file_name()
         .expect("Could not get file name for aggregation!");
 
-    let containing_directory = file_path
+    let source_album_directory = source_file_path
         .parent()
         .expect("No parent directory for source file!");
-    let dir_info = dirs::get_directory_artist_and_album(
-        config,
-        containing_directory,
-    )?;
+    let source_album_directory_info = DirectoryInfo::new(source_album_directory, config)?;
 
-    let input_file_path = file_path
+    let input_file_path = source_file_path
         .to_str()
         .expect("Could not convert input file path to string!");
 
-    let output_file_pathbuf = get_output_file_path(
+    let output_file_path = get_output_file_path(
         file_name,
         config,
-        &dir_info.artist,
-        &dir_info.album,
+        &source_album_directory_info.artist_name,
+        &source_album_directory_info.album_title,
         Some("mp3")
     );
-    let output_file_path = output_file_pathbuf
+    let output_file_path_str = output_file_path
         .to_str()
         .expect("Could not convert output file path to string!");
 
-    // Make sure the directories exist.
-    let output_directory = output_file_pathbuf
+    // Make sure the output directory exists.
+    let output_directory = output_file_path
         .parent()
         .expect("Could not get file parent directory.");
-
-    let output_directory_creation = fs::create_dir_all(output_directory);
-    if output_directory_creation.is_err() {
-        return output_directory_creation;
-    }
+    fs::create_dir_all(output_directory)?;
 
     // Construct ffmpeg arguments and run ffmpeg for transcode.
     let ffmpeg_args: Vec<String> = config.tools.ffmpeg.to_mp3_v0_args
@@ -94,7 +65,7 @@ pub fn transcode_audio_file_into_mp3_v0(file_path: &Path, config: &Config) -> Re
         .map(|item| {
             item
                 .replace("{INPUT_FILE}", input_file_path)
-                .replace("{OUTPUT_FILE}", output_file_path)
+                .replace("{OUTPUT_FILE}", output_file_path_str)
         })
         .collect();
 
@@ -123,26 +94,22 @@ pub fn copy_data_file(source_file_path: &Path, config: &Config) -> Result<(), Er
     let source_file_name = source_file_path.file_name()
         .expect("Could not get file name from source file path!");
 
-    let containing_directory = source_file_path.parent()
+    let source_directory = source_file_path.parent()
         .expect("No parent directory for source file!");
+    let source_directory_info = DirectoryInfo::new(source_directory, config)?;
 
-    let dir_info = dirs::get_directory_artist_and_album(
-        config,
-        containing_directory,
-    )?;
-
-    let output_file_pathbuf = get_output_file_path(
+    let output_file_path = get_output_file_path(
         source_file_name,
         config,
-        &dir_info.artist,
-        &dir_info.album,
+        &source_directory_info.artist_name,
+        &source_directory_info.album_title,
         None,
     );
-    let output_file_path = output_file_pathbuf
+    let output_file_path_str = output_file_path
         .to_str()
         .expect("Could not convert output file path to string!");
 
-    match fs::copy(source_file_path, output_file_path) {
+    match fs::copy(source_file_path, output_file_path_str) {
         Ok(bytes_copied) => {
             if bytes_copied > 0 {
                 Ok(())
@@ -165,20 +132,16 @@ pub fn remove_target_file(source_file_path: &Path, config: &Config, is_audio_fil
     let source_file_name = source_file_path.file_name()
         .expect("Could not get file name from source file path!");
 
-    let containing_directory = source_file_path
+    let source_directory = source_file_path
         .parent()
         .expect("No parent directory for source file!");
-
-    let dir_info = dirs::get_directory_artist_and_album(
-        config,
-        containing_directory,
-    )?;
+    let source_directory_info = DirectoryInfo::new(source_directory, config)?;
 
     let output_file_pathbuf = get_output_file_path(
         source_file_name,
         config,
-        &dir_info.artist,
-        &dir_info.album,
+        &source_directory_info.artist_name,
+        &source_directory_info.album_title,
         if is_audio_file { Some("mp3") } else { None },
     );
 

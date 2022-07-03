@@ -4,117 +4,214 @@ use std::process::exit;
 use std::thread;
 
 use owo_colors::OwoColorize;
-use pbr::{MultiBar, ProgressBar};
+use pbr::MultiBar;
 
 use directories as dirs;
 use file_operations as fo;
 use meta::LibraryMeta;
 
 use crate::{console, filesystem};
-use crate::commands::transcode::file_operations::remove_target_file;
+use crate::commands::transcode::directories::DirectoryInfo;
 use crate::configuration::Config;
 
 mod meta;
 mod directories;
 mod file_operations;
 
-fn process_file(
-    file_name: &Path,
-    config: &Config,
-    album_directory: &PathBuf,
-) -> Result<(), Error> {
-    let mut file_path = album_directory.clone();
-    file_path.push(file_name);
+/// Represents the tiniest unit of work we generate when processing a library or an album.
+struct LibraryAlbumPacket {
+    source_library_path: String,
+    artist_name: String,
+    album_title: String,
+}
 
-    let file_extension = filesystem::get_path_file_extension(&file_path)?;
+impl LibraryAlbumPacket {
+    /// Instantiate a new `LibraryAlbumPacket`.
+    fn new(source_library_path: &str, artist_name: &str, album_title: &str) -> Result<LibraryAlbumPacket, Error> {
+        let album_packet = LibraryAlbumPacket {
+            source_library_path: source_library_path.to_string(),
+            artist_name: artist_name.to_string(),
+            album_title: album_title.to_string(),
+        };
 
-    if filesystem::is_file_in_directory(&file_path, album_directory)
-        && config.file_metadata.matches_any_extension(&file_extension) {
-        // Detect whether this is an audio or some other file.
-        // If audio file, transcode, otherwise copy.
-
-        if config.file_metadata.matches_audio_extension(&file_extension) {
-            println!(
-                "{}{}",
-                "Transcoding ".bright_white(),
-                file_path
-                    .file_name()
-                    .expect("Could not get audio file name.")
-                    .to_str()
-                    .expect("Could not convert audio file name to string!")
-                    .bright_blue()
+        let full_path = album_packet.get_album_source_path();
+        if !full_path.is_dir() {
+            return Err(
+                Error::new(
+                    ErrorKind::NotFound,
+                    format!(
+                        "No such album directory: {}",
+                        full_path.to_str()
+                            .expect("path to convert to string")
+                    )
+                )
             );
+        }
 
-            // Run transcode into MP3 V0.
-            fo::transcode_audio_file_into_mp3_v0(&file_path, config)?;
+        Ok(album_packet)
+    }
 
-        } else if config.file_metadata.matches_data_extension(&file_extension) {
-            println!(
-                "{}{}",
-                "Copying ".bright_white(),
-                file_path
-                    .file_name()
-                    .expect("Could not get data file name.")
-                    .to_str()
-                    .expect("Could not convert data file name to string!")
-                    .bright_blue()
-            );
+    fn get_album_source_path(&self) -> PathBuf {
+        let mut full_path = PathBuf::from(&self.source_library_path);
+        full_path.push(&self.artist_name);
+        full_path.push(&self.album_title);
 
-            // Run copy operation.
-            fo::copy_data_file(&file_path, config)?;
+        full_path
+    }
 
-        } else {
-            panic!("Bug: extension matches \"any\", but does not match audio nor data.");
+    fn needs_processing(&self, config: &Config) -> bool {
+        let full_source_path = self.get_album_source_path();
+
+        match LibraryMeta::load(&full_source_path) {
+            Some(saved_meta) => {
+                let fresh_meta = LibraryMeta::generate(
+                    &full_source_path,
+                    None,
+                    &config.file_metadata.tracked_extensions
+                )
+                    .expect(
+                        &format!(
+                                "Unable to generate LibraryMeta for album {}",
+                                self.album_title
+                            )
+                    );
+
+                let diff = saved_meta.diff(&fresh_meta);
+
+                diff.has_any_changes()
+            },
+            None => true,
         }
     }
 
-    return Ok(());
+    /// Process the entire album (if needed).
+    /// TODO Paralellism options?
+    fn process_album(&self, config: &Config) -> Result<(), Error> {
+        if !self.needs_processing(config) {
+            return Ok(());
+        }
+
+        let full_album_path = self.get_album_source_path();
+        let saved_meta = LibraryMeta::load(&full_album_path);
+
+        let fresh_meta = LibraryMeta::generate(
+            &full_album_path,
+            None,
+            &config.file_metadata.tracked_extensions,
+        )?;
+
+        if let Some(saved_meta) = saved_meta {
+            // Can compare with current state. Update changed files and resave the current state.
+            let changes = saved_meta.diff(&fresh_meta);
+
+            for new_file_name in changes.files_new {
+                let mut full_new_file_path = full_album_path.clone();
+                full_new_file_path.push(new_file_name);
+
+                process_album_file(&full_new_file_path, self, config)?;
+            }
+
+            for removed_file_name in changes.files_removed {
+                let mut full_removed_file_path = full_album_path.clone();
+                full_removed_file_path.push(removed_file_name);
+
+                remove_processed_album_file(&full_removed_file_path, config)?;
+            }
+
+            for changed_file_name in changes.files_changed {
+                let mut full_changed_file_path = full_album_path.clone();
+                full_changed_file_path.push(changed_file_name);
+
+                remove_processed_album_file(&full_changed_file_path, config)?;
+                process_album_file(&full_changed_file_path, self, config)?;
+            }
+
+            Ok(())
+
+        } else {
+            // Can't compare, meaning we should do the aggregation and save the current state into the file.
+            let mut pending_file_queue: Vec<String> = fresh_meta.files
+                .keys()
+                .map(|item| item.to_string())
+                .collect();
+            pending_file_queue.sort_unstable();
+
+            for pending_file in pending_file_queue {
+                let mut full_pending_file_path = full_album_path.clone();
+                full_pending_file_path.push(pending_file);
+
+                process_album_file(&full_pending_file_path, self, config)?;
+            }
+
+            Ok(())
+        }
+    }
+
+    fn save_librarymeta(&self, config: &Config, overwrite_if_exists: bool) -> Result<(), Error> {
+        let full_album_path = self.get_album_source_path();
+        let fresh_meta = LibraryMeta::generate(
+            &full_album_path,
+            None,
+            &config.file_metadata.tracked_extensions,
+        )?;
+
+        fresh_meta.save(&full_album_path, overwrite_if_exists)?;
+        Ok(())
+    }
 }
 
-fn remove_processed_file(
-    file_name: &Path,
+fn process_album_file(
+    source_file_path: &Path,
+    album_packet: &LibraryAlbumPacket,
     config: &Config,
-    album_directory: &PathBuf,
 ) -> Result<(), Error> {
-    let mut full_source_file_path = album_directory.clone();
-    full_source_file_path.push(file_name);
+    let source_file_extension = filesystem::get_path_file_extension(source_file_path)?;
 
-    let source_file_extension = filesystem::get_path_file_extension(&full_source_file_path)?;
-
-    if config.file_metadata.matches_audio_extension(&source_file_extension) {
-        println!(
-            "{}{}",
-            "Removing target transcode of ".bright_white(),
-            file_name
-                .to_str()
-                .expect("Could not convert audio file name to string!")
-                .bright_blue()
-        );
-
-        remove_target_file(&full_source_file_path, config, true)
-
-    } else if config.file_metadata.matches_data_extension(&source_file_extension) {
-        println!(
-            "{}{}",
-            "Removing target data file copy of ".bright_white(),
-            file_name
-                .to_str()
-                .expect("Could not convert audio file name to string!")
-                .bright_blue()
-        );
-
-        remove_target_file(&full_source_file_path, config, false)
-
-    } else {
+    if !filesystem::is_file_inside_directory(
+        source_file_path,
+        Path::new(&album_packet.source_library_path),
+        None,
+    ) {
         return Err(
             Error::new(
                 ErrorKind::Other,
-                "Source file is not tracked, but was requested to be removed.",
+                "Invalid file path: doesn't match base library path."
             )
         );
     }
 
+    if config.file_metadata.matches_audio_extension(&source_file_extension) {
+        fo::transcode_audio_file_into_mp3_v0(source_file_path, config)?;
+        Ok(())
+
+    } else if config.file_metadata.matches_data_extension(&source_file_extension) {
+        fo::copy_data_file(source_file_path, config)?;
+        Ok(())
+
+    } else {
+        Err(
+            Error::new(
+                ErrorKind::Other,
+                format!(
+                        "Invalid file path: extension matches neither audio nor data: {}",
+                        source_file_extension,
+                    ),
+            )
+        )
+    }
 }
+
+fn remove_processed_album_file(
+    source_file_path: &Path,
+    config: &Config,
+) -> Result<(), Error> {
+    let source_file_extension = filesystem::get_path_file_extension(source_file_path)?;
+    let is_audio = config.file_metadata.matches_audio_extension(&source_file_extension);
+
+    fo::remove_target_file(source_file_path, config, is_audio)?;
+    Ok(())
+}
+
 
 pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Result<(), Error> {
     if !library_directory.is_dir() {
@@ -126,7 +223,7 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     console::horizontal_line_with_text(
         &format!(
             "{}",
-            "Library aggregation"
+            "library aggregation"
                 .cyan()
                 .bold(),
         ),
@@ -196,10 +293,15 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         album_pbr.set(0);
 
         for album_directory in album_directories {
-            transcode_album(
-                &album_directory.path(),
-                config,
+            let full_album_path = album_directory.path();
+            let album_info = DirectoryInfo::new(&full_album_path, config)?;
+
+            let album_packet = LibraryAlbumPacket::new(
+                &album_info.library_path,
+                &album_info.artist_name,
+                &album_info.album_title,
             )?;
+            album_packet.process_album(config)?;
 
             album_pbr.inc();
         }
@@ -213,180 +315,26 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     Ok(())
 }
 
-fn transcode_album(album_directory: &PathBuf, config: &Config) -> Result<(), Error> {
-    let existing_meta = LibraryMeta::load(album_directory);
 
-    if let Some(album_dir_meta_saved) = existing_meta {
-        // Can compare with current state. Update changed files and resave the current state.
-        console::new_line();
-        println!(
-            "{}", "Found existing .librarymeta, computing changes.".yellow(),
-        );
-
-        // TODO Check if target file exists (always do the transcode if it doesn't).
-
-        let album_dir_meta_fresh = LibraryMeta::generate(
-            album_directory,
-            None,
-            &config.file_metadata.tracked_extensions,
-        )?;
-
-        let changes = album_dir_meta_saved.diff(&album_dir_meta_fresh);
-
-        // Here's what happens below
-        //  - added files are transcoded/copied
-        //  - removed files have their transcoded/copied target files removed
-        //  - changed files are retranscoded/recopied again (overwriting any previous file)
-        println!(
-            "{}{}{}",
-            "Files ",
-            "added:"
-                .green(),
-            changes.files_new.len(),
-        );
-        println!(
-            "{}{}",
-            "      changed:"
-                .yellow(),
-            changes.files_changed.len(),
-        );
-        println!(
-            "{}{}",
-            "      removed:"
-                .red(),
-            changes.files_removed.len(),
-        );
-        console::new_line();
-
-        for new_file_name in changes.files_new {
-            process_file(Path::new(&new_file_name), config, album_directory)?;
-        }
-
-        for removed_file_name in changes.files_removed {
-            remove_processed_file(Path::new(&removed_file_name), config, album_directory)?;
-        }
-
-        for changed_file_name in changes.files_changed {
-            process_file(Path::new(&changed_file_name), config, album_directory)?;
-        }
-
-        // Resave fresh metadata.
-        match album_dir_meta_fresh.save(album_directory, true) {
-            Ok(_) => {
-                println!(
-                    "{}",
-                    "Fresh .librarymeta file saved.".green(),
-                );
-            },
-            Err(error) => {
-                eprintln!(
-                    "{}{}",
-                    "Error while saving fresh .librarymeta file: ".red(),
-                    error
-                );
-            }
-        };
-
-        Ok(())
-
-    } else {
-        // Can't compare, meaning we should do the aggregation and save the current state into the file.
-        console::new_line();
-        println!(
-            "{}", "No .librarymeta file, assuming no transcode yet (will overwrite if any).".yellow(),
-        );
-
-        let album_dir_meta = LibraryMeta::generate(
-            album_directory,
-            None,
-            &config.file_metadata.tracked_extensions,
-        )?;
-
-        // Perform actual transcodes (for audio files) and copies (for album art, etc.).
-        // For a file to be "tracked" (and subsequently trasconded/copied), it must be:
-        // - directly in the album directory,
-        // - one of the tracked file extensions (file_metadata.tracked_file_extensions).
-        println!(
-            "{}", "Transcoding and copying album.".bright_black()
-        );
-        console::new_line();
-
-        let mut file_queue: Vec<String> = album_dir_meta.files
-            .keys()
-            .map(|item| item.to_string())
-            .collect();
-        file_queue.sort_unstable();
-
-        // TODO Progress bar.
-
-        // TODO Paralellism.
-
-        for file_name in file_queue {
-            process_file(Path::new(&file_name), config, album_directory)?;
-        }
-
-        console::horizontal_line_with_text(
-            "Album transcoding and copying finished.",
-            None, None, None,
-        );
-
-
-        println!(
-            "{}{}{} {}",
-            "Saving fresh "
-                .yellow(),
-            ".librarymeta"
-                .bold()
-                .green(),
-            " for album: "
-                .yellow(),
-            album_directory
-                .file_name()
-                .expect("Could not get directory name.")
-                .to_str()
-                .expect("Could not get directory name string.")
-                .bright_blue()
-                .italic()
-        );
-
-        match album_dir_meta.save(album_directory, false) {
-            Ok(_) => {
-                println!(
-                    "{}",
-                    ".librarymeta file saved."
-                        .green()
-                        .bold()
-                );
-            },
-            Err(error) => {
-                eprintln!(
-                    "{} {}",
-                    "Error while saving the .librarymeta file:"
-                        .red()
-                        .bold(),
-                    error,
-                );
-            }
-        };
-
-        Ok(())
-    }
-}
-
-// TODO
-// TODO Make the directory optionally be a static one, meaning the
-//      entire library gets scanned (maybe a --all switch?)
-pub fn cmd_transcode_album(album_directory: &PathBuf, config: &Config) -> Result<(), Error> {
+pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<(), Error> {
     if !album_directory.is_dir() {
         println!("Directory is invalid.");
         exit(1);
     }
 
+    let directory_info = DirectoryInfo::new(album_directory, config)?;
+
+    let packet = LibraryAlbumPacket::new(
+        &directory_info.library_path,
+        &directory_info.artist_name,
+        &directory_info.album_title,
+    )?;
+
     console::horizontal_line(None, None);
     console::horizontal_line_with_text(
         &format!(
             "{}",
-            "Album aggregation"
+            "album transcode"
                 .cyan()
                 .bold(),
         ),
@@ -399,7 +347,6 @@ pub fn cmd_transcode_album(album_directory: &PathBuf, config: &Config) -> Result
         "{} {}",
         "Using album directory: ".italic(),
         album_directory
-            .as_path()
             .to_str()
             .expect("Could not parse directory into string!")
             .bold()
@@ -414,5 +361,33 @@ pub fn cmd_transcode_album(album_directory: &PathBuf, config: &Config) -> Result
         exit(1);
     }
 
-    transcode_album(album_directory, config)
+    // TODO Test this.
+
+    println!(
+        "{}{}",
+        "Processing album: "
+            .bright_black(),
+        directory_info.album_title
+            .yellow(),
+    );
+    console::new_line();
+    packet.process_album(config)?;
+
+    println!(
+        "{}",
+        "Processing finished, all audio files transcoded and data files copied.".green()
+    );
+
+    // Resave .librarymeta
+    println!(
+        "{}{}",
+        "Saving fresh "
+            .yellow(),
+        ".librarymeta"
+            .bold()
+            .green(),
+    );
+    packet.save_librarymeta(config, true)?;
+
+    Ok(())
 }

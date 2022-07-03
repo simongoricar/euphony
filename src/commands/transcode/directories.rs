@@ -31,39 +31,44 @@ pub fn directory_is_album(config: &Config, directory_path: &Path) -> bool {
 
 
 pub struct DirectoryInfo {
-    pub artist: String,
-    pub album: String,
+    pub library_path: String,
+    pub artist_name: String,
+    pub album_title: String,
 }
 
-pub fn get_directory_artist_and_album(
-    config: &Config,
-    directory_path: &Path,
-) -> Result<DirectoryInfo, Error> {
-    if !directory_is_album(config, directory_path) {
-        return Err(
-            Error::new(ErrorKind::Other, "Target is not album directory.")
-        );
+impl DirectoryInfo {
+    pub fn new(album_directory_path: &Path, config: &Config) -> Result<DirectoryInfo, Error> {
+        if !directory_is_album(config, album_directory_path) {
+            return Err(
+                Error::new(ErrorKind::Other, "Target is not album directory.")
+            );
+        }
+
+        let album_title = album_directory_path.file_name()
+            .expect("Could not get album directory name!");
+
+        let artist_directory = album_directory_path.parent()
+            .expect("Could not get path parent!");
+        let artist_name = artist_directory
+            .file_name()
+            .expect("Could not get artist directory name!");
+
+        let base_library_path = artist_directory.parent()
+            .expect("Could not get path parent!");
+        let base_library_path_string = base_library_path.to_str()
+            .expect("Could not convert path to str.")
+            .to_string();
+
+        Ok(DirectoryInfo {
+            library_path: base_library_path_string,
+            artist_name: artist_name
+                .to_str()
+                .expect("Could not convert artist directory name to string!")
+                .to_string(),
+            album_title: album_title
+                .to_str()
+                .expect("Could not convert album directory name to string!")
+                .to_string()
+        })
     }
-
-    let album_title = directory_path
-        .file_name()
-        .expect("Could not get album directory name!");
-
-    let parent = directory_path
-        .parent()
-        .expect("Could not get path parent!");
-    let artist_name = parent
-        .file_name()
-        .expect("Could not get artist directory name!");
-
-    Ok(DirectoryInfo {
-        artist: artist_name
-            .to_str()
-            .expect("Could not convert artist directory name to string!")
-            .to_string(),
-        album: album_title
-            .to_str()
-            .expect("Could not convert album directory name to string!")
-            .to_string()
-    })
 }

@@ -1,6 +1,6 @@
-use std::{fs, path};
+use std::fs;
 use std::collections::{HashMap, HashSet};
-use std::io::{Error, ErrorKind, Read, Write};
+use std::io::{Error, ErrorKind, Write};
 use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -29,9 +29,17 @@ pub struct LibraryMetaFile {
 
 
 pub struct FileChanges {
-    pub files_removed: Vec<String>,
     pub files_new: Vec<String>,
     pub files_changed: Vec<String>,
+    pub files_removed: Vec<String>,
+}
+
+impl FileChanges {
+    pub fn has_any_changes(&self) -> bool {
+        self.files_new.len() > 0
+            || self.files_changed.len() > 0
+            || self.files_removed.len() > 0
+    }
 }
 
 

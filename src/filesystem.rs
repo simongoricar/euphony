@@ -135,10 +135,34 @@ pub fn list_dir_entry_contents(dir_entry: &DirEntry)
 }
 
 /// Check whether the file is directly in the provided directory.
-pub fn is_file_in_directory(file_path: &Path, directory_path: &Path) -> bool {
+pub fn is_file_directly_in_dir(file_path: &Path, directory_path: &Path) -> bool {
     match file_path.parent() {
         Some(parent) => parent.eq(directory_path),
         None => false,
+    }
+}
+
+/// Compared to `is_file_directly_in_dir`, this searches subdirectories as well.
+pub fn is_file_inside_directory(file_path: &Path, directory_path: &Path, recursion_limit: Option<u32>) -> bool {
+    let recursion_limit = recursion_limit.unwrap_or(16);
+
+    if recursion_limit <= 0 {
+        false
+    } else {
+        match file_path.parent() {
+            Some(parent) => {
+                if parent.eq(directory_path) {
+                    true
+                } else {
+                    is_file_inside_directory(
+                        parent,
+                        directory_path,
+                        Some(recursion_limit - 1),
+                    )
+                }
+            },
+            None => false,
+        }
     }
 }
 
