@@ -269,9 +269,11 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     let pbr = MultiBar::new();
 
     let mut album_pbr = pbr.create_bar(0);
-    let mut artist_pbr = pbr.create_bar(artist_directories.len() as u64);
+    album_pbr.message("Artist albums processed | ");
 
-    // TODO Continue from here, untested thread listener.
+    let mut artist_pbr = pbr.create_bar(artist_directories.len() as u64);
+    artist_pbr.message("Processing artist: / | ");
+
     let _ = thread::spawn(move || {
         pbr.listen();
     });
@@ -289,6 +291,17 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
             }
         };
 
+        let artist_name = artist_directory.file_name();
+        let artist_name = artist_name.to_str()
+            .expect("Could not convert artist name to string.");
+
+        artist_pbr.message(
+            &format!(
+                "Processing artist: {} | ",
+                artist_name,
+            )
+        );
+
         album_pbr.total = album_directories.len() as u64;
         album_pbr.set(0);
 
@@ -302,14 +315,15 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
                 &album_info.album_title,
             )?;
             album_packet.process_album(config)?;
+            album_packet.save_librarymeta(config, true)?;
 
             album_pbr.inc();
         }
 
-        album_pbr.finish();
         artist_pbr.inc();
     }
 
+    album_pbr.finish();
     artist_pbr.finish_println("Library transcoded.");
 
     Ok(())
