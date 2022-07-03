@@ -2,19 +2,21 @@ use std::io::{Error, ErrorKind};
 use std::path::Path;
 use crate::Config;
 
+
+pub fn directory_is_library(config: &Config, directory_path: &Path) -> bool {
+    for (_, library) in &config.libraries {
+        if Path::new(&library.path).eq(directory_path) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub fn directory_is_artist(config: &Config, directory_path: &Path) -> bool {
     match directory_path.parent() {
-        Some(root) => {
-            // Check the path matches any of the libraries
-            for (_, library) in &config.libraries {
-                if Path::new(&library.path).eq(root) {
-                    return true;
-                }
-            }
-
-            false
-        },
-        None => false
+        Some(parent) => directory_is_library(config, parent),
+        None => false,
     }
 }
 

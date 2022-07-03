@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -8,7 +9,7 @@ use crate::Config;
 use super::directories as dirs;
 
 fn get_output_file_path(
-    file_name: &Path,
+    file_name: &OsStr,
     config: &Config,
     artist: &str,
     album: &str,
@@ -27,13 +28,32 @@ fn get_output_file_path(
     }
 }
 
+fn get_output_file_path_from_album_file(source_album_file_path: &Path, config: &Config) -> Result<PathBuf, Error> {
+    // The parent should be an album directory (the source file should be one of the files).
+    let containing_directory = source_album_file_path.parent()
+        .expect("No parent directory for source file!");
+
+    let dir_info = dirs::get_directory_artist_and_album(
+        config,
+        containing_directory,
+    )?;
+
+    let output_file_pathbuf = get_output_file_path(
+        source_album_file_path.file_name().expect("Could not get source file name."),
+        config,
+        &dir_info.artist,
+        &dir_info.album,
+        None,
+    );
+
+    Ok(output_file_pathbuf)
+}
+
 pub fn transcode_audio_file_into_mp3_v0(file_path: &Path, config: &Config) -> Result<(), Error> {
     // Compute input and output file paths.
     let file_name = file_path
         .file_name()
-        .expect("Could not get file name for aggregation!")
-        .to_str()
-        .expect("Could not get file name string for aggregation!");
+        .expect("Could not get file name for aggregation!");
 
     let containing_directory = file_path
         .parent()
@@ -48,7 +68,7 @@ pub fn transcode_audio_file_into_mp3_v0(file_path: &Path, config: &Config) -> Re
         .expect("Could not convert input file path to string!");
 
     let output_file_pathbuf = get_output_file_path(
-        Path::new(file_name),
+        file_name,
         config,
         &dir_info.artist,
         &dir_info.album,
@@ -100,8 +120,10 @@ pub fn transcode_audio_file_into_mp3_v0(file_path: &Path, config: &Config) -> Re
 }
 
 pub fn copy_data_file(source_file_path: &Path, config: &Config) -> Result<(), Error> {
-    let containing_directory = source_file_path
-        .parent()
+    let source_file_name = source_file_path.file_name()
+        .expect("Could not get file name from source file path!");
+
+    let containing_directory = source_file_path.parent()
         .expect("No parent directory for source file!");
 
     let dir_info = dirs::get_directory_artist_and_album(
@@ -110,7 +132,7 @@ pub fn copy_data_file(source_file_path: &Path, config: &Config) -> Result<(), Er
     )?;
 
     let output_file_pathbuf = get_output_file_path(
-        Path::new(source_file_path),
+        source_file_name,
         config,
         &dir_info.artist,
         &dir_info.album,
@@ -137,4 +159,28 @@ pub fn copy_data_file(source_file_path: &Path, config: &Config) -> Result<(), Er
             Err(error)
         }
     }
+}
+
+pub fn remove_target_file(source_file_path: &Path, config: &Config, is_audio_file: bool) -> Result<(), Error> {
+    let source_file_name = source_file_path.file_name()
+        .expect("Could not get file name from source file path!");
+
+    let containing_directory = source_file_path
+        .parent()
+        .expect("No parent directory for source file!");
+
+    let dir_info = dirs::get_directory_artist_and_album(
+        config,
+        containing_directory,
+    )?;
+
+    let output_file_pathbuf = get_output_file_path(
+        source_file_name,
+        config,
+        &dir_info.artist,
+        &dir_info.album,
+        if is_audio_file { Some("mp3") } else { None },
+    );
+
+    fs::remove_file(&output_file_pathbuf)
 }

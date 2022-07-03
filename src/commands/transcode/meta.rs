@@ -13,6 +13,9 @@ use crate::filesystem;
 #[derive(Serialize, Deserialize)]
 pub struct LibraryMeta {
     pub files: HashMap<String, LibraryMetaFile>,
+
+    #[serde(skip)]
+    pub base_directory: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,6 +63,10 @@ impl LibraryMeta {
     pub fn load(directory_path: &Path) -> Option<LibraryMeta> {
         let file_path = get_librarymeta_path_from_directory(directory_path);
 
+        if !file_path.is_file() {
+            return None;
+        }
+
         let library_meta_string = match fs::read_to_string(file_path) {
             Ok(string) => string,
             Err(_) => {
@@ -90,9 +97,8 @@ impl LibraryMeta {
         let maximum_tree_depth = maximum_tree_depth.unwrap_or(DEFAULT_MAX_DEPTH);
 
         // Enumerate files (including subdirectories up to a limit).
-        let directory_path_ref = Path::new(directory_path);
         let files = filesystem::list_directory_files_recusrively_filtered(
-            directory_path_ref,
+            directory_path,
             maximum_tree_depth,
             extensions,
         )?;
@@ -149,6 +155,9 @@ impl LibraryMeta {
         }
 
         Ok(LibraryMeta {
+            base_directory: directory_path.to_str()
+                .expect("Could not get library directory.")
+                .to_string(),
             files: file_hashmap,
         })
     }
