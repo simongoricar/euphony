@@ -30,14 +30,14 @@ pub fn directory_is_album(config: &Config, directory_path: &Path) -> bool {
 }
 
 
-pub struct DirectoryInfo {
+pub struct AlbumDirectoryInfo {
     pub library_path: String,
     pub artist_name: String,
     pub album_title: String,
 }
 
-impl DirectoryInfo {
-    pub fn new(album_directory_path: &Path, config: &Config) -> Result<DirectoryInfo, Error> {
+impl AlbumDirectoryInfo {
+    pub fn new(album_directory_path: &Path, config: &Config) -> Result<AlbumDirectoryInfo, Error> {
         if !directory_is_album(config, album_directory_path) {
             return Err(
                 Error::new(ErrorKind::Other, "Target is not album directory.")
@@ -59,7 +59,7 @@ impl DirectoryInfo {
             .expect("Could not convert path to str.")
             .to_string();
 
-        Ok(DirectoryInfo {
+        Ok(AlbumDirectoryInfo {
             library_path: base_library_path_string,
             artist_name: artist_name
                 .to_str()

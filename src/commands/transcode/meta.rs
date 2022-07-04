@@ -68,29 +68,16 @@ impl LibraryMetaFile {
 
 impl LibraryMeta {
     /// Given a directory path, load its .librarymeta file, if it exists, into a LibraryMeta struct.
-    pub fn load(directory_path: &Path) -> Option<LibraryMeta> {
+    pub fn load(directory_path: &Path) -> Result<Option<LibraryMeta>, Error> {
         let file_path = get_librarymeta_path_from_directory(directory_path);
-
         if !file_path.is_file() {
-            return None;
+            return Ok(None);
         }
 
-        let library_meta_string = match fs::read_to_string(file_path) {
-            Ok(string) => string,
-            Err(_) => {
-                return None;
-            }
-        };
+        let library_meta_string = fs::read_to_string(file_path)?;
+        let library_meta: LibraryMeta = serde_json::from_str(&library_meta_string)?;
 
-        let library_meta: LibraryMeta = match serde_json::from_str(&library_meta_string) {
-            Ok(meta) => meta,
-            Err(error) => {
-                eprintln!("Could not decode JSON file: {:?}", error);
-                return None;
-            }
-        };
-
-        Some(library_meta)
+        Ok(Some(library_meta))
     }
 
     /// Given a directory path, maximum directory scan depth and extensions to scan,

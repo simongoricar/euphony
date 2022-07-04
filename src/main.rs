@@ -12,6 +12,7 @@ mod filesystem;
 mod commands;
 mod console;
 mod utilities;
+mod cached;
 
 
 #[derive(Subcommand, PartialEq, Eq)]
