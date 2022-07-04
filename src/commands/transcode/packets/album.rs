@@ -1,5 +1,6 @@
 use std::io::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::exit;
 use crate::commands::transcode::meta::LibraryMeta;
 use crate::Config;
 use crate::cached::CachedValue;
@@ -9,6 +10,7 @@ use crate::commands::transcode::packets::file::FileWorkPacket;
 
 /// Represents a grouping of file packets into a single album.
 /// Using this struct we can generate a list of file work packets in the album.
+#[derive(Clone)]
 pub struct AlbumWorkPacket {
     pub album_info: AlbumDirectoryInfo,
 
@@ -22,6 +24,11 @@ pub struct AlbumWorkPacket {
 }
 
 impl AlbumWorkPacket {
+    pub fn from_album_path<P: AsRef<Path>>(album_directory_path: P, config: &Config) -> Result<AlbumWorkPacket, Error> {
+        let directory_info = AlbumDirectoryInfo::new(album_directory_path.as_ref(), config)?;
+        Ok(AlbumWorkPacket::from_album_info(directory_info))
+    }
+
     pub fn from_album_info(album_directory_info: AlbumDirectoryInfo) -> AlbumWorkPacket {
         AlbumWorkPacket {
             album_info: album_directory_info,
@@ -38,22 +45,25 @@ impl AlbumWorkPacket {
         path
     }
 
-    fn get_saved_meta(&mut self) -> Result<Option<&LibraryMeta>, Error> {
+    fn get_saved_meta(&mut self) -> Result<Option<LibraryMeta>, Error> {
         if self.cached_saved_meta.is_cached() {
-            return Ok(self.cached_saved_meta.get().as_ref());
+            return match self.cached_saved_meta.get() {
+                Some(meta) => Ok(Some(meta.clone())),
+                None => Ok(None),
+            }
         }
 
         let full_album_directory_path = self.get_album_directory_path();
 
         let saved_meta = LibraryMeta::load(&full_album_directory_path)?;
-        self.cached_saved_meta.set(saved_meta);
+        self.cached_saved_meta.set(saved_meta.clone());
 
-        Ok(saved_meta.as_ref())
+        Ok(saved_meta)
     }
 
-    fn get_fresh_meta(&mut self, config: &Config) -> Result<&LibraryMeta, Error> {
+    fn get_fresh_meta(&mut self, config: &Config) -> Result<LibraryMeta, Error> {
         if self.cached_fresh_meta.is_cached() {
-            return Ok(self.cached_fresh_meta.get());
+            return Ok(self.cached_fresh_meta.get().clone());
         }
 
         let full_album_directory_path = self.get_album_directory_path();
@@ -63,12 +73,12 @@ impl AlbumWorkPacket {
             None,
             &config.file_metadata.tracked_extensions,
         )?;
-        self.cached_fresh_meta.set(fresh_meta);
+        self.cached_fresh_meta.set(fresh_meta.clone());
 
-        Ok(&fresh_meta)
+        Ok(fresh_meta)
     }
 
-    fn needs_processing(&mut self, config: &Config) -> Result<bool, Error> {
+    pub fn needs_processing(&mut self, config: &Config) -> Result<bool, Error> {
         let saved_meta = self.get_saved_meta()?;
         if saved_meta.is_none() {
             Ok(true)
@@ -76,7 +86,11 @@ impl AlbumWorkPacket {
             let saved_meta = saved_meta.unwrap();
             let fresh_meta = self.get_fresh_meta(config)?;
 
-            let meta_diff = saved_meta.diff(fresh_meta);
+            let meta_diff = saved_meta.diff(&fresh_meta);
+
+            // DEBUGONLY
+            println!("{:?}", meta_diff);
+
             Ok(meta_diff.has_any_changes())
         }
     }
@@ -92,18 +106,11 @@ impl AlbumWorkPacket {
         let mut file_packets: Vec<FileWorkPacket> = Vec::new();
 
         for (fresh_file, _) in fresh_meta.files {
-            let source_file_library_path = PathBuf::from(&self.album_info.library_path);
-            let source_file_path = PathBuf::from(&fresh_file);
-
-            let mut target_file_path = PathBuf::from(&config.aggregated_library.path);
-            target_file_path.push(&self.album_info.artist_name);
-            target_file_path.push(&self.album_info.album_title);
-
             let file_packet = FileWorkPacket::new(
-                source_file_library_path,
-                source_file_path,
-                target_file_path,
-                config,
+                Path::new(&fresh_file),
+                &self.album_info,
+                self,
+                config
             )?;
 
             file_packets.push(file_packet);

@@ -1,5 +1,6 @@
 use std::fs;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::io::{Error, ErrorKind, Write};
 use std::ops::Sub;
 use std::path::{Path, PathBuf};
@@ -10,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::filesystem;
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct LibraryMeta {
     pub files: HashMap<String, LibraryMetaFile>,
 
@@ -18,7 +19,7 @@ pub struct LibraryMeta {
     pub base_directory: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct LibraryMetaFile {
     // The BLAKE3 hash was removed mid-design due to likely not being
     // fast enough to scan the entire library each time we call the command.
@@ -28,6 +29,7 @@ pub struct LibraryMetaFile {
 }
 
 
+#[derive(Debug)]
 pub struct FileChanges {
     pub files_new: Vec<String>,
     pub files_changed: Vec<String>,
@@ -50,15 +52,24 @@ fn get_librarymeta_path_from_directory(directory_path: &Path) -> PathBuf {
     final_path
 }
 
+fn f64_approximate_eq(first: f64, second: f64, max_distance: f64) -> bool {
+    let distance = first.sub(second).abs();
+    distance.lt(&max_distance)
+}
+
 impl LibraryMetaFile {
     pub fn matches(&self, other_meta: &LibraryMetaFile) -> bool {
         if self.size_bytes != other_meta.size_bytes {
             return false;
         }
-        if self.time_created != other_meta.time_created {
+
+        static DEFAULT_MAX_DISTANCE: f64 = 0.01;
+
+        if !f64_approximate_eq(self.time_created, other_meta.time_created, DEFAULT_MAX_DISTANCE) {
             return false;
         }
-        if self.time_modified != other_meta.time_modified {
+
+        if !f64_approximate_eq(self.time_modified, other_meta.time_modified, DEFAULT_MAX_DISTANCE) {
             return false;
         }
 
@@ -99,7 +110,6 @@ impl LibraryMeta {
         )?;
 
         // Generate info about each file (limited to relevant extensions).
-        // TODO Test this.
         let mut file_hashmap: HashMap<String, LibraryMetaFile> = HashMap::new();
 
         for file in files {
@@ -218,7 +228,6 @@ impl LibraryMeta {
             }
         }
 
-        // TODO Test this.
         FileChanges {
             files_removed,
             files_new,

@@ -46,14 +46,6 @@ impl ConfigValidation {
             ext.make_ascii_lowercase();
         }
     }
-
-    pub fn is_audio_extension(&self, extension: &String) -> bool {
-        self.audio_file_extensions.contains(extension)
-    }
-
-    pub fn is_ignored_extension(&self, extension: &String) -> bool {
-        self.ignored_file_extensions.contains(extension)
-    }
 }
 
 #[derive(Deserialize)]

@@ -1,5 +1,6 @@
 /// Represents a value that is initially empty, but can become cached at some point.
 /// This is just a generic wrapper around this concept.
+#[derive(Clone)]
 pub struct CachedValue<T> {
     value: Option<T>,
 }

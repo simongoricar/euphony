@@ -1,4 +1,5 @@
 use std::{env, path};
+use std::io::{stderr, stdout, Write};
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -17,7 +18,6 @@ mod cached;
 
 #[derive(Subcommand, PartialEq, Eq)]
 enum CLICommand {
-    // TODO
     TranscodeLibrary(TranscodeLibraryArgs),
     TranscodeAlbum(TranscodeAlbumArgs),
     Validate,
@@ -121,6 +121,9 @@ fn main() {
         if library_transcode.is_ok() {
             exit(0);
         } else {
+            println!("Error while transcoding library: {}", library_transcode.err().unwrap());
+            stdout().flush().unwrap();
+
             exit(1);
         }
 

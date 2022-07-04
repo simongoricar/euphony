@@ -3,6 +3,8 @@ use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use crate::{Config, filesystem};
+use crate::commands::transcode::dirs::AlbumDirectoryInfo;
+use crate::commands::transcode::packets::album::AlbumWorkPacket;
 
 #[derive(Eq, PartialEq)]
 enum FilePacketType {
@@ -28,36 +30,27 @@ impl FilePacketType {
 
 /// Represents the smallest unit of work we can generate - a single file.
 /// It contains all the information it needs to process the file.
-pub struct FileWorkPacket {
-    source_file_library_path: PathBuf,
-
+pub struct FileWorkPacket<'a> {
     pub source_file_path: PathBuf,
     pub target_file_path: PathBuf,
 
     file_type: FilePacketType,
+
+    /// Owning AlbumWorkPacket reference.
+    owner: &'a AlbumWorkPacket,
 }
 
-impl FileWorkPacket {
-    pub fn new<P: AsRef<Path>>(
-        source_file_library_path: P,
-        source_file_path: P,
-        target_file_path: P,
+impl<'a> FileWorkPacket<'a> {
+    pub fn new(
+        file_name: &Path,
+        source_album_info: &AlbumDirectoryInfo,
+        album_work_packet: &'a AlbumWorkPacket,
         config: &Config,
-    ) -> Result<FileWorkPacket, Error> {
-        if !filesystem::is_file_inside_directory(
-            source_file_path.as_ref(),
-            source_file_library_path.as_ref(),
-            None,
-        ) {
-            return Err(
-                Error::new(
-                    ErrorKind::Other,
-                    "Invalid source file path: doesn't match source library path."
-                )
-            );
-        }
+    ) -> Result<FileWorkPacket<'a>, Error> {
+        let source_file_path = source_album_info
+            .build_full_file_path(file_name);
 
-        let source_file_type = FilePacketType::from_path(source_file_path, config)
+        let source_file_type = FilePacketType::from_path(&source_file_path, config)
             .ok_or(
                 Error::new(
                     ErrorKind::Other,
@@ -65,11 +58,21 @@ impl FileWorkPacket {
                 )
             )?;
 
+        let target_file_extension = match source_file_type {
+            FilePacketType::AudioFile => String::from("mp3"),
+            FilePacketType::DataFile => filesystem::get_path_file_extension(&source_file_path)?,
+        };
+
+        let target_file_path = source_album_info
+            .as_aggregated_directory(config)
+            .build_full_file_path(file_name)
+            .with_extension(target_file_extension);
+
         Ok(FileWorkPacket {
-            source_file_library_path: source_file_library_path.as_ref().to_path_buf(),
-            source_file_path: source_file_path.as_ref().to_path_buf(),
-            target_file_path: target_file_path.as_ref().to_path_buf(),
+            source_file_path,
+            target_file_path,
             file_type: source_file_type,
+            owner: album_work_packet,
         })
     }
 
