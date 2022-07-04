@@ -110,7 +110,6 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         album_packets.len()
             .green()
             .bold()
-            .underline(),
     );
 
     // Filter to just the albums that need to be processed.
@@ -128,13 +127,22 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         filtered_album_packets.len()
             .green()
             .bold()
-            .underline(),
     );
     println!();
 
+    if filtered_album_packets.len() == 0 {
+        println!(
+            "{}",
+            "Aggregated library is up to date, no need to continue."
+                .bright_green()
+                .bold(),
+        );
+        return Ok(());
+    }
+
 
     let progress_style = ProgressStyle::with_template(
-    "{msg:^35!} [{elapsed_precise} / -{eta:3}] [{bar:60.cyan/blue}] {pos:>3}/{len:3}"
+    "{msg:^35!} [{elapsed_precise} / -{eta:3}] [{bar:80.cyan/blue}] {pos:>3}/{len:3}"
     )
         .unwrap()
         .progress_chars("#>-");

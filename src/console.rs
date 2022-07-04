@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use owo_colors::{OwoColorize, Style, Styled};
+use owo_colors::{OwoColorize, Style};
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -16,19 +16,6 @@ lazy_static! {
 pub fn get_true_string_grapheme_count(string: &str) -> usize {
     let no_color = (*COLOR_REGEX).replace_all(string, "");
     no_color.graphemes(true).count()
-}
-
-// Style appliers
-pub fn header_style(
-    text: &String,
-) -> Styled<&String> {
-    text.style(*DEFAULT_HEADER_STYLE)
-}
-
-pub fn line_style(
-    text: &String,
-) -> Styled<&String> {
-    text.style(*DEFAULT_LINE_STYLE)
 }
 
 

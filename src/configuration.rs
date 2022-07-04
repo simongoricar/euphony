@@ -126,10 +126,6 @@ impl ConfigFileMetadata {
     pub fn matches_data_extension(&self, extension: &String) -> bool {
         self.tracked_data_extensions.contains(extension)
     }
-
-    pub fn matches_any_extension(&self, extension: &String) -> bool {
-        self.tracked_extensions.contains(extension)
-    }
 }
 
 

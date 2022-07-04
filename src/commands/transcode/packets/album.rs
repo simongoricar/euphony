@@ -1,11 +1,10 @@
 use std::io::Error;
 use std::path::{Path, PathBuf};
-use std::process::exit;
 use crate::commands::transcode::meta::LibraryMeta;
 use crate::Config;
 use crate::cached::CachedValue;
 use crate::commands::transcode::directories::AlbumDirectoryInfo;
-use crate::commands::transcode::packets::file::FileWorkPacket;
+use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
 
 
 /// Represents a grouping of file packets into a single album.
@@ -86,10 +85,11 @@ impl AlbumWorkPacket {
             let saved_meta = saved_meta.unwrap();
             let fresh_meta = self.get_fresh_meta(config)?;
 
-            let meta_diff = saved_meta.diff(&fresh_meta);
-
-            // DEBUGONLY
-            println!("{:?}", meta_diff);
+            let meta_diff = saved_meta.diff_or_missing(
+                &fresh_meta,
+                &self.album_info,
+                config,
+            )?;
 
             Ok(meta_diff.has_any_changes())
         }
@@ -102,18 +102,62 @@ impl AlbumWorkPacket {
         }
 
         // Generate a fresh look at the files and generate a list of file packets from that.
+        let saved_meta = self.get_saved_meta()?;
         let fresh_meta = self.get_fresh_meta(config)?;
+
         let mut file_packets: Vec<FileWorkPacket> = Vec::new();
 
-        for (fresh_file, _) in fresh_meta.files {
-            let file_packet = FileWorkPacket::new(
-                Path::new(&fresh_file),
+        if saved_meta.is_some() {
+            let diff = saved_meta.unwrap().diff_or_missing(
+                &fresh_meta,
                 &self.album_info,
-                self,
-                config
+                config,
             )?;
 
-            file_packets.push(file_packet);
+            for new_file_name in diff.files_new {
+                file_packets.push(
+                    FileWorkPacket::new(
+                        Path::new(&new_file_name),
+                        &self.album_info,
+                        config,
+                        FilePacketAction::Process,
+                    )?,
+                );
+            }
+
+            for changed_file_name in diff.files_changed {
+                file_packets.push(
+                    FileWorkPacket::new(
+                        Path::new(&changed_file_name),
+                        &self.album_info,
+                        config,
+                        FilePacketAction::Process,
+                    )?,
+                );
+            }
+
+            for removed_file_name in diff.files_removed {
+                file_packets.push(
+                    FileWorkPacket::new(
+                        Path::new(&removed_file_name),
+                        &self.album_info,
+                        config,
+                        FilePacketAction::Remove,
+                    )?,
+                );
+            }
+
+        } else {
+            for (fresh_file, _) in fresh_meta.files {
+                let file_packet = FileWorkPacket::new(
+                    Path::new(&fresh_file),
+                    &self.album_info,
+                    config,
+                    FilePacketAction::Process,
+                )?;
+
+                file_packets.push(file_packet);
+            }
         }
 
         Ok(file_packets)

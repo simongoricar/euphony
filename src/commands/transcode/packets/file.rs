@@ -1,12 +1,12 @@
+use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use crate::{Config, filesystem};
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
-use crate::commands::transcode::packets::album::AlbumWorkPacket;
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 enum FilePacketType {
     AudioFile,
     DataFile,
@@ -27,26 +27,29 @@ impl FilePacketType {
     }
 }
 
+#[derive(Eq, PartialEq)]
+pub enum FilePacketAction {
+    Process,
+    Remove,
+}
+
 
 /// Represents the smallest unit of work we can generate - a single file.
 /// It contains all the information it needs to process the file.
-pub struct FileWorkPacket<'a> {
+pub struct FileWorkPacket {
     pub source_file_path: PathBuf,
     pub target_file_path: PathBuf,
-
     file_type: FilePacketType,
-
-    /// Owning AlbumWorkPacket reference.
-    owner: &'a AlbumWorkPacket,
+    action: FilePacketAction,
 }
 
-impl<'a> FileWorkPacket<'a> {
+impl FileWorkPacket {
     pub fn new(
         file_name: &Path,
         source_album_info: &AlbumDirectoryInfo,
-        album_work_packet: &'a AlbumWorkPacket,
         config: &Config,
-    ) -> Result<FileWorkPacket<'a>, Error> {
+        action: FilePacketAction,
+    ) -> Result<FileWorkPacket, Error> {
         let source_file_path = source_album_info
             .build_full_file_path(file_name);
 
@@ -72,7 +75,7 @@ impl<'a> FileWorkPacket<'a> {
             source_file_path,
             target_file_path,
             file_type: source_file_type,
-            owner: album_work_packet,
+            action,
         })
     }
 
@@ -80,9 +83,12 @@ impl<'a> FileWorkPacket<'a> {
     /// - transcoding if it's an audio file,
     /// - or a simple file copy if it is a data file.
     pub fn process(&self, config: &Config) -> Result<(), Error> {
-        match self.file_type {
-            FilePacketType::AudioFile => self.transcode_into_mp3_v0(config),
-            FilePacketType::DataFile => self.copy_data_file(),
+        match self.action {
+            FilePacketAction::Process => match self.file_type {
+                FilePacketType::AudioFile => self.transcode_into_mp3_v0(config),
+                FilePacketType::DataFile => self.copy_data_file(),
+            },
+            FilePacketAction::Remove => self.remove_processed_file(true),
         }
     }
 
@@ -176,9 +182,30 @@ impl<'a> FileWorkPacket<'a> {
         }
     }
 
+    /// Check whether the target file exists.
+    pub fn target_file_exists(&self) -> bool {
+        self.target_file_path.exists()
+    }
+
     /// Remove the processed (transcoded/copied) file.
     /// TODO From where will this be called? Should it be public?
-    fn remove_processed_file(&self) -> Result<(), Error> {
-        fs::remove_file(&self.target_file_path)
+    fn remove_processed_file(&self, ignore_if_missing: bool) -> Result<(), Error> {
+        if !self.target_file_exists() && ignore_if_missing {
+            Ok(())
+        } else {
+            fs::remove_file(&self.target_file_path)
+        }
+    }
+}
+
+impl Debug for FileWorkPacket {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "FileWorkPacket ({:?}): {:?} -> {:?}",
+            self.file_type,
+            self.source_file_path,
+            self.target_file_path,
+        )
     }
 }

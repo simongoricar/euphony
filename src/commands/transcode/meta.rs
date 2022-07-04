@@ -8,7 +8,9 @@ use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
-use crate::filesystem;
+use crate::{Config, filesystem};
+use crate::commands::transcode::dirs::AlbumDirectoryInfo;
+use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
 
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -233,5 +235,38 @@ impl LibraryMeta {
             files_new,
             files_changed
         }
+    }
+
+    /// Improved version of the diff algorithm, which first does a diff and then adds any
+    /// files that are not present in the aggregated library (otherwise we can remove files
+    /// from the aggregated library, but no changes will be detected on a library transcode).
+    pub fn diff_or_missing(
+        &self,
+        current_meta_state: &LibraryMeta,
+        album_info: &AlbumDirectoryInfo,
+        config: &Config,
+    ) -> Result<FileChanges, Error> {
+        // TODO Test this code.
+        let mut files_missing_in_target: Vec<String> = Vec::new();
+
+        for (file_name, _) in &self.files {
+            // Check if this file exists in the target directory.
+            // If it doesn't, add it to the missing file list.
+            let file_packet = FileWorkPacket::new(
+                Path::new(file_name),
+                album_info,
+                config,
+                FilePacketAction::Process,
+            )?;
+
+            if !file_packet.target_file_exists() {
+                files_missing_in_target.push(file_name.clone());
+            }
+        }
+
+        let mut diff = self.diff(current_meta_state);
+        diff.files_new.extend(files_missing_in_target);
+
+        Ok(diff)
     }
 }
