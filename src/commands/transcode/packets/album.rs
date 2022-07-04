@@ -77,6 +77,11 @@ impl AlbumWorkPacket {
         Ok(fresh_meta)
     }
 
+    pub fn get_total_track_count(&mut self, config: &Config) -> Result<usize, Error> {
+        let fresh_meta = self.get_fresh_meta(config)?;
+        Ok(fresh_meta.files.len())
+    }
+
     pub fn needs_processing(&mut self, config: &Config) -> Result<bool, Error> {
         let saved_meta = self.get_saved_meta()?;
         if saved_meta.is_none() {

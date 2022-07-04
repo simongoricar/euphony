@@ -62,7 +62,7 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     println!(
         "{}",
         "Scanning library."
-            .bright_yellow()
+            .bright_yellow(),
     );
 
     let (_, artist_directories) = match filesystem::list_directory_contents(library_directory) {
@@ -221,7 +221,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     console::horizontal_line_with_text(
         &format!(
             "{}",
-            "album transcode"
+            "album aggregation"
                 .cyan()
                 .bold(),
         ),
@@ -249,35 +249,94 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     }
 
     println!(
-        "{}{}",
-        "Processing album: "
-            .bright_black(),
-        album_packet.album_info.album_title
-            .yellow(),
+        "{}",
+        "Scanning album."
+            .bright_yellow(),
     );
-    console::new_line();
 
-    let work_packets = album_packet.get_work_packets(config)?;
-    for file_packet in work_packets {
-        file_packet.process(config)?;
+    let mut album_packet = AlbumWorkPacket::from_album_path(
+        album_directory,
+        config,
+    )?;
+
+    let total_track_count = album_packet.get_total_track_count(config)?;
+
+    println!(
+        "{} {}",
+        "Total album tracks:  "
+            .bright_yellow(),
+        total_track_count
+            .green()
+            .bold(),
+    );
+
+    let file_packets = album_packet.get_work_packets(config)?;
+
+    println!(
+        "{} {}",
+        "To be processed:     "
+            .bright_yellow(),
+        file_packets.len()
+            .green()
+            .bold(),
+    );
+    println!();
+
+    if file_packets.len() == 0 {
+        println!(
+            "{}",
+            "Aggregated album is up to date, no need to continue."
+                .bright_green()
+                .bold(),
+        );
+        return Ok(());
     }
 
-    println!(
-        "{}",
-        "Processing finished, all audio files transcoded and data files copied.".green()
+    let progress_style = ProgressStyle::with_template(
+        "{msg:^42!} [{elapsed_precise} / -{eta:3}] [{bar:80.cyan/blue}] {pos:>3}/{len:3}"
+    )
+        .unwrap()
+        .progress_chars("#>-");
+
+    let file_progress_bar = ProgressBar::new(file_packets.len() as u64);
+    file_progress_bar.set_style(progress_style);
+    file_progress_bar.set_message(
+        format!(
+            "{} {} ",
+            "File:"
+                .bright_black(),
+            "/"
+                .bright_cyan()
+                .underline()
+                .bold()
+        ),
     );
 
-    // Resave .librarymeta
-    println!(
-        "{}{}",
-        "Saving fresh "
-            .yellow(),
-        ".librarymeta"
-            .bold()
-            .green(),
-    );
+    for file_packet in file_packets {
+        let file_name = file_packet.source_file_path.file_name()
+            .ok_or(Error::new(ErrorKind::Other, "Could not convert path to string."))?
+            .to_str()
+            .ok_or(Error::new(ErrorKind::Other, "Could not convert path to string."))?;
+
+        file_progress_bar.set_message(
+            format!(
+                "{} {} ",
+                "File:"
+                    .bright_black(),
+                file_name
+                    .bright_cyan()
+                    .underline()
+                    .bold()
+            ),
+        );
+
+        file_packet.process(config)?;
+
+        file_progress_bar.inc(1);
+    }
 
     album_packet.save_fresh_meta(config, true)?;
+    file_progress_bar.finish();
 
     Ok(())
 }
