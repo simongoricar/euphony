@@ -8,7 +8,7 @@
 > Considering you're here you might've encountered the same :). Before I describe the workings of euphony
 > I'll just quickly outline why I'm doing this and how I've decided to approach the problem.
 >
-> In my case, file organisation became a problem relatively quickly: let's say most of your music library is lossless, but some of it is lossy,
+> In my case, portable file organisation became a problem relatively quickly: let's say most of your music library is lossless, but some of it is lossy,
 > so you either have it all in one big folder (e.g. organized by artist, then by album), or separated into a lossless and a lossy library
 > (or possibly even more if you're doing some involved sorting).
 >
