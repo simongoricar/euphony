@@ -1,6 +1,7 @@
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::time::{Duration, Instant};
 use console::Color::Color256;
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -37,6 +38,8 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     );
     c::new_line();
 
+    let processing_begin_time = Instant::now();
+
     let mut library_packets: Vec<LibraryWorkPacket> = Vec::new();
     for (library_name, library) in &config.libraries {
         library_packets.push(
@@ -66,7 +69,13 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
     let mut filtered_library_packets: Vec<(LibraryWorkPacket, Vec<AlbumWorkPacket>)> = Vec::new();
     for mut library_packet in library_packets {
-        let albums_in_need_of_processing = library_packet.get_albums_in_need_of_processing(config)?;
+        let mut albums_in_need_of_processing = library_packet.get_albums_in_need_of_processing(config)?;
+
+        albums_in_need_of_processing.sort_unstable_by(
+            |first, second| {
+                first.album_info.album_title.cmp(&second.album_info.album_title)
+            }
+        );
 
         if albums_in_need_of_processing.len() > 0 {
             println!(
@@ -82,6 +91,12 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         }
     }
 
+    filtered_library_packets.sort_unstable_by(
+        |(first, _), (second, _)| {
+            first.name.cmp(&second.name)
+        }
+    );
+
     c::new_line();
 
     let multi_pbr = MultiProgress::new();
@@ -94,6 +109,10 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
     let library_progress_bar = multi_pbr.add(ProgressBar::new(filtered_library_packets.len() as u64));
     library_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
+
+    files_progress_bar.enable_steady_tick(Duration::new(1, 0));
+    albums_progress_bar.enable_steady_tick(Duration::new(1, 0));
+    library_progress_bar.enable_steady_tick(Duration::new(1, 0));
 
     let set_current_file  = |file_name: &str| {
         files_progress_bar.set_message(
@@ -175,8 +194,14 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     albums_progress_bar.finish();
     library_progress_bar.finish();
 
-    Ok(())
+    let processing_time_delta = processing_begin_time.elapsed();
+    println!(
+        "All libraries processed in {:.1?}.",
+        processing_time_delta,
+    );
+
     // TODO Check why sometimes the process fails with "The system cannot find the path specified. (os error 3)"
+    Ok(())
 }
 
 
@@ -196,6 +221,8 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         None, None,
     );
     c::new_line();
+
+    let processing_begin_time = Instant::now();
 
     let library_directory_string = library_directory.to_string_lossy().to_string();
     println!(
@@ -333,6 +360,12 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     file_progress_bar.finish();
     album_progress_bar.finish();
 
+    let processing_time_delta = processing_begin_time.elapsed();
+    println!(
+        "Library processed in {:.1?}.",
+        processing_time_delta,
+    );
+
     Ok(())
 }
 
@@ -353,6 +386,8 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
         None, None,
     );
     c::new_line();
+
+    let processing_begin_time = Instant::now();
 
     let album_directory_string = album_directory.to_string_lossy().to_string();
     println!(
@@ -452,6 +487,12 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     album_packet.save_fresh_meta(config, true)?;
 
     file_progress_bar.finish();
+
+    let processing_time_delta = processing_begin_time.elapsed();
+    println!(
+        "Album processed in {:.1?}.",
+        processing_time_delta,
+    );
 
     Ok(())
 }
