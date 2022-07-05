@@ -1,4 +1,7 @@
 /target
 .idea
 
+data/configuration.toml
+!data/configuration.TEMPLATE.toml
+
 tools/ffmpeg
