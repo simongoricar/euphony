@@ -79,6 +79,14 @@ impl FileWorkPacket {
         })
     }
 
+    pub fn get_file_name(&self) -> Result<String, Error> {
+        Ok(self.source_file_path.file_name()
+            .ok_or(Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
+            .to_str()
+            .ok_or(Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
+            .to_string())
+    }
+
     /// Run the processing for this file packet. This involves either:
     /// - transcoding if it's an audio file,
     /// - or a simple file copy if it is a data file.

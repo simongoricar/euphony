@@ -1,4 +1,4 @@
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use crate::commands::transcode::meta::LibraryMeta;
 use crate::Config;
@@ -164,6 +164,25 @@ impl AlbumWorkPacket {
                 file_packets.push(file_packet);
             }
         }
+
+        // Sort file packets by name.
+        file_packets.sort_unstable_by(
+            |first, second| {
+                let first_name = first.source_file_path
+                    .file_name()
+                    .expect("Could not convert file path to string while sorting.")
+                    .to_str()
+                    .expect("Could not convert file path to string while sorting.");
+
+                let second_name = second.source_file_path
+                    .file_name()
+                    .expect("Could not convert file path to string while sorting.")
+                    .to_str()
+                    .expect("Could not convert file path to string while sorting.");
+
+                first_name.cmp(second_name)
+            }
+        );
 
         Ok(file_packets)
     }

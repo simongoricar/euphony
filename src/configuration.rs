@@ -59,10 +59,7 @@ pub struct ConfigLibrary {
 
 impl ConfigLibrary {
     fn after_load_init(&mut self, root_library_path: &str) {
-        self.path = self.path.replace(
-            "{ROOT}",
-            root_library_path
-        );
+        self.path = self.path.replace("{ROOT}", root_library_path);
 
         // Ensure the path is valid
         let true_path = Path::new(&self.path);
@@ -88,10 +85,7 @@ pub struct ConfigAggregated {
 
 impl ConfigAggregated {
     fn after_load_init(&mut self, root_library_path: &str) {
-        self.path = self.path.replace(
-            "{ROOT}",
-            root_library_path,
-        );
+        self.path = self.path.replace("{ROOT}", root_library_path);
     }
 }
 
@@ -165,7 +159,28 @@ impl Config {
     }
 
     pub fn load() -> Config {
-        let configuration_filepath = get_configuration_file_path();
-        Config::load_from_path(configuration_filepath)
+        Config::load_from_path(get_configuration_file_path())
+    }
+
+    pub fn is_library(&self, library_path: &Path) -> bool {
+        for (_, library) in &self.libraries {
+            let current_path = Path::new(&library.path);
+            if current_path.eq(library_path) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn get_library_name_from_path(&self, library_path: &Path) -> Option<String> {
+        for (library_name, library) in &self.libraries {
+            let current_path = Path::new(&library.path);
+            if current_path.eq(library_path) {
+                return Some(library_name.clone());
+            }
+        }
+
+        None
     }
 }

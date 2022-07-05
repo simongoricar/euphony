@@ -1,10 +1,9 @@
 use std::{env, path};
-use std::io::{stdout, Write};
 use std::path::PathBuf;
 use std::process::exit;
+use ::console::style;
 
 use clap::{Parser, Args, Subcommand};
-use owo_colors::OwoColorize;
 
 use configuration::Config;
 
@@ -18,10 +17,12 @@ mod cached;
 
 #[derive(Subcommand, PartialEq, Eq)]
 enum CLICommand {
+    TranscodeAll,
     TranscodeLibrary(TranscodeLibraryArgs),
     TranscodeAlbum(TranscodeAlbumArgs),
     Validate,
     ShowConfig,
+
     // TODO
     Download,
 }
@@ -54,7 +55,45 @@ fn main() {
     let config = Config::load();
     let args: CLIArgs = CLIArgs::parse();
 
-    if let CLICommand::TranscodeAlbum(args) = args.command {
+    if args.command == CLICommand::TranscodeAll {
+        match commands::cmd_transcode_all(&config) {
+            Ok(_) => {
+                console::new_line();
+                console::horizontal_line_with_text(
+                    format!(
+                        "{}",
+                        style("Full aggregation complete.")
+                            .green()
+                            .italic()
+                            .bold()
+                    ),
+                    None, None,
+                );
+            },
+            Err(error) => {
+                console::new_line();
+                console::horizontal_line_with_text(
+                    format!(
+                        "{}",
+                        style("Errors in full aggregation!")
+                            .red()
+                            .italic()
+                            .bold()
+                    ),
+                    None, None,
+                );
+                console::centered_print(
+                    format!(
+                        "{}",
+                        style(error)
+                            .red()
+                    ),
+                    None,
+                );
+            }
+        };
+
+    } else if let CLICommand::TranscodeAlbum(args) = args.command {
         let selected_directory = match args.directory {
             Some(dir) => path::PathBuf::from(dir),
             None => {
@@ -66,79 +105,83 @@ fn main() {
         match commands::cmd_transcode_album(&selected_directory, &config) {
             Ok(_) => {
                 console::new_line();
-                console::horizontal_line(None, None);
                 console::horizontal_line_with_text(
-                    &format!(
+                    format!(
                         "{}",
-                        "Album aggregation complete"
+                        style("Album aggregation complete.")
                             .green()
                             .italic()
                             .bold()
                     ),
-                    None, None, None,
+                    None, None,
                 );
-                console::horizontal_line(None, None);
             },
             Err(error) => {
                 console::new_line();
-                console::horizontal_line(None, None);
                 console::horizontal_line_with_text(
-                    &format!(
+                    format!(
                         "{}",
-                        "Errors in album aggregation"
+                        style("Errors in album aggregation!")
                             .red()
                             .italic()
                             .bold()
                     ),
-                    None, None, None,
+                    None, None,
                 );
-                eprintln!("Error: {}", error);
-                console::horizontal_line(None, None);
+                console::centered_print(
+                    format!(
+                        "{}",
+                        style(error)
+                            .red()
+                    ),
+                    None,
+                );
 
                 exit(1);
             }
         };
 
     } else if let CLICommand::TranscodeLibrary(args) = args.command {
-        let selected_library = config.libraries.get(&args.library_name);
-        if selected_library.is_none() {
-            eprintln!(
-                "{}{}",
-                "No such library: ".red(),
-                args.library_name,
-            );
-            exit(1);
-        }
+        let selected_library = match config.libraries.get(&args.library_name) {
+            Some(library) => library,
+            None => {
+                eprintln!(
+                    "{} {}",
+                    style("No such library:")
+                        .red(),
+                    args.library_name,
+                );
+                exit(1);
+            }
+        };
 
-        let selected_library = selected_library.unwrap();
         let selected_library_path = PathBuf::from(&selected_library.path);
 
-        let library_transcode = commands::cmd_transcode_library(
-            &selected_library_path,
-            &config,
-        );
-
-        if library_transcode.is_ok() {
-            exit(0);
-        } else {
-            println!("Error while transcoding library: {}", library_transcode.err().unwrap());
-            stdout().flush().unwrap();
-
-            exit(1);
+        match commands::cmd_transcode_library(&selected_library_path, &config) {
+            Ok(_) => {
+                exit(0);
+            },
+            Err(error) => {
+                eprintln!(
+                    "{} {}",
+                    style("Error while transcoding library:")
+                        .red(),
+                    error,
+                );
+                exit(1);
+            }
         }
 
     } else if args.command == CLICommand::Validate {
-        let is_completely_valid = commands::cmd_validate(&config);
-        if is_completely_valid {
-            exit(0);
-        } else {
-            exit(1);
+        match commands::cmd_validate(&config) {
+            true => exit(0),
+            false => exit(1),
         }
 
     } else if args.command == CLICommand::ShowConfig {
         commands::cmd_show_config(&config);
 
     } else {
-        panic!("Unexpected command!");
+        panic!("Unexpected/unimplemented command!");
     }
 }

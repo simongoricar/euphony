@@ -1,19 +1,178 @@
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use console::Color::Color256;
+use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-
-use owo_colors::OwoColorize;
 
 use directories as dirs;
 
-use crate::{console, filesystem};
+use crate::console as c;
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
+use crate::commands::transcode::packets::library::LibraryWorkPacket;
 use crate::configuration::Config;
 
 mod meta;
 mod directories;
 mod packets;
+
+pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
+    c::horizontal_line_with_text(
+        format!(
+            "{}",
+            style("full library aggregation")
+                .cyan()
+                .bold()
+        ),
+        None, None,
+    );
+    c::new_line();
+
+    let mut library_packets: Vec<LibraryWorkPacket> = Vec::new();
+    for (library_name, library) in &config.libraries {
+        library_packets.push(
+            LibraryWorkPacket::from_library_path(
+                library_name,
+                Path::new(&library.path),
+                config,
+            )?,
+        );
+    }
+
+    println!(
+        "{} {}",
+        style("Total libraries: ")
+            .yellow()
+            .bright(),
+        style(library_packets.len())
+            .green()
+            .bold(),
+    );
+    println!(
+        "{}",
+        style("Libraries to be processed: ")
+            .yellow()
+            .bright(),
+    );
+
+    let mut filtered_library_packets: Vec<(LibraryWorkPacket, Vec<AlbumWorkPacket>)> = Vec::new();
+    for mut library_packet in library_packets {
+        let albums_in_need_of_processing = library_packet.get_albums_in_need_of_processing(config)?;
+
+        if albums_in_need_of_processing.len() > 0 {
+            println!(
+                "  {}: {} pending albums",
+                library_packet.name,
+                style(albums_in_need_of_processing.len())
+                    .yellow()
+                    .bright()
+                    .bold(),
+            );
+
+            filtered_library_packets.push((library_packet, albums_in_need_of_processing));
+        }
+    }
+
+    c::new_line();
+
+    let progress_style = ProgressStyle::with_template(
+        "{msg:^35!} [{elapsed_precise} / -{eta:3}] [{bar:80.cyan/blue}] {pos:>3}/{len:3}"
+    )
+        .unwrap()
+        .progress_chars("#>-");
+
+    let multi_pbr = MultiProgress::new();
+
+    let files_progress_bar = multi_pbr.add(ProgressBar::new(0));
+    files_progress_bar.set_style(progress_style.clone());
+
+    let albums_progress_bar = multi_pbr.add(ProgressBar::new(0));
+    albums_progress_bar.set_style(progress_style.clone());
+
+    let library_progress_bar = multi_pbr.add(ProgressBar::new(filtered_library_packets.len() as u64));
+    library_progress_bar.set_style(progress_style.clone());
+
+    let set_current_file  = |file_name: &str| {
+        files_progress_bar.set_message(
+            format!(
+                "{} {}",
+                style("File:")
+                    .black()
+                    .bright(),
+                style(file_name)
+                    .fg(Color256(131))
+                    .underlined(),
+            ),
+        );
+    };
+
+    let set_current_album = |album_name: &str| {
+        albums_progress_bar.set_message(
+            format!(
+                "{} {}",
+                style("Album:")
+                    .black()
+                    .bright(),
+                style(album_name)
+                    .fg(Color256(103))
+                    .underlined(),
+            ),
+        );
+    };
+
+    let set_current_library = |library_name: &str| {
+        library_progress_bar.set_message(
+            format!(
+                "{} {}",
+                style("Library:")
+                    .black()
+                    .bright(),
+                style(library_name)
+                    .white()
+                    .underlined(),
+            ),
+        );
+    };
+
+    set_current_library("/");
+    set_current_album("/");
+    set_current_file("/");
+
+    for (library, album_packets) in filtered_library_packets {
+        set_current_library(&library.name);
+
+        albums_progress_bar.reset();
+        albums_progress_bar.set_length(album_packets.len() as u64);
+        albums_progress_bar.set_position(0);
+
+        for mut album_packet in album_packets {
+            set_current_album(&album_packet.album_info.album_title);
+
+            let file_packets = album_packet.get_work_packets(config)?;
+
+            files_progress_bar.reset();
+            files_progress_bar.set_length(file_packets.len() as u64);
+            files_progress_bar.set_position(0);
+
+            for file_packet in file_packets {
+                set_current_file(&file_packet.get_file_name()?);
+
+                file_packet.process(config)?;
+                files_progress_bar.inc(1);
+            }
+
+            album_packet.save_fresh_meta(config, true)?;
+            albums_progress_bar.inc(1);
+        }
+    }
+
+    files_progress_bar.finish();
+    albums_progress_bar.finish();
+    library_progress_bar.finish();
+
+    Ok(())
+    // TODO Check why sometimes the process fails with "The system cannot find the path specified. (os error 3)"
+}
 
 
 pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Result<(), Error> {
@@ -22,127 +181,92 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         exit(1);
     }
 
-    console::horizontal_line(None, None);
-    console::horizontal_line_with_text(
-        &format!(
+    c::horizontal_line_with_text(
+        format!(
             "{}",
-            "library aggregation"
+            style("library aggregation")
                 .cyan()
                 .bold(),
         ),
-        None, None, None,
+        None, None,
     );
-    console::horizontal_line(None, None);
-    console::new_line();
+    c::new_line();
 
+    let library_directory_string = library_directory.to_string_lossy().to_string();
     println!(
         "{} {}",
-        "Using library directory: ".italic(),
-        library_directory
-            .as_path()
-            .to_str()
-            .expect("Could not parse directory into string!")
-            .bold()
+        style("Using library directory: ")
+            .italic(),
+        style(library_directory_string)
             .yellow()
+            .bold()
     );
-    console::new_line();
+    c::new_line();
 
-    if !dirs::directory_is_library(config, library_directory) {
+    if !config.is_library(library_directory) {
         println!(
-            "{}", "Directory is not a library, exiting.".red(),
+            "{}",
+            style("Directory is not a library, exiting.")
+                .red(),
         );
+
         exit(1);
     }
 
-    // Enumerate artist directories and traverse each one.
-    // Then traverse each album inside those directories.
-    // If any invalid folder is found, an error is shown.
-    let mut album_packets: Vec<AlbumWorkPacket> = Vec::new();
-
     println!(
         "{}",
-        "Scanning library."
-            .bright_yellow(),
+        style("Scanning library.")
+            .yellow()
+            .bright(),
     );
 
-    let (_, artist_directories) = match filesystem::list_directory_contents(library_directory) {
-        Ok(data) => data,
-        Err(error) => {
-            eprintln!(
-                "{}{}",
-                "Error while listing library artists (via directory scan): ".red(),
-                error,
-            );
-            exit(1);
-        }
-    };
+    let library_name = config.get_library_name_from_path(library_directory)
+        .ok_or(Error::new(ErrorKind::Other, "No registered library."))?;
 
-    for artist_directory in artist_directories {
-        let (_, album_directories) = match filesystem::list_dir_entry_contents(&artist_directory) {
-            Ok(data) => data,
-            Err(error) => {
-                return Err(
-                    Error::new(
-                        ErrorKind::Other,
-                        format!(
-                            "Error while listing artist albums: {}",
-                            error,
-                        ),
-                    )
-                )
-            },
-        };
-
-        for album_directory in album_directories {
-            let album_directory_path = album_directory.path();
-            let album_packet = AlbumWorkPacket::from_album_path(
-                album_directory_path, config,
-            )?;
-
-            album_packets.push(album_packet);
-        }
-    }
+    let mut library_packet = LibraryWorkPacket::from_library_path(
+        &library_name,
+        library_directory,
+        config,
+    )?;
 
     println!(
         "{} {}",
-        "Total albums:    "
-            .bright_yellow(),
-        album_packets.len()
+        style("Total albums:    ")
+            .yellow()
+            .bright(),
+        style(library_packet.album_packets.len())
             .green()
-            .bold()
+            .bold(),
     );
 
     // Filter to just the albums that need to be processed.
-    let mut filtered_album_packets: Vec<AlbumWorkPacket> = Vec::new();
-    for album_packet in &mut album_packets {
-        if album_packet.needs_processing(config)? {
-            filtered_album_packets.push(album_packet.clone());
-        }
-    }
+    let mut filtered_album_packets = library_packet.get_albums_in_need_of_processing(config)?;
 
     println!(
         "{} {}",
-        "To be processed: "
-            .bright_yellow(),
-        filtered_album_packets.len()
+        style("To be processed: ")
+            .yellow()
+            .bright(),
+        style(filtered_album_packets.len())
             .green()
             .bold()
     );
-    println!();
+    c::new_line();
 
     if filtered_album_packets.len() == 0 {
         println!(
             "{}",
-            "Aggregated library is up to date, no need to continue."
-                .bright_green()
+            style("Aggregated library is up to date, no need to continue.")
+                .green()
+                .bright()
                 .bold(),
         );
+
         return Ok(());
     }
 
-
     let progress_style = ProgressStyle::with_template(
-    "{msg:^35!} [{elapsed_precise} / -{eta:3}] [{bar:80.cyan/blue}] {pos:>3}/{len:3}"
+        "{msg:^35!} [{elapsed_precise} / -{eta:3}] [{bar:80.cyan/blue}] {pos:>3}/{len:3}"
     )
         .unwrap()
         .progress_chars("#>-");
@@ -151,40 +275,44 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
 
     let file_progress_bar = multi_pbr.add(ProgressBar::new(0));
     file_progress_bar.set_style(progress_style.clone());
-    file_progress_bar.set_message(
-        format!(
-            "{} ",
-            "/"
-                .bright_cyan()
-                .underline()
-                .bold()
-        ),
-    );
 
     let album_progress_bar = multi_pbr.add(ProgressBar::new(filtered_album_packets.len() as u64));
     album_progress_bar.set_style(progress_style.clone());
-    album_progress_bar.set_message(
-        format!(
-            "{}",
-            "Total albums"
-                .bright_magenta()
-                .italic(),
-        ),
-    );
 
-
-    for album_packet in &mut filtered_album_packets {
+    let set_current_file = |file_name: &str| {
         file_progress_bar.set_message(
             format!(
-                "{}{}",
-                "Album: "
-                    .bright_black(),
-                album_packet.album_info.album_title
-                    .bright_cyan()
-                    .underline()
-                    .bold(),
+                "{} {}",
+                style("File:")
+                    .black()
+                    .bright(),
+                style(file_name)
+                    .fg(Color256(131))
+                    .underlined(),
             ),
         );
+    };
+
+    let set_current_album = |album_name: &str| {
+        album_progress_bar.set_message(
+            format!(
+                "{} {}",
+                style("Album:")
+                    .black()
+                    .bright(),
+                style(album_name)
+                    .fg(Color256(103))
+                    .underlined(),
+            ),
+        );
+    };
+
+
+    set_current_file("/");
+    set_current_album("/");
+
+    for album_packet in &mut filtered_album_packets {
+        set_current_album(&album_packet.album_info.album_title);
 
         let file_work_packets = album_packet.get_work_packets(config)?;
 
@@ -193,12 +321,13 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         file_progress_bar.set_position(0);
 
         for file_packet in file_work_packets {
+            set_current_file(&file_packet.get_file_name()?);
+
             file_packet.process(config)?;
             file_progress_bar.inc(1);
         }
 
         album_packet.save_fresh_meta(config, true)?;
-
         album_progress_bar.inc(1);
     }
 
@@ -215,57 +344,57 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
         exit(1);
     }
 
-    let mut album_packet = AlbumWorkPacket::from_album_path(album_directory, config)?;
-
-    console::horizontal_line(None, None);
-    console::horizontal_line_with_text(
-        &format!(
+    c::horizontal_line_with_text(
+        format!(
             "{}",
-            "album aggregation"
+            style("album aggregation")
                 .cyan()
                 .bold(),
         ),
-        None, None, None,
+        None, None,
     );
-    console::horizontal_line(None, None);
-    console::new_line();
+    c::new_line();
 
+    let album_directory_string = album_directory.to_string_lossy().to_string();
     println!(
         "{} {}",
-        "Using album directory: ".italic(),
-        album_directory
-            .to_str()
-            .expect("Could not parse directory into string!")
+        style("Using album directory: ")
+            .italic(),
+        style(album_directory_string)
             .bold()
             .yellow()
     );
 
     // Verify the directory is an album.
     if !dirs::directory_is_album(config, album_directory) {
-        println!(
-            "{}", "Directory is not an album directory, exiting.".red()
+        eprintln!(
+            "{}",
+            style("Directory is not an album directory, exiting.")
+                .red()
         );
+
         exit(1);
     }
 
     println!(
         "{}",
-        "Scanning album."
-            .bright_yellow(),
+        style("Scanning album.")
+            .yellow()
+            .bright(),
     );
 
     let mut album_packet = AlbumWorkPacket::from_album_path(
         album_directory,
         config,
     )?;
-
     let total_track_count = album_packet.get_total_track_count(config)?;
 
     println!(
         "{} {}",
-        "Total album tracks:  "
-            .bright_yellow(),
-        total_track_count
+        style("Total album tracks:  ")
+            .yellow()
+            .bright(),
+        style(total_track_count)
             .green()
             .bold(),
     );
@@ -274,21 +403,24 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
 
     println!(
         "{} {}",
-        "To be processed:     "
-            .bright_yellow(),
-        file_packets.len()
+        style("To be processed:     ")
+            .yellow()
+            .bright(),
+        style(file_packets.len())
             .green()
             .bold(),
     );
-    println!();
+    c::new_line();
 
     if file_packets.len() == 0 {
         println!(
             "{}",
-            "Aggregated album is up to date, no need to continue."
-                .bright_green()
+            style("Aggregated album is up to date, no need to continue.")
+                .green()
+                .bright()
                 .bold(),
         );
+
         return Ok(());
     }
 
@@ -300,42 +432,31 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
 
     let file_progress_bar = ProgressBar::new(file_packets.len() as u64);
     file_progress_bar.set_style(progress_style);
-    file_progress_bar.set_message(
-        format!(
-            "{} {} ",
-            "File:"
-                .bright_black(),
-            "/"
-                .bright_cyan()
-                .underline()
-                .bold()
-        ),
-    );
 
-    for file_packet in file_packets {
-        let file_name = file_packet.source_file_path.file_name()
-            .ok_or(Error::new(ErrorKind::Other, "Could not convert path to string."))?
-            .to_str()
-            .ok_or(Error::new(ErrorKind::Other, "Could not convert path to string."))?;
-
+    let set_current_file = |file_name: &str| {
         file_progress_bar.set_message(
             format!(
-                "{} {} ",
-                "File:"
-                    .bright_black(),
-                file_name
-                    .bright_cyan()
-                    .underline()
-                    .bold()
+                "{} {}",
+                style("File:")
+                    .black()
+                    .bright(),
+                style(file_name)
+                    .fg(Color256(131))
+                    .underlined(),
             ),
         );
+    };
+
+    for file_packet in file_packets {
+        let file_name = file_packet.get_file_name()?;
+        set_current_file(&file_name);
 
         file_packet.process(config)?;
-
         file_progress_bar.inc(1);
     }
 
     album_packet.save_fresh_meta(config, true)?;
+
     file_progress_bar.finish();
 
     Ok(())

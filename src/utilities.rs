@@ -1,5 +1,3 @@
-use crate::console;
-
 /// Perform left-aligned string padding with spaces.
 ///
 /// Uses the get_true_string_grapheme_count function to get the "true"
@@ -11,7 +9,7 @@ use crate::console;
 /// ```
 /// would produce "hello world    " (15 chars total).
 pub fn string_left_align(string: &str, width: usize) -> String {
-    let true_length = console::get_true_string_grapheme_count(string);
+    let true_length = console::measure_text_width(string);
 
     if true_length >= width {
         string.to_string()

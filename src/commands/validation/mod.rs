@@ -2,12 +2,12 @@ mod collision_checker;
 
 use std::io::{Error, ErrorKind};
 use std::path::Path;
-
-use owo_colors::OwoColorize;
+use console::Color::Color256;
+use console::style;
 
 use super::super::configuration::{Config, ConfigLibrary};
 use super::super::filesystem as mfs;
-use super::super::console;
+use super::super::console as c;
 
 use collision_checker::CollisionChecker;
 
@@ -24,129 +24,176 @@ enum Validation {
 ///  1. each library is checked for unusual or forbidden files (see configuration file),
 ///  2. validate that there are no collisions between any of the libraries.
 pub fn cmd_validate(config: &Config) -> bool {
-    console::horizontal_line(None, None);
-    console::horizontal_line_with_text(
-        &format!(
+    c::horizontal_line(None, None);
+    c::horizontal_line_with_text(
+        format!(
             "{} {}{}{}{}",
-            "LIBRARY VALIDATION".bright_cyan(),
-            "(".bright_black(),
-            "1/2".bold().cyan(),
-            ": file types".cyan().italic(),
-            ")".bright_black(),
+            style("LIBRARY VALIDATION").fg(Color256(152)),
+            style("(").fg(Color256(7)),
+            style("1/2").bold().cyan(),
+            style(": file types").cyan().italic(),
+            style(")").fg(Color256(7)),
         ),
-        None, None, None
+        None, None,
     );
-    console::horizontal_line(None, None);
-    console::new_line();
 
     let mut collision_checker = CollisionChecker::new();
 
-    let mut step_1_errors: bool = false;
-    let mut step_2_errors: bool = false;
+    let mut step_1_errors = false;
+    let mut step_2_errors = false;
 
     // 1. check for forbidden or unusual files.
     for (_, library) in &config.libraries {
-        console::horizontal_line_with_text(
-            &format!(
+        c::horizontal_line_with_text(
+            format!(
                 "{}{} {}",
-                "🧾 Library".bright_yellow(),
-                ":".bright_black(),
-                library.name.yellow(),
+                style("🧾 Library").fg(Color256(11)),
+                style(":").fg(Color256(7)),
+                style(&library.name).yellow(),
             ),
-            None, None, None
+            None, None,
         );
 
         let validation = match validate_library(config, &library, &mut collision_checker) {
             Ok(validation) => validation,
             Err(err) => {
-                println!("{}", format!("❌ Could not validate library because of an error: {}", err).red().bold());
+                println!(
+                    "{}",
+                    style(format!("❌ Could not validate library because of an error: {}", err))
+                        .red()
+                        .bold()
+                );
                 continue
             }
         };
 
         match validation {
             Validation::Valid => {
-                println!("{}", "☑ Library files are valid!".green().bold());
+                println!(
+                    "{}",
+                    style("☑ Library files are valid!").green().bold()
+                );
             },
             Validation::Invalid(errors) => {
                 step_1_errors = true;
 
-                println!("{}", "❌ Library files are not completely valid. Here are the errors:".red().bold());
+                println!(
+                    "{}",
+                    style("❌ Library files are not completely valid. Here are the errors:")
+                        .red()
+                        .bold()
+                );
+
                 for (index, err) in errors.iter().enumerate() {
-                    println!("  {}. {}", index + 1, err);
+                    println!(
+                        "  {}. {}",
+                        index + 1,
+                        err,
+                    );
                 }
             }
         }
 
-        console::new_line();
+        c::new_line();
     }
 
     // 2. check if there were any errors during collision checks.
-    console::new_line();
-    console::horizontal_line(None, None);
-    console::horizontal_line_with_text(
-        &format!(
+    c::new_line();
+    c::horizontal_line(None, None);
+    c::horizontal_line_with_text(
+        format!(
             "{} {}{}{}{}",
-            "LIBRARY VALIDATION".bright_cyan(),
-            "(".bright_black(),
-            "2/2".bold().cyan(),
-            ": album collisions".cyan().italic(),
-            ")".bright_black(),
+            style("LIBRARY VALIDATION").fg(Color256(152)),
+            style("(").fg(Color256(7)),
+            style("2/2").bold().cyan(),
+            style(": album collisions").cyan().italic(),
+            style(")").fg(Color256(7)),
         ),
-        None, None, None
+        None, None,
     );
+    c::new_line();
 
-    println!();
     if collision_checker.collisions.len() == 0 {
-        println!("{}", "☑ No collisions found!".green().bold())
+        println!(
+            "{}",
+            style("☑ No collisions found!")
+                .green()
+                .bold()
+        );
     } else {
         step_2_errors = true;
 
-        println!("{}", "❌ Found some collisions: ".red().bold());
+        println!(
+            "{}",
+            style("❌ Found some collisions: ")
+                .red()
+                .bold()
+        );
+
         for (index, collision) in collision_checker.collisions.iter().enumerate() {
             let collision_title = format!(
                 "{} - {}",
                 collision.artist, collision.album
             );
-            let collision_title = collision_title.bold();
-            let collision_title = collision_title.bright_blue();
-            let collision_title = collision_title.underline();
+            let collision_title = style(collision_title)
+                .fg(Color256(117))
+                .bold()
+                .underlined();
 
             let collision_description = format!(
                 "{} {} {} {}",
-                "Libraries:".bright_white(),
-                collision.already_exists_in.yellow().bold(),
-                "and".bright_white(),
-                collision.collision_with.yellow().bold()
+                style("Libraries:")
+                    .bright(),
+                style(&collision.already_exists_in)
+                    .yellow()
+                    .bold(),
+                style("and")
+                    .bright(),
+                style(&collision.collision_with)
+                    .yellow()
+                    .bold()
             );
 
-            println!("  {}. {}", index + 1, collision_title);
-            println!("  {}  {}", " ".repeat((index + 1).to_string().len()), collision_description);
+            let digit_length = ((index + 1) as f32).log10().floor() as usize;
+
+            println!(
+                "  {}. {}",
+                index + 1,
+                collision_title,
+            );
+            println!(
+                "  {}  {}",
+                " ".repeat(digit_length),
+                collision_description,
+            );
         }
     }
 
-    console::new_line();
-    console::horizontal_line(None, None);
+    c::new_line();
+    c::horizontal_line(None, None);
 
     if step_1_errors || step_2_errors {
-        console::horizontal_line_with_text(
-            &format!(
+        c::horizontal_line_with_text(
+            format!(
                 "{}",
-                "All libraries processed, SOME ERRORS!".bright_red()
+                style("All libraries processed, SOME ERRORS!")
+                    .red()
+                    .bright()
             ),
-            None,None, None
+            None, None,
         );
     } else {
-        console::horizontal_line_with_text(
-            &format!(
+        c::horizontal_line_with_text(
+            format!(
                 "{}",
-                "All libraries processed, NO ERRORS.".green(),
+                style("All libraries processed, NO ERRORS.")
+                    .green()
+                    .bright(),
             ),
-            None, None, None,
+            None, None,
         );
     }
 
-    console::horizontal_line(None, None);
     step_1_errors || step_2_errors
 }
 

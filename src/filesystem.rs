@@ -38,7 +38,6 @@ pub fn list_directory_files_recursively(
     directory: &Path,
     maximum_recursion_depth: usize,
 ) -> Result<Vec<DirEntry>, Error> {
-    // TODO Test this.
     let mut aggregated_files: Vec<DirEntry> = Vec::new();
 
     // This function works non-recursively by having a stack of
@@ -72,7 +71,6 @@ pub fn list_directory_files_recusrively_filtered(
     maximum_recursion_depth: usize,
     extensions: &Vec<String>,
 ) -> Result<Vec<DirEntry>, Error> {
-    // TODO Test this.
     let mut aggregated_files: Vec<DirEntry> = Vec::new();
 
     // This function works non-recursively by having a stack of

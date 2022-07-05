@@ -1,39 +1,42 @@
+use console::{Alignment, Style, style};
+use console::Color::Color256;
 use lazy_static::lazy_static;
-use owo_colors::{OwoColorize, Style};
-use crate::{console, utilities};
 use super::super::Config;
+use crate::console as c;
+
+lazy_static! {
+    static ref HEADER_STYLE: Style = Style::new().fg(Color256(152)).bold();
+    static ref SUBHEADER_STYLE: Style = Style::new().cyan().italic();
+
+    static ref LIBRARY_NAME_STYLE: Style = Style::new().bold();
+    static ref LIBRARY_PATH_STYLE: Style = Style::new().green();
+}
+
 
 pub fn cmd_show_config(config: &Config) {
-    lazy_static! {
-        static ref HEADER_STYLE: Style = Style::new().bright_cyan().bold();
-        static ref SUBHEADER_STYLE: Style = Style::new().cyan().italic();
-        static ref LIBRARY_NAME_STYLE: Style = Style::new().bold();
-        static ref LIBRARY_PATH_STYLE: Style = Style::new().green();
-    }
-
-    console::horizontal_line(None, None);
-    console::horizontal_line_with_text(
-        &"Configuration".style(*HEADER_STYLE).to_string(),
-        None, None, None,
+    c::horizontal_line(None, None);
+    c::horizontal_line_with_text(
+        HEADER_STYLE.apply_to("Configuration").to_string(),
+        None, None,
     );
-    console::horizontal_line(None, None);
-    console::new_line();
+    c::horizontal_line(None, None);
+    c::new_line();
 
     // Basics
-    console::horizontal_line_with_text(
-        &"basics".style(*SUBHEADER_STYLE).to_string(),
-        None, None, None
+    c::horizontal_line_with_text(
+        SUBHEADER_STYLE.apply_to("basics").to_string(),
+        None, None,
     );
     println!(
         "  root_library_path = {}",
-        config.basics.root_library_path
+        config.basics.root_library_path,
     );
-    console::new_line();
+    c::new_line();
 
     // Validation
-    console::horizontal_line_with_text(
-        &"validation".style(*SUBHEADER_STYLE).to_string(),
-        None, None, None,
+    c::horizontal_line_with_text(
+        SUBHEADER_STYLE.apply_to("validation").to_string(),
+        None, None,
     );
     println!(
         "  audio_file_extensions = {:?}",
@@ -43,36 +46,43 @@ pub fn cmd_show_config(config: &Config) {
         "  ignored_file_extensions = {:?}",
         config.validation.ignored_file_extensions,
     );
-    console::new_line();
+    c::new_line();
 
     // Libraries
-    console::horizontal_line_with_text(
-        &"libraries".style(*SUBHEADER_STYLE).to_string(),
-        None, None, None,
+    c::horizontal_line_with_text(
+        SUBHEADER_STYLE.apply_to("libraries").to_string(),
+        None, None,
     );
 
     let library_count = config.libraries.len();
-    println!("There are {} available libraries:", library_count.bold());
+    println!(
+        "There are {} available libraries:",
+        style(library_count)
+            .bold(),
+    );
 
     for (_, library) in &config.libraries {
-        let library_name_styled = library.name.style(*LIBRARY_NAME_STYLE).to_string();
-        let library_path_styled = library.path.style(*LIBRARY_PATH_STYLE).to_string();
-
         println!(
             "  {} {}",
-            utilities::string_left_align(
-                &format!("{}:", library_name_styled),
+            console::pad_str(
+                &format!(
+                    "{}:",
+                    LIBRARY_NAME_STYLE.apply_to(&library.name).to_string(),
+                ),
                 20,
+                Alignment::Left,
+                None,
             ),
-            library_path_styled,
+            LIBRARY_PATH_STYLE.apply_to(&library.path)
+                .to_string(),
         );
     }
-    console::new_line();
+    c::new_line();
 
     // Aggregated library
-    console::horizontal_line_with_text(
-        &"aggregated_library".style(*SUBHEADER_STYLE).to_string(),
-        None, None, None,
+    c::horizontal_line_with_text(
+        SUBHEADER_STYLE.apply_to("aggregated_library").to_string(),
+        None, None,
     );
     println!(
         "  path = {}",
