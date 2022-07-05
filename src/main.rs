@@ -11,7 +11,6 @@ mod configuration;
 mod filesystem;
 mod commands;
 mod console;
-mod utilities;
 mod cached;
 
 
@@ -159,7 +158,17 @@ fn main() {
 
         match commands::cmd_transcode_library(&selected_library_path, &config) {
             Ok(_) => {
-                exit(0);
+                console::new_line();
+                console::horizontal_line_with_text(
+                    format!(
+                        "{}",
+                        style("Library aggregation complete.")
+                            .green()
+                            .italic()
+                            .bold()
+                    ),
+                    None, None,
+                );
             },
             Err(error) => {
                 eprintln!(

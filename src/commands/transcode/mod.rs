@@ -4,6 +4,7 @@ use std::process::exit;
 use console::Color::Color256;
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use lazy_static::lazy_static;
 
 use directories as dirs;
 
@@ -15,6 +16,14 @@ use crate::configuration::Config;
 mod meta;
 mod directories;
 mod packets;
+
+lazy_static! {
+    static ref DEFAULT_PROGRESS_BAR_STYLE: ProgressStyle = ProgressStyle::with_template(
+        "{msg:^50!} [{elapsed_precise} | {pos:>3}/{len:3}] [{bar:80.cyan/blue}]"
+    )
+        .unwrap()
+        .progress_chars("#>-");
+}
 
 pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     c::horizontal_line_with_text(
@@ -75,22 +84,16 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
     c::new_line();
 
-    let progress_style = ProgressStyle::with_template(
-        "{msg:^35!} [{elapsed_precise} / -{eta:3}] [{bar:80.cyan/blue}] {pos:>3}/{len:3}"
-    )
-        .unwrap()
-        .progress_chars("#>-");
-
     let multi_pbr = MultiProgress::new();
 
     let files_progress_bar = multi_pbr.add(ProgressBar::new(0));
-    files_progress_bar.set_style(progress_style.clone());
+    files_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
     let albums_progress_bar = multi_pbr.add(ProgressBar::new(0));
-    albums_progress_bar.set_style(progress_style.clone());
+    albums_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
     let library_progress_bar = multi_pbr.add(ProgressBar::new(filtered_library_packets.len() as u64));
-    library_progress_bar.set_style(progress_style.clone());
+    library_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
     let set_current_file  = |file_name: &str| {
         files_progress_bar.set_message(
@@ -110,7 +113,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         albums_progress_bar.set_message(
             format!(
                 "{} {}",
-                style("Album:")
+                style("💽 Album:")
                     .black()
                     .bright(),
                 style(album_name)
@@ -124,7 +127,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         library_progress_bar.set_message(
             format!(
                 "{} {}",
-                style("Library:")
+                style("📖 Library:")
                     .black()
                     .bright(),
                 style(library_name)
@@ -164,6 +167,8 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
             album_packet.save_fresh_meta(config, true)?;
             albums_progress_bar.inc(1);
         }
+
+        library_progress_bar.inc(1);
     }
 
     files_progress_bar.finish();
@@ -265,25 +270,19 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         return Ok(());
     }
 
-    let progress_style = ProgressStyle::with_template(
-        "{msg:^35!} [{elapsed_precise} / -{eta:3}] [{bar:80.cyan/blue}] {pos:>3}/{len:3}"
-    )
-        .unwrap()
-        .progress_chars("#>-");
-
     let multi_pbr = MultiProgress::new();
 
     let file_progress_bar = multi_pbr.add(ProgressBar::new(0));
-    file_progress_bar.set_style(progress_style.clone());
+    file_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
     let album_progress_bar = multi_pbr.add(ProgressBar::new(filtered_album_packets.len() as u64));
-    album_progress_bar.set_style(progress_style.clone());
+    album_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
     let set_current_file = |file_name: &str| {
         file_progress_bar.set_message(
             format!(
                 "{} {}",
-                style("File:")
+                style("🎵 File:")
                     .black()
                     .bright(),
                 style(file_name)
@@ -297,7 +296,7 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         album_progress_bar.set_message(
             format!(
                 "{} {}",
-                style("Album:")
+                style("💽 Album:")
                     .black()
                     .bright(),
                 style(album_name)
@@ -364,6 +363,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
             .bold()
             .yellow()
     );
+    c::new_line();
 
     // Verify the directory is an album.
     if !dirs::directory_is_album(config, album_directory) {
@@ -424,20 +424,14 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
         return Ok(());
     }
 
-    let progress_style = ProgressStyle::with_template(
-        "{msg:^42!} [{elapsed_precise} / -{eta:3}] [{bar:80.cyan/blue}] {pos:>3}/{len:3}"
-    )
-        .unwrap()
-        .progress_chars("#>-");
-
     let file_progress_bar = ProgressBar::new(file_packets.len() as u64);
-    file_progress_bar.set_style(progress_style);
+    file_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
     let set_current_file = |file_name: &str| {
         file_progress_bar.set_message(
             format!(
                 "{} {}",
-                style("File:")
+                style("🎵 File:")
                     .black()
                     .bright(),
                 style(file_name)

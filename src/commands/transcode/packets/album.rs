@@ -1,4 +1,4 @@
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::path::{Path, PathBuf};
 use crate::commands::transcode::meta::LibraryMeta;
 use crate::Config;
