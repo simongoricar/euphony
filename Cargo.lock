@@ -45,6 +45,7 @@ dependencies = [
  "lazy_static",
  "strsim",
  "termcolor",
+ "terminal_size",
  "textwrap",
 ]
 
@@ -101,6 +102,21 @@ name = "encode_unicode"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
+
+[[package]]
+name = "euphony"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "console",
+ "dialoguer",
+ "indicatif",
+ "lazy_static",
+ "pathdiff",
+ "serde",
+ "serde_json",
+ "toml",
+]
 
 [[package]]
 name = "fastrand"
@@ -179,21 +195,6 @@ name = "libc"
 version = "0.2.126"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349d5a591cd28b49e1d1037471617a32ddcda5731b99419008085f72d5a53836"
-
-[[package]]
-name = "music_library_manager"
-version = "0.1.0"
-dependencies = [
- "clap",
- "console",
- "dialoguer",
- "indicatif",
- "lazy_static",
- "pathdiff",
- "serde",
- "serde_json",
- "toml",
-]
 
 [[package]]
 name = "number_prefix"
@@ -386,6 +387,9 @@ name = "textwrap"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1141d4d61095b28419e22cb0bbf02755f5e54e0526f97f1e3d1d160e60885fb"
+dependencies = [
+ "terminal_size",
+]
 
 [[package]]
 name = "toml"

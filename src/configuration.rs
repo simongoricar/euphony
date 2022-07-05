@@ -1,7 +1,9 @@
-use std::fs;
-use std::path::Path;
+use std::{fs, path};
+use std::path::{Path, PathBuf};
 use std::collections::HashMap;
+use std::env::args;
 use serde::{Deserialize};
+use crate::filesystem;
 
 
 #[derive(Deserialize)]
@@ -28,6 +30,22 @@ pub struct ConfigTools {
 pub struct ConfigToolsFFMPEG {
     pub binary: String,
     pub to_mp3_v0_args: Vec<String>,
+}
+
+impl ConfigToolsFFMPEG {
+    fn after_load_init(&mut self) {
+        let mut ffmpeg_binary = get_running_executable_directory();
+        ffmpeg_binary.push(&self.binary);
+
+        let resolved_tool_dir = fs::canonicalize(ffmpeg_binary)
+            .expect("Could not canonicalize ffmpeg binary path!");
+
+        if !resolved_tool_dir.is_file() {
+            panic!("ffmpeg binary does not exist at the location specified in the tools.ffmpeg.binary field!");
+        }
+
+        self.binary = resolved_tool_dir.to_string_lossy().to_string();
+    }
 }
 
 #[derive(Deserialize)]
@@ -122,9 +140,63 @@ impl ConfigFileMetadata {
     }
 }
 
+/// Inspect the first command line argument to extract the directory the program resides in.
+/// Automatically detects whether it is running inside a debug directory (target/debug) and escapes it.
+pub fn get_running_executable_directory() -> PathBuf {
+    let current_args = args().next().expect("Could not get first argument!");
+
+    // might be "debug"
+    let full_path_directory = fs::canonicalize(Path::new(&current_args))
+        .expect("Could not get running executable path!")
+        .parent()
+        .expect("Could not get running executable directory!")
+        .to_path_buf();
+    let full_path_directory_name = full_path_directory.file_name()
+        .expect("Could not get running executable directory name!")
+        .to_string_lossy();
+
+    // Attempt to detect if we're in "debug/target" and the parent directory contains Cargo.toml".
+    if full_path_directory_name.eq("debug") {
+        // might be "target"
+        let full_path_parent = full_path_directory.parent()
+            .expect("Could not get running executable parent directory!");
+        let full_path_parent_dir_name = full_path_parent.file_name()
+            .expect("Could not get running executable parent directory name!")
+            .to_string_lossy();
+
+        if full_path_parent_dir_name.eq("target") {
+            // might be the real base directory
+            let full_path_grandparent = full_path_parent.parent()
+                .expect("Could not get running executable grandparent directory!");
+
+            // Check for Cargo.toml.
+            return match filesystem::list_directory_contents(full_path_grandparent) {
+                Ok((files, _)) => {
+                    for file in files {
+                        if file.file_name().to_string_lossy().eq("Cargo.toml") {
+                            return full_path_grandparent.to_path_buf()
+                        }
+                    }
+
+                    full_path_directory
+                },
+                Err(_) => {
+                    full_path_directory
+                }
+            };
+        }
+    }
+
+    full_path_directory
+}
 
 pub fn get_configuration_file_path() -> String {
-    let configuration_filepath = Path::new("./data/configuration.toml");
+    let mut configuration_filepath = get_running_executable_directory();
+    configuration_filepath.push("./data/configuration.toml");
+
+    let configuration_filepath = fs::canonicalize(configuration_filepath)
+        .expect("Could not canonicalize configuration.toml file path!");
+
     if !configuration_filepath.exists() {
         panic!("Could not find configuration.toml in data directory.");
     }
@@ -154,6 +226,7 @@ impl Config {
         config.validation.after_load_init();
         config.aggregated_library.after_load_init(root_library_path);
         config.file_metadata.after_load_init();
+        config.tools.ffmpeg.after_load_init();
 
         config
     }

@@ -16,14 +16,35 @@ mod cached;
 
 #[derive(Subcommand, PartialEq, Eq)]
 enum CLICommand {
+    #[clap(
+        name = "transcode-all",
+        about = "Transcode all available libraries into the aggregated library."
+    )]
     TranscodeAll,
-    TranscodeLibrary(TranscodeLibraryArgs),
-    TranscodeAlbum(TranscodeAlbumArgs),
-    Validate,
-    ShowConfig,
 
-    // TODO
-    Download,
+    #[clap(
+        name = "transcode-library",
+        about = "Transcode the selected library into the aggregated library."
+    )]
+    TranscodeLibrary(TranscodeLibraryArgs),
+
+    #[clap(
+        name = "transcode-album",
+        about = "Transcode the selected album into the aggregated library."
+    )]
+    TranscodeAlbum(TranscodeAlbumArgs),
+
+    #[clap(
+        name = "validate-all",
+        about = "Validate all libraries for aggregation (collisions, unwanted files, etc.)."
+    )]
+    ValidateAll,
+
+    #[clap(
+        name = "show-config",
+        about = "Show the current configuration."
+    )]
+    ShowConfig,
 }
 
 #[derive(Args, PartialEq, Eq)]
@@ -181,7 +202,7 @@ fn main() {
             }
         }
 
-    } else if args.command == CLICommand::Validate {
+    } else if args.command == CLICommand::ValidateAll {
         match commands::cmd_validate(&config) {
             true => exit(0),
             false => exit(1),

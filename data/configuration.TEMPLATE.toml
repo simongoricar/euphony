@@ -2,38 +2,36 @@
 # BASICS
 ####
 [basics]
-# Available as a "{ROOT}" placeholder below.
+# Serves as a "{ROOT}" placeholder in libraries and aggregated_library configuration below.
 root_library_path = "D:/_temp/MusicTesting"
-
-####
-# END OF BASICS
-####
 
 
 ####
 # TOOLS
+# Contains configuration regarding external tools that are used (ffmpeg, etc.).
 ####
 [tools]
-
+# This music manager uses ffmpeg as its workhorse for audio conversion. Its configuration is available below.
 [tools.ffmpeg]
+# Relative path from the base directory (meaning the directory containing the executable).
+# Automatically detects if it is running in debug mode (inside "target/debug" directory) and escapes that path.
 binary = "./tools/ffmpeg/bin/ffmpeg.exe"
+# This represents the arguments passed to ffmpeg when converting an audio file into MP3 V0.
+# The placeholders {INPUT_FILE} and {OUTPUT_FILE} will be replaced with the absolute path to those files on runtime.
 to_mp3_v0_args = ["-i", "{INPUT_FILE}", "-vn", "-codec:a", "libmp3lame", "-q:a", "0", "-y", "{OUTPUT_FILE}"]
-
-####
-# END OF TOOLS
-####
 
 
 ####
 # GENERAL VALIDATION
+# The "validate" command looks through all the libraries and attemps
+# to spot any weird or invalid folder structure and files.
 ####
 [validation]
+# These are the audio file extensions you allow in your libraries.
 audio_file_extensions = ["mp3", "flac", "aac", "ogg", "m4a"]
+# These are the file extensions you don't want to get alterted for.
+# (if a file's extension is not in ignored_file_extension nor in audio_file_extensions, that will trigger an error)
 ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
-
-###
-# END OF GENERAL VALIDATION
-###
 
 
 ####
@@ -56,8 +54,14 @@ ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u
 
 [libraries.lossless]
 name = "Lossless"
+# You may use the "{ROOT}" placeholder as set above in the basics table.
 path = "{ROOT}/MusicLibraryLossless"
+# This array should contain the audio file extensions you allow in this library.
+# This might be just ["flac"] or similar if this particular library is a lossless-only one, or something
+# like ["mp3", "m4a"] if you're collecting lossy audio in that one.
 audio_file_extensions = ["flac"]
+# Generally files with extension not in audio_file_extensions are treated as non-audio files and ignored during validation.
+# However, you may opt to add extension you don't want to see at all (e.g. lossy audio files in a lossless library).
 must_not_contain_extensions = ["mp3", "m4a", "opus", "aac"]
 
 [libraries.lossless_private]
@@ -78,33 +82,36 @@ path = "{ROOT}/MusicLibraryStandardPrivate"
 audio_file_extensions = ["mp3", "m4a", "opus", "aac"]
 must_not_contain_extensions = ["flac"]
 
-###
-# END OF LIBRARY
-###
-
 
 ####
 # AGGREGATED LIBRARY
+# The philosophy of this music library manager is that you should split your library
+# into smaller parts: one for lossless audio, one for lossy, one for a specific collection, etc.
+# However, this philosophy also acknowledges that you might want to take the library with you on the go,
+# something that is hard to do when it is contains possibly huge lossless files.
+#
+# This is why the aggregation ("transcode" in most of the UI) exists. It takes all of your registered "sub"-libraries
+# (see libraries configuration above) and transcodes them down into MP3 V0 into a single aggregated library you may
+# then take along with you.
 ####
 [aggregated_library]
 path = "{ROOT}/MusicLibrary"
 
-####
-# END OF AGGREGATED LIBRARY
-####
-
 
 ####
 # FILE METADATA
+# In order to optimize the speed and remove redundant transcodes, this music library manager
+# actually "tracks" your album files via a special dotfile called ".librarymeta" (placed in each album directory).
+# Implementation details are available in the README, however the purpouse of this is to
+# understand when a file has changed and must be reencoded (if it's an audio file) or recopied (if it's a data file)
 ####
 [file_metadata]
+# Files with these extensions count as audio files and will be converted into MP3 V0 during the aggregation process.
 tracked_audio_extensions = [
     "mp3", "flac", "alac", "m4a", "ogg"
 ]
+# Files with these extension count as data files and will be simply copied over into the aggregated library.
 tracked_data_extensions = [
     "png", "jpg", "jpeg", "gif"
 ]
-
-####
-# END OF FILE METADATA
-####
+# NOTE: All other files are untracked.
