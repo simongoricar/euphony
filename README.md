@@ -1,6 +1,6 @@
 <div align="center">
   <h1 align="center">euphony</h1>
-  <h6 align="center">an opinionated music library manager</h6>
+  <h6 align="center">an opinionated music library transcode manager</h6>
 </div>
 
 # Philosophy
@@ -36,9 +36,10 @@ good tradeoff between space on disk and quality (V0 is pretty much transparent a
 For transcoding efficiency it also stores very minimal metadata about each album in a file called `.librarymeta` in order 
 to know which files haven't changed and can be skipped the next time you request transcoding of your library.
 
-More importantly, here's what euphony *does not* do:
-- download your audio files,
-- move, rename or tag your files - I recommend [MusicBrainz Picard](https://picard.musicbrainz.org/) as a full-featured tagger.
+More importantly, **euphony *does not* organise your (original) audio files** - [MusicBrainz Picard](https://picard.musicbrainz.org/) 
+is a full-featured tagger, a several magnitudes better fit for this than this project could ever achieve. 
+You may even opt to use [Beets](https://beets.readthedocs.io/en/stable/) for most of this work. Regardless, euphony's place
+in the music library toolset is well-defined: software for validating your library and managing transcodes.  
 
 ---
 

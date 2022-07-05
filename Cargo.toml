@@ -2,7 +2,7 @@
 name = "euphony"
 version = "0.1.0"
 edition = "2021"
-description = "A personal and opinionated music library manager."
+description = "A personal and opinionated music library transcode manager."
 readme = "README.md"
 authors = ["Simon Goričar <simon.peter.goricar@gmail.com>"]
 repository = "https://github.com/DefaultSimon/euphony"
