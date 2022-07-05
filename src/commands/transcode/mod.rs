@@ -18,6 +18,8 @@ mod meta;
 mod directories;
 mod packets;
 
+const DEFAULT_PROGRESS_BAR_TICK_INTERVAL: Duration = Duration::from_millis(100);
+
 lazy_static! {
     static ref DEFAULT_PROGRESS_BAR_STYLE: ProgressStyle = ProgressStyle::with_template(
         "{msg:^50!} [{elapsed_precise} | {pos:>3}/{len:3}] [{bar:80.cyan/blue}]"
@@ -110,9 +112,9 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let library_progress_bar = multi_pbr.add(ProgressBar::new(filtered_library_packets.len() as u64));
     library_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
-    files_progress_bar.enable_steady_tick(Duration::new(1, 0));
-    albums_progress_bar.enable_steady_tick(Duration::new(1, 0));
-    library_progress_bar.enable_steady_tick(Duration::new(1, 0));
+    files_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
+    albums_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
+    library_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
 
     let set_current_file  = |file_name: &str| {
         files_progress_bar.set_message(
@@ -305,6 +307,9 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     let album_progress_bar = multi_pbr.add(ProgressBar::new(filtered_album_packets.len() as u64));
     album_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
+    file_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
+    album_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
+
     let set_current_file = |file_name: &str| {
         file_progress_bar.set_message(
             format!(
@@ -461,6 +466,8 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
 
     let file_progress_bar = ProgressBar::new(file_packets.len() as u64);
     file_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
+
+    file_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
 
     let set_current_file = |file_name: &str| {
         file_progress_bar.set_message(
