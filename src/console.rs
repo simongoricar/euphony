@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 // See https://www.ditig.com/256-colors-cheat-sheet for the Color256 cheat sheet.
 
 lazy_static! {
-    static ref DEFAULT_WIDTH: usize = 60;
+    static ref DEFAULT_WIDTH: usize = 80;
     static ref DEFAULT_LINE_CHAR: String = String::from('=');
     static ref DEFAULT_LINE_STYLE: Style = Style::new().fg(Color::Color256(8));
 }

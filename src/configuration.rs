@@ -1,4 +1,4 @@
-use std::{fs, path};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::env::args;
@@ -14,6 +14,9 @@ pub struct Config {
     pub libraries: HashMap<String, ConfigLibrary>,
     pub aggregated_library: ConfigAggregated,
     pub file_metadata: ConfigFileMetadata,
+
+    #[serde(skip)]
+    pub configuration_file_path: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -37,7 +40,7 @@ impl ConfigToolsFFMPEG {
         let mut ffmpeg_binary = get_running_executable_directory();
         ffmpeg_binary.push(&self.binary);
 
-        let resolved_tool_dir = fs::canonicalize(ffmpeg_binary)
+        let resolved_tool_dir = dunce::canonicalize(ffmpeg_binary)
             .expect("Could not canonicalize ffmpeg binary path!");
 
         if !resolved_tool_dir.is_file() {
@@ -146,7 +149,7 @@ pub fn get_running_executable_directory() -> PathBuf {
     let current_args = args().next().expect("Could not get first argument!");
 
     // might be "debug"
-    let full_path_directory = fs::canonicalize(Path::new(&current_args))
+    let full_path_directory = dunce::canonicalize(Path::new(&current_args))
         .expect("Could not get running executable path!")
         .parent()
         .expect("Could not get running executable directory!")
@@ -194,12 +197,12 @@ pub fn get_configuration_file_path() -> String {
     let mut configuration_filepath = get_running_executable_directory();
     configuration_filepath.push("./data/configuration.toml");
 
-    let configuration_filepath = fs::canonicalize(configuration_filepath)
-        .expect("Could not canonicalize configuration.toml file path!");
-
     if !configuration_filepath.exists() {
         panic!("Could not find configuration.toml in data directory.");
     }
+
+    let configuration_filepath = dunce::canonicalize(configuration_filepath)
+        .expect("Could not canonicalize configuration.toml file path!");
 
     String::from(
         configuration_filepath.to_str()
@@ -209,8 +212,10 @@ pub fn get_configuration_file_path() -> String {
 
 impl Config {
     pub fn load_from_path(configuration_filepath: String) -> Config {
+        let configuration_filepath = PathBuf::from(&configuration_filepath);
+
         // Read the configuration file into memory.
-        let configuration_string = fs::read_to_string(configuration_filepath)
+        let configuration_string = fs::read_to_string(&configuration_filepath)
             .expect("Could not read configuration file!");
 
         // Parse the string into a structure.
@@ -218,6 +223,9 @@ impl Config {
             .expect("Could not load configuration file!");
 
         let root_library_path = &config.basics.root_library_path;
+
+        config.configuration_file_path = dunce::canonicalize(configuration_filepath)
+            .expect("Could not canocalize configuration file path even though it has loaded!");
 
         for (_, library) in &mut config.libraries {
             library.after_load_init(root_library_path);
