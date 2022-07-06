@@ -1,4 +1,4 @@
-use console::{Alignment, Style, style};
+use console::{Style, style};
 use console::Color::Color256;
 use lazy_static::lazy_static;
 use super::super::Config;
@@ -6,10 +6,11 @@ use crate::console as c;
 
 lazy_static! {
     static ref HEADER_STYLE: Style = Style::new().fg(Color256(96)).bold().underlined();
-    static ref SUBHEADER_STYLE: Style = Style::new().cyan().italic();
+    static ref SUBHEADER_STYLE: Style = Style::new().cyan();
 
     static ref LIBRARY_NAME_STYLE: Style = Style::new().bold();
-    static ref LIBRARY_PATH_STYLE: Style = Style::new().green();
+    static ref LIBRARY_KEY_STYLE: Style = Style::new().bright().black();
+    static ref LIBRARY_PATH_STYLE: Style = Style::new().fg(Color256(107));
 }
 
 
@@ -66,29 +67,39 @@ pub fn cmd_show_config(config: &Config) {
     );
 
     let library_count = config.libraries.len();
-    println!(
-        "There are {} available libraries:",
-        style(library_count)
-            .bold(),
+    c::centered_print(
+        format!(
+            "({} available)",
+            style(library_count)
+                .bold(),
+        ),
+        None,
     );
 
-    for (_, library) in &config.libraries {
+    for (library_key, library) in &config.libraries {
         println!(
-            "  {} {}",
-            console::pad_str(
-                &format!(
-                    "{}:",
-                    LIBRARY_NAME_STYLE.apply_to(&library.name).to_string(),
-                ),
-                20,
-                Alignment::Left,
-                None,
+            "  {}",
+            format!(
+                "{} {}:",
+                LIBRARY_NAME_STYLE.apply_to(&library.name).to_string(),
+                LIBRARY_KEY_STYLE.apply_to(format!("({})", library_key)).to_string(),
             ),
-            LIBRARY_PATH_STYLE.apply_to(&library.path)
-                .to_string(),
         );
+
+        println!(
+            "    path = {}",
+            LIBRARY_PATH_STYLE.apply_to(&library.path).to_string(),
+        );
+        println!(
+            "    audio_file_extensions = {:?}",
+            &library.audio_file_extensions,
+        );
+        println!(
+            "    must_not_contain_extensions = {:?}",
+            &library.must_not_contain_extensions,
+        );
+        c::new_line();
     }
-    c::new_line();
 
     // Aggregated library
     c::centered_print(
