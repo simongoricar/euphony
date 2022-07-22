@@ -41,7 +41,7 @@ pub fn cmd_show_config(config: &Config) {
     );
     println!(
         "  root_library_path = {}",
-        config.basics.root_library_path,
+        config.essentials.root_library_path,
     );
     c::new_line();
 
@@ -51,12 +51,12 @@ pub fn cmd_show_config(config: &Config) {
         None,
     );
     println!(
-        "  audio_file_extensions = {:?}",
-        config.validation.audio_file_extensions,
+        "  allowed_other_files_by_extension = {:?}",
+        config.validation.allowed_other_files_by_extension,
     );
     println!(
-        "  ignored_file_extensions = {:?}",
-        config.validation.ignored_file_extensions,
+        "  allowed_other_files_by_name = {:?}",
+        config.validation.allowed_other_files_by_name,
     );
     c::new_line();
 
@@ -91,12 +91,8 @@ pub fn cmd_show_config(config: &Config) {
             LIBRARY_PATH_STYLE.apply_to(&library.path).to_string(),
         );
         println!(
-            "    audio_file_extensions = {:?}",
-            &library.audio_file_extensions,
-        );
-        println!(
-            "    must_not_contain_extensions = {:?}",
-            &library.must_not_contain_extensions,
+            "    allowed_audio_files_by_extension = {:?}",
+            &library.allowed_audio_files_by_extension,
         );
         c::new_line();
     }

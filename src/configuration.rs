@@ -8,7 +8,7 @@ use crate::filesystem;
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub basics: ConfigBasics,
+    pub essentials: ConfigBasics,
     pub tools: ConfigTools,
     pub validation: ConfigValidation,
     pub libraries: BTreeMap<String, ConfigLibrary>,
@@ -53,18 +53,17 @@ impl ConfigToolsFFMPEG {
 
 #[derive(Deserialize)]
 pub struct ConfigValidation {
-    pub audio_file_extensions: Vec<String>,
-    pub ignored_file_extensions: Vec<String>,
-    pub ignored_files: Vec<String>,
+    pub allowed_other_files_by_extension: Vec<String>,
+    pub allowed_other_files_by_name: Vec<String>,
+    // TODO Refactor.
+    // pub audio_file_extensions: Vec<String>,
+    // pub ignored_file_extensions: Vec<String>,
+    // pub ignored_files: Vec<String>,
 }
 
 impl ConfigValidation {
     fn after_load_init(&mut self) {
-        for ext in &mut self.audio_file_extensions {
-            ext.make_ascii_lowercase();
-        }
-
-        for ext in &mut self.ignored_file_extensions {
+        for ext in &mut self.allowed_other_files_by_extension {
             ext.make_ascii_lowercase();
         }
     }
@@ -72,29 +71,31 @@ impl ConfigValidation {
 
 #[derive(Deserialize)]
 pub struct ConfigLibrary {
+    /// Full name of the library.
     pub name: String,
+    /// Absolute path to the library (can contain {ROOT} placeholder on load).
     pub path: String,
+    /// A list of allowed audio extensions.
+    /// Any not specified here are forbidden, see configuration template for more information.
+    pub allowed_audio_files_by_extension: Vec<String>,
 
-    pub audio_file_extensions: Vec<String>,
-    pub must_not_contain_extensions: Vec<String>,
+    // TODO Refactor.
+    // pub audio_file_extensions: Vec<String>,
+    // pub must_not_contain_extensions: Vec<String>,
 }
 
 impl ConfigLibrary {
     fn after_load_init(&mut self, root_library_path: &str) {
         self.path = self.path.replace("{ROOT}", root_library_path);
 
-        // Ensure the path is valid
+        // Ensure the path is valid.
         let true_path = Path::new(&self.path);
         if !true_path.exists() {
             panic!("Library \"{}\" does not exist (path: \"{}\")!", self.name, self.path);
         }
 
-        // Make extensions lowercase
-        for ext in self.audio_file_extensions.iter_mut() {
-            ext.make_ascii_lowercase();
-        }
-
-        for ext in self.must_not_contain_extensions.iter_mut() {
+        // Make extensions lowercase.
+        for ext in &mut self.allowed_audio_files_by_extension {
             ext.make_ascii_lowercase();
         }
     }
@@ -114,7 +115,7 @@ impl ConfigAggregated {
 #[derive(Deserialize)]
 pub struct ConfigFileMetadata {
     pub tracked_audio_extensions: Vec<String>,
-    pub tracked_data_extensions: Vec<String>,
+    pub tracked_other_extensions: Vec<String>,
 
     #[serde(skip)]
     pub tracked_extensions: Vec<String>,
@@ -129,7 +130,7 @@ impl ConfigFileMetadata {
         );
 
         self.tracked_extensions.extend(
-            self.tracked_data_extensions
+            self.tracked_other_extensions
                 .iter()
                 .map(|item| item.to_string())
         );
@@ -140,7 +141,7 @@ impl ConfigFileMetadata {
     }
 
     pub fn matches_data_extension(&self, extension: &String) -> bool {
-        self.tracked_data_extensions.contains(extension)
+        self.tracked_other_extensions.contains(extension)
     }
 }
 
@@ -223,7 +224,7 @@ impl Config {
         let mut config: Config = toml::from_str(&configuration_string)
             .expect("Could not load configuration file!");
 
-        let root_library_path = &config.basics.root_library_path;
+        let root_library_path = &config.essentials.root_library_path;
 
         config.configuration_file_path = dunce::canonicalize(configuration_filepath)
             .expect("Could not canocalize configuration file path even though it has loaded!");

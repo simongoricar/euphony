@@ -1,33 +1,177 @@
-mod collision_checker;
+mod collisions;
 
+use std::fs::DirEntry;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 use console::Color::Color256;
 use console::style;
+use crate::commands::validation::collisions::CollisionAudit;
 
 use super::super::configuration::{Config, ConfigLibrary};
 use super::super::filesystem as mfs;
 use super::super::console as c;
 
-use collision_checker::CollisionChecker;
-
-
-// Validation
-enum Validation {
+enum LibraryValidationResult {
     Valid,
-    Invalid(Vec<String>)
+    Invalid {
+        invalid_file_messages: Vec<String>,
+    }
 }
 
+fn validate_library(
+    config: &Config, library: &ConfigLibrary,
+    collision_auditor: &mut CollisionAudit,
+) -> Result<LibraryValidationResult, Error> {
+    let other_allowed_extensions = &config.validation.allowed_other_files_by_extension;
+    let other_allowed_filenames = &config.validation.allowed_other_files_by_name;
+    let audio_allowed_extension = &library.allowed_audio_files_by_extension;
 
-/// Validate each individual music library (e.g. one for lossless, one for private, etc.)
-/// Validation is done in multiple steps:
-///  1. each library is checked for unusual or forbidden files (see configuration file),
-///  2. validate that there are no collisions between any of the libraries.
+    let mut invalid_file_messages: Vec<String> = Vec::new();
+
+    let library_root_path = Path::new(&library.path);
+    let (library_root_files, library_root_dirs) = mfs::list_directory_contents(library_root_path)?;
+
+    // As explained in the README and configuration template, library structure is expected to be:
+    //  <library directory>
+    //  |-- <artist>
+    //  |   |-- <album>
+    //  |   |   |-- <... audio files>
+    //  |   |   |-- <... cover art>
+    //  |   |   |-- <... possibly some album-related README, logs, etc.>
+    //  |   |   |-- <... possibly other directory that don't matter>
+    //  |   |-- <... possibly some artist-related README, etc.>
+    //  | ...
+    //  |-- ...
+
+    // This closure will attempt to match the given list of file entries with
+    // allowed_other_files_by_extension and allowed_other_files_by_name.
+    let check_nonalbum_files_for_unexpected = |entry_list: &Vec<DirEntry>, location_hint: &str| -> Result<Vec<String>, Error> {
+        let mut own_unexpected_file_messages: Vec<String> = Vec::new();
+
+        for file_entry in entry_list {
+            let file_type = file_entry.file_type()?;
+            if !file_type.is_file() {
+                return Err(Error::new(ErrorKind::Other, "Not a file!"));
+            }
+
+            let file_path = file_entry.path();
+            let file_name = file_path.file_name()
+                .ok_or(Error::new(ErrorKind::Other, "File has no name!"))?
+                .to_string_lossy()
+                .to_string();
+
+            if other_allowed_filenames.contains(&file_name) {
+                // This file happens to match by full name, so it is okay.
+                continue;
+            }
+
+            match file_path.extension() {
+                Some(ext) => {
+                    let ext= ext.to_string_lossy().to_string();
+                    if !other_allowed_extensions.contains(&ext) {
+                        // Unexpected (invalid) file.
+                        own_unexpected_file_messages.push(
+                            format!(
+                                "Unexpected file: {} (in {})",
+                                file_name,
+                                location_hint,
+                            ),
+                        );
+                    }
+                },
+                None => {
+                    // Hasn't matched by full name and can't match by extension: show as invalid.
+                    own_unexpected_file_messages.push(
+                        format!(
+                            "Unexpected file: {} (in {})",
+                            file_name,
+                            location_hint,
+                        ),
+                    );
+                }
+            }
+        }
+
+        Ok(own_unexpected_file_messages)
+    };
+
+    // TODO Improve error messages to show better context.
+
+    // Check for inconsistencies in the root directory.
+    let unexpected_root_files = check_nonalbum_files_for_unexpected(&library_root_files, "root directory")?;
+    invalid_file_messages.extend(unexpected_root_files);
+
+    // Traverse artist directories and albums inside each one.
+    for artist_directory in &library_root_dirs {
+        let artist_name = artist_directory.file_name().to_string_lossy().to_string();
+
+        let (artist_dir_files, artist_dir_dirs) = mfs::list_dir_entry_contents(artist_directory)?;
+
+        // There shouldn't be any unexpected files in the artist directory.
+        let unexpected_artist_files = check_nonalbum_files_for_unexpected(&artist_dir_files, &artist_name)?;
+        invalid_file_messages.extend(unexpected_artist_files);
+
+        for artist_album_dir in &artist_dir_dirs {
+            let album_name = artist_album_dir.file_name().to_string_lossy().to_string();
+
+            collision_auditor.add_album(&artist_name, &album_name, &library.name);
+
+            let (album_files, _) = mfs::list_dir_entry_contents(artist_album_dir)?;
+
+            // This directory can contain both audio and "other" files.
+            for album_file in album_files {
+                let album_file_filename = album_file.file_name().to_string_lossy().to_string();
+
+                if other_allowed_filenames.contains(&album_file_filename) {
+                    // This file happens to match by full name, so it is okay.
+                    continue;
+                }
+
+                match album_file.path().extension() {
+                    Some(ext) => {
+                        let ext= ext.to_string_lossy().to_string();
+                        if !other_allowed_extensions.contains(&ext) && !audio_allowed_extension.contains(&ext) {
+                            // Unexpected (invalid) file.
+                            invalid_file_messages.push(
+                                format!(
+                                    "Unexpected file in album directory: {} (in {} - {})",
+                                    album_file_filename,
+                                    artist_name,
+                                    album_name,
+                                ),
+                            );
+                        }
+                    },
+                    None => {
+                        // Hasn't matched by full name and can't match by extension: show as invalid.
+                        invalid_file_messages.push(
+                            format!(
+                                "Unexpected file in album directory: {} (in {} - {})",
+                                album_file_filename,
+                                artist_name,
+                                album_name,
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if invalid_file_messages.len() == 0 {
+        Ok(LibraryValidationResult::Valid)
+    } else {
+        Ok(LibraryValidationResult::Invalid {
+            invalid_file_messages
+        })
+    }
+}
+
 pub fn cmd_validate(config: &Config) -> bool {
     c::horizontal_line_with_text(
         format!(
             "{} {}{}{}{}",
-            style("LIBRARY VALIDATION").fg(Color256(152)),
+            style("Validation").fg(Color256(152)),
             style("(").fg(Color256(7)),
             style("1/2").bold().cyan(),
             style(": file types").cyan().italic(),
@@ -36,12 +180,12 @@ pub fn cmd_validate(config: &Config) -> bool {
         None, None,
     );
 
-    let mut collision_checker = CollisionChecker::new();
+    let mut collision_auditor = CollisionAudit::new();
 
-    let mut step_1_errors = false;
-    let mut step_2_errors = false;
+    let mut has_unexpected_files = false;
+    let mut has_collisions = false;
 
-    // 1. check for forbidden or unusual files.
+    // 1/2: Check for unexpected files.
     for (_, library) in &config.libraries {
         c::new_line();
         c::centered_print(
@@ -54,23 +198,23 @@ pub fn cmd_validate(config: &Config) -> bool {
             None,
         );
 
-        let validation = match validate_library(config, &library, &mut collision_checker) {
+        let validation = match validate_library(config, library, &mut collision_auditor) {
             Ok(validation) => validation,
-            Err(err) => {
-                println!(
+            Err(error) => {
+                eprintln!(
                     "{} Errored while validating: {}",
                     style("❗")
                         .red()
                         .bold(),
-                    style(err)
+                    style(error)
                         .red()
                 );
-                continue
+                continue;
             }
         };
 
         match validation {
-            Validation::Valid => {
+            LibraryValidationResult::Valid => {
                 println!(
                     "{} Library valid!",
                     style("☑")
@@ -78,8 +222,8 @@ pub fn cmd_validate(config: &Config) -> bool {
                         .bold(),
                 );
             },
-            Validation::Invalid(errors) => {
-                step_1_errors = true;
+            LibraryValidationResult::Invalid { invalid_file_messages } => {
+                has_unexpected_files = true;
 
                 println!(
                     "{} Invalid entries:",
@@ -87,8 +231,7 @@ pub fn cmd_validate(config: &Config) -> bool {
                         .red()
                         .bold(),
                 );
-
-                for (index, err) in errors.iter().enumerate() {
+                for (index, err) in invalid_file_messages.iter().enumerate() {
                     println!(
                         "  {}. {}",
                         index + 1,
@@ -101,12 +244,11 @@ pub fn cmd_validate(config: &Config) -> bool {
         c::new_line();
     }
 
-    // 2. check if there were any errors during collision checks.
     c::new_line();
     c::horizontal_line_with_text(
         format!(
             "{} {}{}{}{}",
-            style("LIBRARY VALIDATION").fg(Color256(152)),
+            style("Validation").fg(Color256(152)),
             style("(").fg(Color256(7)),
             style("2/2").bold().cyan(),
             style(": album collisions").cyan().italic(),
@@ -116,15 +258,8 @@ pub fn cmd_validate(config: &Config) -> bool {
     );
     c::new_line();
 
-    if collision_checker.collisions.len() == 0 {
-        println!(
-            "{} No collisions found.",
-            style("☑")
-                .green()
-                .bold()
-        );
-    } else {
-        step_2_errors = true;
+    if collision_auditor.has_collisions() {
+        has_collisions = true;
 
         println!(
             "{} Found some collisions!",
@@ -133,12 +268,14 @@ pub fn cmd_validate(config: &Config) -> bool {
                 .bold()
         );
 
-        for (index, collision) in collision_checker.collisions.iter().enumerate() {
+        // TODO
+        for (index, collision) in collision_auditor.collisions.iter().enumerate() {
             let collision_title = format!(
                 "{} - {}",
-                collision.artist, collision.album
+                collision.artist_name,
+                collision.album_title,
             );
-            let collision_title = style(collision_title)
+            let collision_title_styled = style(collision_title)
                 .fg(Color256(117))
                 .bold()
                 .underlined();
@@ -147,12 +284,12 @@ pub fn cmd_validate(config: &Config) -> bool {
                 "{} {} {} {}",
                 style("Libraries:")
                     .bright(),
-                style(&collision.already_exists_in)
+                style(&collision.colliding_libraries_by_name.0)
                     .yellow()
                     .bold(),
                 style("and")
                     .bright(),
-                style(&collision.collision_with)
+                style(&collision.colliding_libraries_by_name.1)
                     .yellow()
                     .bold()
             );
@@ -162,7 +299,7 @@ pub fn cmd_validate(config: &Config) -> bool {
             println!(
                 "  {}. {}",
                 index + 1,
-                collision_title,
+                collision_title_styled,
             );
             println!(
                 "  {}  {}",
@@ -170,15 +307,23 @@ pub fn cmd_validate(config: &Config) -> bool {
                 collision_description,
             );
         }
+
+    } else {
+        println!(
+            "{} No collisions.",
+            style("☑")
+                .green()
+                .bold()
+        );
     }
 
     c::new_line();
 
-    if step_1_errors || step_2_errors {
+    if has_unexpected_files || has_collisions {
         c::horizontal_line_with_text(
             format!(
                 "{}",
-                style("All libraries processed, SOME ERRORS!")
+                style("All libraries processed, BUT WITH SOME ERRORS!")
                     .red()
                     .bright()
             ),
@@ -196,161 +341,5 @@ pub fn cmd_validate(config: &Config) -> bool {
         );
     }
 
-    step_1_errors || step_2_errors
-}
-
-fn validate_library(
-    config: &Config, library: &ConfigLibrary, collision_checker: &mut CollisionChecker
-) -> Result<Validation, Error> {
-    let mut invalid_list: Vec<String> = Vec::new();
-
-    let audio_file_extensions = &library.audio_file_extensions;
-    let must_not_contain_ext = &library.must_not_contain_extensions;
-
-    let base_path = &library.path;
-    let (files, directories) = mfs::list_directory_contents(Path::new(base_path))?;
-
-    // Library structure should be:
-    //  <library directory>
-    //  |-- <artist>
-    //  |   |-- <album>
-    //  |   |   |-- <... audio files>
-    //  |   |   |-- <... cover art>
-    //  |   |   |-- <... possibly some album-related README, etc.>
-    //  |   |   |-- <... possibly other directory that don't matter>
-    //  |   |-- <... possibly some artist-related README, etc.>
-    //  | ...
-    //  |--
-
-    // There should not be any audio files in the base directory.
-    for file in &files {
-        let file_path = file.path();
-
-        let extension = match mfs::get_dir_entry_file_extension(file) {
-            Ok(ext) => ext,
-            Err(_) => {
-                eprintln!("Warning: could not get root dir file extension for {:?}.", file_path);
-                continue
-            }
-        };
-
-        if config.validation.audio_file_extensions.contains(&extension) {
-            let file_name = match file_path.file_name() {
-                Some(name) => name,
-                None => {
-                    return Err(Error::new(ErrorKind::Other, "Could not get file name."))
-                }
-            };
-            invalid_list.push(
-                format!(
-                    "Unexpected audio file in base directory: {}",
-                    file_name.to_str().expect("Could not get string from file name.")
-                )
-            )
-        }
-    }
-
-    for artist_dir in &directories {
-        let artist_name = mfs::get_dir_entry_name(artist_dir).unwrap();
-        let (artist_files, artist_directories) = mfs::list_dir_entry_contents(artist_dir)?;
-
-        // There should not be any audio files in the artist directory.
-        for artist_dir_file in &artist_files {
-            let extension = match mfs::get_dir_entry_file_extension(artist_dir_file) {
-                Ok(ext) => ext,
-                Err(_) => {
-                    eprintln!("Warning: could not get artist dir file extension for {:?}.", artist_dir_file.path());
-                    continue
-                }
-            };
-
-            if config.validation.audio_file_extensions.contains(&extension) {
-                let unexpected_file_name_owned = artist_dir_file.file_name();
-                let unexpected_file_name = unexpected_file_name_owned
-                    .to_str()
-                    .expect("Could not extract file name.");
-
-                invalid_list.push(
-                    format!(
-                        "Unexpected audio file in artist base directory: {} (in {})",
-                        unexpected_file_name,
-                        artist_name,
-                    )
-                );
-            }
-        }
-
-        for album_dir in &artist_directories {
-            let album_name = mfs::get_dir_entry_name(album_dir).unwrap();
-            let (album_files, _) = mfs::list_dir_entry_contents(album_dir)?;
-
-            collision_checker.add_album(&artist_name, &album_name, &library.name);
-
-            // This directory can contain audio files and any files specified in the ignored_file_extensions config value.
-            for track_file in album_files {
-                let file_name_owned = track_file.file_name();
-                let file_name = file_name_owned
-                    .to_str()
-                    .expect("Could not extract file name.");
-
-                if config.validation.ignored_files.contains(&file_name.to_string()) {
-                    continue;
-                }
-
-                let extension = match mfs::get_dir_entry_file_extension(&track_file) {
-                    Ok(ext) => ext,
-                    Err(_) => {
-                        // Some files don't have extensions. If they are in the validation.ignored_files list,
-                        // they are filtered out above. But if not, those files should be flagged as forbidden.
-                        invalid_list.push(
-                            format!(
-                                "Forbidden extensionless file ({}) in album directory: {} (in {} - {})",
-                                file_name,
-                                file_name,
-                                artist_name,
-                                album_name,
-                            )
-                        );
-
-                        continue
-                    }
-                };
-
-                let is_ok_audio_file = audio_file_extensions.contains(&extension);
-                let is_ignored = config.validation.ignored_file_extensions.contains(&extension);
-                let is_specifically_forbidden = must_not_contain_ext.contains(&extension);
-
-                if is_specifically_forbidden {
-                    invalid_list.push(
-                        format!(
-                            "Forbidden extension ({}) in album directory: {} (in {} - {})",
-                            extension,
-                            file_name,
-                            artist_name,
-                            album_name,
-                        )
-                    );
-
-                } else if is_ok_audio_file || is_ignored {
-                    continue
-
-                } else {
-                    invalid_list.push(
-                        format!(
-                            "Unexpected file in album directory: {} (in {} - {})",
-                            file_name,
-                            artist_name,
-                            album_name,
-                        )
-                    );
-                }
-            }
-        }
-    }
-
-    if invalid_list.len() == 0 {
-        Ok(Validation::Valid)
-    } else {
-        Ok(Validation::Invalid(invalid_list))
-    }
+    has_unexpected_files || has_collisions
 }

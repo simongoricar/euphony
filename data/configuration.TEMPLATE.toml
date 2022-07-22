@@ -1,10 +1,9 @@
 ####
-# BASICS
+# ESSENTIALS
 ####
-[basics]
+[essentials]
 # Serves as a "{ROOT}" placeholder in libraries and aggregated_library configuration below.
 root_library_path = "D:/_temp/MusicTesting"
-
 
 ####
 # TOOLS
@@ -15,6 +14,7 @@ root_library_path = "D:/_temp/MusicTesting"
 [tools.ffmpeg]
 # Relative path from the base directory (meaning the directory containing the executable).
 # Automatically detects if it is running in debug mode (inside "target/debug" directory) and escapes that path.
+# TODO Simplify this by adding another placeholder for tools.
 binary = "./tools/ffmpeg/bin/ffmpeg.exe"
 # This represents the arguments passed to ffmpeg when converting an audio file into MP3 V0.
 # The placeholders {INPUT_FILE} and {OUTPUT_FILE} will be replaced with the absolute path to those files on runtime.
@@ -22,18 +22,21 @@ to_mp3_v0_args = ["-i", "{INPUT_FILE}", "-vn", "-codec:a", "libmp3lame", "-q:a",
 
 
 ####
-# GENERAL VALIDATION
-# The "validate" command looks through all the libraries and attemps
-# to spot any weird or invalid folder structure and files.
+# LIBRARY VALIDATION
+# The "validate-all" command looks through all available libraries and attemps to spot any unusual or downright
+# invalid folder structure and files. The function of the settings below is to give some defaults for each library
+# regarding non-audio ("other") files. This is intended for stuff like allowing cover art files, logs, playlists, etc.
 ####
 [validation]
-# These are the audio file extensions you allow in your libraries.
-audio_file_extensions = ["mp3", "flac", "aac", "ogg", "m4a"]
-# These are the file extensions you don't want to get alterted for.
-# (if a file's extension is not in ignored_file_extension nor in audio_file_extensions, that will trigger an error)
-ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
-# These files are always ignored by their full name.
-ignored_files = [".librarymeta"]
+# The distinction between audio (you'll see it below) and other files is made to detect erroneous audio files in
+# e.g. the root or artist directory. To be clear: "other" files mean files everywhere,
+# but "audio" files mean those only in the album directories.
+allowed_other_files_by_extension = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
+# These files are always ignored and do not cause validation errors (these are matched by full file name).
+# (".librarymeta" is a mandatory entry if you use the transcode commands)
+allowed_other_files_by_name = [".librarymeta"]
+# NOTE: If a file without a valid extension or name match is found during the scan, it is marked
+# as an unexpected file and makes the validation fail (this is the entire point of validation).
 
 
 ####
@@ -45,7 +48,7 @@ ignored_files = [".librarymeta"]
 #  |   |-- <album>
 #  |   |   |-- <... audio files>
 #  |   |   |-- <... cover art>
-#  |   |   |-- <... possibly some album-related README, etc.>
+#  |   |   |-- <... possibly some album-related README, logs, etc.>
 #  |   |   |-- <... possibly other directory that don't matter>
 #  |   |-- <... possibly some artist-related README, etc.>
 #  | ...
@@ -55,34 +58,31 @@ ignored_files = [".librarymeta"]
 [libraries]
 
 [libraries.lossless]
+# This is the full name of your library.
 name = "Lossless"
-# You may use the "{ROOT}" placeholder as set above in the basics table.
+# This is the full absolute path to your library. You may use the "{ROOT}" placeholder that was set above
+# in the essentials table to avoid typing the absolute path each time.
 path = "{ROOT}/MusicLibraryLossless"
-# This array should contain the audio file extensions you allow in this library.
-# This might be just ["flac"] or similar if this particular library is a lossless-only one, or something
-# like ["mp3", "m4a"] if you're collecting lossy audio in that one.
-audio_file_extensions = ["flac"]
-# Generally files with extension not in audio_file_extensions are treated as non-audio files and ignored during validation.
-# However, you may opt to add extension you don't want to see at all (e.g. lossy audio files in a lossless library).
-must_not_contain_extensions = ["mp3", "m4a", "opus", "aac"]
+# This array should contain the audio file extensions you allow in this library. Note that euphony expects the exact
+# library structure descibed above. File extensions from this option are used when scanning album directories.
+# Any file that does not match allowed_other_files_by_extension, allowed_other_files_by_name or this one shows up
+# as an invalid file during the validation process (as is to be expected, it's an unexpected file after all).
+allowed_audio_files_by_extension = ["flac"]
 
 [libraries.lossless_private]
 name = "Lossless Private"
 path = "{ROOT}/MusicLibraryLosslessPrivate"
-audio_file_extensions = ["flac"]
-must_not_contain_extensions = ["mp3", "m4a", "opus", "aac"]
+allowed_audio_files_by_extension = ["flac"]
 
 [libraries.standard]
 name = "Standard"
 path = "{ROOT}/MusicLibraryStandard"
-audio_file_extensions = ["mp3", "m4a", "opus", "aac"]
-must_not_contain_extensions = ["flac"]
+allowed_audio_files_by_extension = ["mp3"]
 
 [libraries.standard_private]
 name = "Standard Private"
 path = "{ROOT}/MusicLibraryStandardPrivate"
-audio_file_extensions = ["mp3", "m4a", "opus", "aac"]
-must_not_contain_extensions = ["flac"]
+allowed_audio_files_by_extension = ["mp3"]
 
 
 ####
@@ -92,9 +92,8 @@ must_not_contain_extensions = ["flac"]
 # However, this philosophy also acknowledges that you might want to take the library with you on the go,
 # something that is hard to do when it is contains possibly huge lossless files.
 #
-# This is why the aggregation ("transcode" in most of the UI) exists. It takes all of your registered "sub"-libraries
-# (see libraries configuration above) and transcodes them down into MP3 V0 into a single aggregated library you may
-# then take along with you.
+# This is why the aggregation ("transcode" in most of the CLI) exists. It takes all of your registered "sub-libraries"
+# (see `libraries` above) and transcodes them down into MP3 V0 into a single aggregated library you may then take along with you.
 ####
 [aggregated_library]
 path = "{ROOT}/MusicLibrary"
@@ -102,18 +101,19 @@ path = "{ROOT}/MusicLibrary"
 
 ####
 # FILE METADATA
-# In order to optimize the speed and remove redundant transcodes, this music library manager
-# actually "tracks" your album files via a special dotfile called ".librarymeta" (placed in each album directory).
-# Implementation details are available in the README, however the purpouse of this is to
-# understand when a file has changed and must be reencoded (if it's an audio file) or recopied (if it's a data file)
+# In order to optimize the speed and remove redundant transcodes, euphony actually "tracks" your album files
+# via a special dotfile called ".librarymeta" (placed in each album directory).
+# Implementation details are available in the README, but the general idea and purpouse of those files are to
+# understand when any single file has changed and has to be reencoded (if it's an audio file) or recopied (if it's a data file).
 ####
 [file_metadata]
 # Files with these extensions count as audio files and will be converted into MP3 V0 during the aggregation process.
+# There are no library-specific settings here.
 tracked_audio_extensions = [
     "mp3", "flac", "alac", "m4a", "ogg"
 ]
 # Files with these extension count as data files and will be simply copied over into the aggregated library.
-tracked_data_extensions = [
+tracked_other_extensions = [
     "png", "jpg", "jpeg", "gif"
 ]
 # NOTE: All other files are untracked.
