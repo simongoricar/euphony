@@ -41,7 +41,12 @@ impl ConfigToolsFFMPEG {
         ffmpeg_binary.push(&self.binary);
 
         let resolved_tool_dir = dunce::canonicalize(ffmpeg_binary)
-            .expect("Could not canonicalize ffmpeg binary path!");
+            .expect(
+                &format!(
+                    "Could not canonicalize ffmpeg binary path! Executable dir: {:?}",
+                    get_running_executable_directory(),
+                ),
+            );
 
         if !resolved_tool_dir.is_file() {
             panic!("ffmpeg binary does not exist at the location specified in the tools.ffmpeg.binary field!");
