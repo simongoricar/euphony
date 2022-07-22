@@ -23,7 +23,7 @@ pub fn cmd_show_config(config: &Config) {
     let configuration_file_path_str = config.configuration_file_path.to_string_lossy();
     c::centered_print(
         format!(
-            "(using: {})",
+            "(using {})",
             style(configuration_file_path_str)
                 .yellow()
                 .bright()
@@ -110,4 +110,46 @@ pub fn cmd_show_config(config: &Config) {
         "  path = {}",
         config.aggregated_library.path,
     );
+}
+
+pub fn cmd_list_libraries(config: &Config) {
+    c::horizontal_line_with_text(
+        HEADER_STYLE.apply_to("Libraries").to_string(),
+        None, None,
+    );
+    let configuration_file_path_str = config.configuration_file_path.to_string_lossy();
+    c::centered_print(
+        format!(
+            "(using {})",
+            style(configuration_file_path_str)
+                .yellow()
+                .bright()
+                .italic(),
+        ),
+        None,
+    );
+    c::new_line();
+
+    println!(
+        "There are {} libraries available:",
+        style(config.libraries.len())
+            .bold(),
+    );
+
+    for (library_key, library) in &config.libraries {
+        println!(
+            "  {} {}",
+            LIBRARY_KEY_STYLE
+                .apply_to(
+                    format!(
+                        "{:>22}",
+                        format!("({})", library_key),
+                    )
+                )
+                .to_string(),
+            LIBRARY_NAME_STYLE
+                .apply_to(&library.name)
+                .to_string(),
+        );
+    }
 }

@@ -45,6 +45,12 @@ enum CLICommand {
         about = "Show the current configuration."
     )]
     ShowConfig,
+
+    #[clap(
+        name = "list-libraries",
+        about = "List all available libraries."
+    )]
+    ListLibraries,
 }
 
 #[derive(Args, PartialEq, Eq)]
@@ -210,6 +216,9 @@ fn main() {
 
     } else if args.command == CLICommand::ShowConfig {
         commands::cmd_show_config(&config);
+
+    } else if args.command == CLICommand::ListLibraries {
+        commands::cmd_list_libraries(&config);
 
     } else {
         panic!("Unexpected/unimplemented command!");

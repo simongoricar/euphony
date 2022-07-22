@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::env::args;
 use serde::{Deserialize};
 use crate::filesystem;
@@ -11,7 +11,7 @@ pub struct Config {
     pub basics: ConfigBasics,
     pub tools: ConfigTools,
     pub validation: ConfigValidation,
-    pub libraries: HashMap<String, ConfigLibrary>,
+    pub libraries: BTreeMap<String, ConfigLibrary>,
     pub aggregated_library: ConfigAggregated,
     pub file_metadata: ConfigFileMetadata,
 
