@@ -32,6 +32,8 @@ audio_file_extensions = ["mp3", "flac", "aac", "ogg", "m4a"]
 # These are the file extensions you don't want to get alterted for.
 # (if a file's extension is not in ignored_file_extension nor in audio_file_extensions, that will trigger an error)
 ignored_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
+# These files are always ignored by their full name.
+ignored_files = [".librarymeta"]
 
 
 ####

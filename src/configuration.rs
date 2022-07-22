@@ -55,6 +55,7 @@ impl ConfigToolsFFMPEG {
 pub struct ConfigValidation {
     pub audio_file_extensions: Vec<String>,
     pub ignored_file_extensions: Vec<String>,
+    pub ignored_files: Vec<String>,
 }
 
 impl ConfigValidation {
