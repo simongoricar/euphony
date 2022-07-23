@@ -1,6 +1,6 @@
 <div align="center">
   <h1 align="center">euphony</h1>
-  <h6 align="center">an opinionated music library transcode manager</h6>
+  <h6 align="center">an opinionated <sup>(read: personal)</sup> music library transcode manager</h6>
 </div>
 
 # Philosophy
@@ -44,6 +44,13 @@ You may even opt to use [Beets](https://beets.readthedocs.io/en/stable/) for mos
 
 **Regardless, `euphony`'s place in my (and maybe yours) music library toolset is well-defined: 
 a CLI for validating your library and managing transcodes for on-the-go listening quickly and efficiently.**  
+
+---
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/DefaultSimon/euphony/master/assets/euphony-short-demo.gif" width="90%" height="auto">
+  <div>Short demo of the transcoding process.</div>
+</div>
 
 ---
 
