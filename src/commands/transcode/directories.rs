@@ -1,7 +1,7 @@
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
-use crate::Config;
 
+use crate::Config;
 
 pub fn directory_is_library(config: &Config, directory_path: &Path) -> bool {
     for (_, library) in &config.libraries {

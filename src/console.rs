@@ -1,4 +1,5 @@
 use std::ops::Div;
+
 use console::{Alignment, Color, Style};
 use lazy_static::lazy_static;
 

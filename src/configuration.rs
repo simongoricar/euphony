@@ -1,10 +1,11 @@
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::collections::BTreeMap;
 use std::env::args;
-use serde::{Deserialize};
-use crate::filesystem;
+use std::fs;
+use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
+
+use crate::filesystem;
 
 #[derive(Deserialize)]
 pub struct Config {

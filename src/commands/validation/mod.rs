@@ -1,15 +1,17 @@
-mod collisions;
-
 use std::fs::DirEntry;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
+
 use console::Color::Color256;
 use console::style;
+
 use crate::commands::validation::collisions::CollisionAudit;
 
 use super::super::configuration::{Config, ConfigLibrary};
-use super::super::filesystem as mfs;
 use super::super::console as c;
+use super::super::filesystem as mfs;
+
+mod collisions;
 
 enum LibraryValidationResult {
     Valid,

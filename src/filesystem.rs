@@ -3,7 +3,6 @@ use std::fs::DirEntry;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
-
 /// Given a path, scan its contents and return
 /// a Result: when Ok it is a tuple of two Vec<DirEntry> elements,
 /// the first one containing the files, the second one directories.

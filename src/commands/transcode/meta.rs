@@ -1,6 +1,6 @@
-use std::fs;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::fs;
 use std::io::{Error, ErrorKind, Write};
 use std::ops::Sub;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use crate::{Config, filesystem};
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
-
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LibraryMeta {

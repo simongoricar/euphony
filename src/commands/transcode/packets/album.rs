@@ -1,11 +1,11 @@
 use std::io::Error;
 use std::path::{Path, PathBuf};
-use crate::commands::transcode::meta::LibraryMeta;
-use crate::Config;
+
 use crate::cached::CachedValue;
 use crate::commands::transcode::directories::AlbumDirectoryInfo;
+use crate::commands::transcode::meta::LibraryMeta;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
-
+use crate::Config;
 
 /// Represents a grouping of file packets into a single album.
 /// Using this struct we can generate a list of file work packets in the album.

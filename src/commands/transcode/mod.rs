@@ -4,19 +4,19 @@ use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
+
 use console::Color::Color256;
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
-use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
 use directories as dirs;
 
-use crate::console as c;
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
 use crate::configuration::Config;
+use crate::console as c;
 
 mod meta;
 mod directories;

@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
 use crate::{Config, filesystem};
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 

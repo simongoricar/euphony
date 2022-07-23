@@ -1,9 +1,9 @@
 use std::{env, path};
 use std::path::PathBuf;
 use std::process::exit;
-use ::console::style;
 
-use clap::{Parser, Args, Subcommand};
+use ::console::style;
+use clap::{Args, Parser, Subcommand};
 
 use configuration::Config;
 

@@ -1,8 +1,10 @@
 use console::{Style, style};
 use console::Color::Color256;
 use lazy_static::lazy_static;
-use super::super::Config;
+
 use crate::console as c;
+
+use super::super::Config;
 
 lazy_static! {
     static ref HEADER_STYLE: Style = Style::new().fg(Color256(96)).bold().underlined();

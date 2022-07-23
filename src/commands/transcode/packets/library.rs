@@ -1,7 +1,8 @@
 use std::io::{Error, ErrorKind};
 use std::path::Path;
-use crate::commands::transcode::packets::album::AlbumWorkPacket;
+
 use crate::{Config, filesystem};
+use crate::commands::transcode::packets::album::AlbumWorkPacket;
 
 #[derive(Clone)]
 pub struct LibraryWorkPacket {
