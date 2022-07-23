@@ -18,43 +18,50 @@ mod cached;
 enum CLICommand {
     #[clap(
         name = "transcode-all",
-        about = "Transcode all available libraries into the aggregated library."
+        about = "Transcode all registered libraries into the aggregated (transcoded) library."
     )]
     TranscodeAll,
 
     #[clap(
         name = "transcode-library",
-        about = "Transcode the selected library into the aggregated library."
+        about = "Transcode only the specified library into the aggregated (transcoded) library. \
+                 Requires a single positional parameter: the library name (by full name), \
+                 as configured in the configuration file."
     )]
     TranscodeLibrary(TranscodeLibraryArgs),
 
     #[clap(
         name = "transcode-album",
-        about = "Transcode the selected album into the aggregated library."
+        about = "Transcode only the specified album into the aggregated (transcoded) library. \
+                 The current directory is used by default, but you may pass a different one \
+                 using \"--dir <path>\"."
     )]
     TranscodeAlbum(TranscodeAlbumArgs),
 
     #[clap(
         name = "validate-all",
-        about = "Validate all libraries (collisions, unwanted files, etc.)."
+        about = "Validate all of the available (sub)libraries for inconsistencies, such as \
+                 forbidden files, any inter-library collisions that would cause problems \
+                 when aggregating (transcoding), etc."
     )]
     ValidateAll,
 
     #[clap(
         name = "validate-library",
-        about = "Validate a specific library for unwanted files."
+        about = "Validate a specific library for for inconsistencies, such as forbidden files."
     )]
     ValidateLibrary(ValidateLibraryArgs),
 
     #[clap(
         name = "show-config",
-        about = "Show the current configuration."
+        about = "Loads, validates and prints the current configuration from `./data/configuration.toml`."
+        // TODO Continue from here.
     )]
     ShowConfig,
 
     #[clap(
         name = "list-libraries",
-        about = "List all available libraries."
+        about = "List all of the registered libraries."
     )]
     ListLibraries,
 }
@@ -79,7 +86,7 @@ struct TranscodeLibraryArgs {
 #[derive(Args, PartialEq, Eq)]
 struct ValidateLibraryArgs {
     #[clap(
-    help = "Library to process (by full name)."
+        help = "Library to process (by full name)."
     )]
     library_name: String,
 }
@@ -89,20 +96,37 @@ struct ValidateLibraryArgs {
     name = "euphony",
     author = "Simon G. <simon.peter.goricar@gmail.com>",
     about = "An opinionated music library transcode manager.",
+    // TODO
+    // long_about = "TODO",
     version
 )]
 struct CLIArgs {
+    #[clap(
+        short = 'c',
+        long = "config",
+        help = "Optionally a path to your configuration file. Without this option, \
+                euphony tries to load ./data/configuration.toml, but understandably this \
+                might not always be the most convinient location."
+    )]
+    config: Option<String>,
+
     #[clap(subcommand)]
     command: CLICommand,
 }
 
+fn get_configuration(args: &CLIArgs) -> Config {
+    if args.config.is_some() {
+        Config::load_from_path(args.config.clone().unwrap())
+    } else {
+        Config::load_default_path()
+    }
+}
 
 fn main() {
-    let config = Config::load();
     let args: CLIArgs = CLIArgs::parse();
 
     if args.command == CLICommand::TranscodeAll {
-        match commands::cmd_transcode_all(&config) {
+        match commands::cmd_transcode_all(&get_configuration(&args)) {
             Ok(_) => {
                 console::new_line();
                 console::horizontal_line_with_text(
@@ -139,8 +163,8 @@ fn main() {
             }
         };
 
-    } else if let CLICommand::TranscodeAlbum(args) = args.command {
-        let selected_directory = match args.directory {
+    } else if let CLICommand::TranscodeAlbum(ta_args) = &args.command {
+        let selected_directory = match &ta_args.directory {
             Some(dir) => path::PathBuf::from(dir),
             None => {
                 env::current_dir()
@@ -148,7 +172,7 @@ fn main() {
             }
         };
 
-        match commands::cmd_transcode_album(&selected_directory, &config) {
+        match commands::cmd_transcode_album(&selected_directory, &get_configuration(&args)) {
             Ok(_) => {
                 console::new_line();
                 console::horizontal_line_with_text(
@@ -187,15 +211,17 @@ fn main() {
             }
         };
 
-    } else if let CLICommand::TranscodeLibrary(args) = args.command {
-        let selected_library = match config.get_library_by_full_name(&args.library_name) {
+    } else if let CLICommand::TranscodeLibrary(tl_args) = &args.command {
+        let config = get_configuration(&args);
+
+        let selected_library = match config.get_library_by_full_name(&tl_args.library_name) {
             Some(library) => library,
             None => {
                 eprintln!(
                     "{} {}",
                     style("No such library:")
                         .red(),
-                    args.library_name,
+                    tl_args.library_name,
                 );
                 exit(1);
             }
@@ -229,22 +255,22 @@ fn main() {
         }
 
     } else if args.command == CLICommand::ValidateAll {
-        match commands::cmd_validate_all(&config) {
+        match commands::cmd_validate_all(&get_configuration(&args)) {
             true => exit(0),
             false => exit(1),
         }
 
-    } else if let CLICommand::ValidateLibrary(args) = args.command {
-        match commands::cmd_validate_library(&config, args.library_name) {
+    } else if let CLICommand::ValidateLibrary(vl_args) = &args.command {
+        match commands::cmd_validate_library(&get_configuration(&args), &vl_args.library_name) {
             true => exit(0),
             false => exit(1),
         };
 
     } else if args.command == CLICommand::ShowConfig {
-        commands::cmd_show_config(&config);
+        commands::cmd_show_config(&get_configuration(&args));
 
     } else if args.command == CLICommand::ListLibraries {
-        commands::cmd_list_libraries(&config);
+        commands::cmd_list_libraries(&get_configuration(&args));
 
     } else {
         panic!("Unexpected/unimplemented command!");

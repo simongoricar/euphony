@@ -264,8 +264,8 @@ pub fn get_configuration_file_path() -> String {
 }
 
 impl Config {
-    pub fn load_from_path(configuration_filepath: String) -> Config {
-        let configuration_filepath = PathBuf::from(&configuration_filepath);
+    pub fn load_from_path<S: Into<String>>(configuration_filepath: S) -> Config {
+        let configuration_filepath = PathBuf::from(configuration_filepath.into());
 
         // Read the configuration file into memory.
         let configuration_string = fs::read_to_string(&configuration_filepath)
@@ -292,7 +292,7 @@ impl Config {
         config
     }
 
-    pub fn load() -> Config {
+    pub fn load_default_path() -> Config {
         Config::load_from_path(get_configuration_file_path())
     }
 
