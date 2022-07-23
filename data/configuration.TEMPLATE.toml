@@ -1,9 +1,17 @@
 ####
 # ESSENTIALS
+# This configuration table contains the most essential configuration values.
+# You may use the "{SELF}" placeholder in these paths, it refers to
+# the location (directory) of the CLI binary.
 ####
 [essentials]
-# Serves as a "{ROOT}" placeholder in libraries and aggregated_library configuration below.
-root_library_path = "D:/_temp/MusicTesting"
+# `base_library_path` will become the "{LIBRARY_BASE}" placeholder in several tables below:
+# - libraries,
+# - aggregated_library.
+base_library_path = "D:/_temp/MusicTesting"
+# `base_tools_path` will become the "{TOOLS_BASE}" placeholder for use in the `tools` configuration table below.
+base_tools_path = "{SELF}/../tools/"
+
 
 ####
 # TOOLS
@@ -14,8 +22,7 @@ root_library_path = "D:/_temp/MusicTesting"
 [tools.ffmpeg]
 # Relative path from the base directory (meaning the directory containing the executable).
 # Automatically detects if it is running in debug mode (inside "target/debug" directory) and escapes that path.
-# TODO Simplify this by adding another placeholder for tools.
-binary = "./tools/ffmpeg/bin/ffmpeg.exe"
+binary = "{TOOLS_BASE}/ffmpeg/bin/ffmpeg.exe"
 # This represents the arguments passed to ffmpeg when converting an audio file into MP3 V0.
 # The placeholders {INPUT_FILE} and {OUTPUT_FILE} will be replaced with the absolute path to those files on runtime.
 to_mp3_v0_args = ["-i", "{INPUT_FILE}", "-vn", "-codec:a", "libmp3lame", "-q:a", "0", "-y", "{OUTPUT_FILE}"]
@@ -60,9 +67,9 @@ allowed_other_files_by_name = [".librarymeta"]
 [libraries.lossless]
 # This is the full name of your library.
 name = "Lossless"
-# This is the full absolute path to your library. You may use the "{ROOT}" placeholder that was set above
+# This is the full absolute path to your library. You may use the "{LIBRARY_BASE}" placeholder that was set above
 # in the essentials table to avoid typing the absolute path each time.
-path = "{ROOT}/MusicLibraryLossless"
+path = "{LIBRARY_BASE}/MusicLibraryLossless"
 # This array should contain the audio file extensions you allow in this library. Note that euphony expects the exact
 # library structure descibed above. File extensions from this option are used when scanning album directories.
 # Any file that does not match allowed_other_files_by_extension, allowed_other_files_by_name or this one shows up
@@ -71,17 +78,17 @@ allowed_audio_files_by_extension = ["flac"]
 
 [libraries.lossless_private]
 name = "Lossless Private"
-path = "{ROOT}/MusicLibraryLosslessPrivate"
+path = "{LIBRARY_BASE}/MusicLibraryLosslessPrivate"
 allowed_audio_files_by_extension = ["flac"]
 
 [libraries.standard]
 name = "Standard"
-path = "{ROOT}/MusicLibraryStandard"
+path = "{LIBRARY_BASE}/MusicLibraryStandard"
 allowed_audio_files_by_extension = ["mp3"]
 
 [libraries.standard_private]
 name = "Standard Private"
-path = "{ROOT}/MusicLibraryStandardPrivate"
+path = "{LIBRARY_BASE}/MusicLibraryStandardPrivate"
 allowed_audio_files_by_extension = ["mp3"]
 
 
@@ -96,7 +103,7 @@ allowed_audio_files_by_extension = ["mp3"]
 # (see `libraries` above) and transcodes them down into MP3 V0 into a single aggregated library you may then take along with you.
 ####
 [aggregated_library]
-path = "{ROOT}/MusicLibrary"
+path = "{LIBRARY_BASE}/MusicLibrary"
 
 
 ####

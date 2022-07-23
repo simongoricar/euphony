@@ -8,7 +8,7 @@ use crate::filesystem;
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub essentials: ConfigBasics,
+    pub essentials: ConfigEssentials,
     pub tools: ConfigTools,
     pub validation: ConfigValidation,
     pub libraries: BTreeMap<String, ConfigLibrary>,
@@ -20,13 +20,52 @@ pub struct Config {
 }
 
 #[derive(Deserialize)]
-pub struct ConfigBasics {
-    pub root_library_path: String,
+pub struct ConfigEssentials {
+    pub base_library_path: String,
+    pub base_tools_path: String,
+}
+
+impl ConfigEssentials {
+    fn after_load_init(&mut self) {
+        // Replaces any placeholders and validates the paths.
+        let executable_dir = get_running_executable_directory()
+            .to_string_lossy()
+            .to_string();
+
+        self.base_library_path = self.base_library_path.replace("{SELF}", &executable_dir);
+        self.base_tools_path = self.base_tools_path.replace("{SELF}", &executable_dir);
+
+        self.base_library_path = dunce::canonicalize(&self.base_library_path)
+            .expect(
+                &format!(
+                    "Could not canonicalize base_library_path \"{}\", make sure it exists.",
+                    self.base_library_path,
+                ),
+            )
+            .to_string_lossy()
+            .to_string();
+
+        self.base_tools_path = dunce::canonicalize(&self.base_tools_path)
+            .expect(
+                &format!(
+                    "Could not canonicalize base_tools_path \"{}\", make sure it exists.",
+                    self.base_tools_path,
+                ),
+            )
+            .to_string_lossy()
+            .to_string();
+    }
 }
 
 #[derive(Deserialize)]
 pub struct ConfigTools {
     pub ffmpeg: ConfigToolsFFMPEG,
+}
+
+impl ConfigTools {
+    fn after_load_init(&mut self, essentials: &ConfigEssentials) {
+        self.ffmpeg.after_load_init(essentials);
+    }
 }
 
 #[derive(Deserialize)]
@@ -36,23 +75,20 @@ pub struct ConfigToolsFFMPEG {
 }
 
 impl ConfigToolsFFMPEG {
-    fn after_load_init(&mut self) {
-        let mut ffmpeg_binary = get_running_executable_directory();
-        ffmpeg_binary.push(&self.binary);
-
-        let resolved_tool_dir = dunce::canonicalize(ffmpeg_binary)
+    fn after_load_init(&mut self, essentials: &ConfigEssentials) {
+        let ffmpeg = self.binary.replace("{TOOLS_BASE}", &essentials.base_tools_path);
+        let canocalized_ffmpeg = dunce::canonicalize(ffmpeg.clone())
             .expect(
                 &format!(
-                    "Could not canonicalize ffmpeg binary path! Executable dir: {:?}",
-                    get_running_executable_directory(),
+                    "Could not canocalize ffmpeg binary path: \"{}\", make sure the path is valid.",
+                    ffmpeg,
                 ),
             );
 
-        if !resolved_tool_dir.is_file() {
-            panic!("ffmpeg binary does not exist at the location specified in the tools.ffmpeg.binary field!");
+        self.binary = canocalized_ffmpeg.to_string_lossy().to_string();
+        if !canocalized_ffmpeg.is_file() {
+            panic!("No file exists at this path: {}", self.binary);
         }
-
-        self.binary = resolved_tool_dir.to_string_lossy().to_string();
     }
 }
 
@@ -60,10 +96,6 @@ impl ConfigToolsFFMPEG {
 pub struct ConfigValidation {
     pub allowed_other_files_by_extension: Vec<String>,
     pub allowed_other_files_by_name: Vec<String>,
-    // TODO Refactor.
-    // pub audio_file_extensions: Vec<String>,
-    // pub ignored_file_extensions: Vec<String>,
-    // pub ignored_files: Vec<String>,
 }
 
 impl ConfigValidation {
@@ -78,26 +110,34 @@ impl ConfigValidation {
 pub struct ConfigLibrary {
     /// Full name of the library.
     pub name: String,
-    /// Absolute path to the library (can contain {ROOT} placeholder on load).
+    /// Absolute path to the library (can contain {LIBRARY_BASE} placeholder on load).
     pub path: String,
     /// A list of allowed audio extensions.
     /// Any not specified here are forbidden, see configuration template for more information.
     pub allowed_audio_files_by_extension: Vec<String>,
-
-    // TODO Refactor.
-    // pub audio_file_extensions: Vec<String>,
-    // pub must_not_contain_extensions: Vec<String>,
 }
 
 impl ConfigLibrary {
-    fn after_load_init(&mut self, root_library_path: &str) {
-        self.path = self.path.replace("{ROOT}", root_library_path);
+    fn after_load_init(&mut self, essentials: &ConfigEssentials) {
+        let parsed_path = self.path.replace("{LIBRARY_BASE}", &essentials.base_library_path);
+        let canonicalized_path = dunce::canonicalize(parsed_path)
+            .expect(
+                &format!(
+                    "Library \"{}\" could not be found at path \"{}\"!",
+                    self.name,
+                    self.path,
+                ),
+            );
 
-        // Ensure the path is valid.
-        let true_path = Path::new(&self.path);
-        if !true_path.exists() {
-            panic!("Library \"{}\" does not exist (path: \"{}\")!", self.name, self.path);
+        if !canonicalized_path.is_dir() {
+            panic!(
+                "Library \"{}\" has path set to \"{}\", but this path is not a directory!",
+                self.name,
+                self.path,
+            );
         }
+
+        self.path = canonicalized_path.to_string_lossy().to_string();
 
         // Make extensions lowercase.
         for ext in &mut self.allowed_audio_files_by_extension {
@@ -112,8 +152,8 @@ pub struct ConfigAggregated {
 }
 
 impl ConfigAggregated {
-    fn after_load_init(&mut self, root_library_path: &str) {
-        self.path = self.path.replace("{ROOT}", root_library_path);
+    fn after_load_init(&mut self, essentials: &ConfigEssentials) {
+        self.path = self.path.replace("{LIBRARY_BASE}", &essentials.base_library_path);
     }
 }
 
@@ -229,19 +269,19 @@ impl Config {
         let mut config: Config = toml::from_str(&configuration_string)
             .expect("Could not load configuration file!");
 
-        let root_library_path = &config.essentials.root_library_path;
-
         config.configuration_file_path = dunce::canonicalize(configuration_filepath)
             .expect("Could not canocalize configuration file path even though it has loaded!");
 
+        config.essentials.after_load_init();
+
         for (_, library) in &mut config.libraries {
-            library.after_load_init(root_library_path);
+            library.after_load_init(&config.essentials);
         }
 
         config.validation.after_load_init();
-        config.aggregated_library.after_load_init(root_library_path);
+        config.aggregated_library.after_load_init(&config.essentials);
         config.file_metadata.after_load_init();
-        config.tools.ffmpeg.after_load_init();
+        config.tools.after_load_init(&config.essentials);
 
         config
     }

@@ -34,16 +34,43 @@ pub fn cmd_show_config(config: &Config) {
     c::new_line();
     c::new_line();
 
-    // Basics
+
+    // Essentials
     c::centered_print(
-        SUBHEADER_STYLE.apply_to("- basics -").to_string(),
+        SUBHEADER_STYLE.apply_to("- essentials -").to_string(),
         None,
     );
     println!(
-        "  root_library_path = {}",
-        config.essentials.root_library_path,
+        "  base_library_path = {}",
+        config.essentials.base_library_path,
+    );
+    println!(
+        "  base_tools_path = {}",
+        config.essentials.base_tools_path,
     );
     c::new_line();
+
+
+    // Tools
+    c::centered_print(
+        SUBHEADER_STYLE.apply_to("- tools -").to_string(),
+        None,
+    );
+    println!(
+        "  {}",
+        style("ffmpeg")
+            .italic()
+    );
+    println!(
+        "    binary = {}",
+        config.tools.ffmpeg.binary,
+    );
+    println!(
+        "    to_mp3_v0_args = {:?}",
+        config.tools.ffmpeg.to_mp3_v0_args,
+    );
+    c::new_line();
+
 
     // Validation
     c::centered_print(
@@ -59,6 +86,7 @@ pub fn cmd_show_config(config: &Config) {
         config.validation.allowed_other_files_by_name,
     );
     c::new_line();
+
 
     // Libraries
     c::centered_print(
@@ -96,6 +124,7 @@ pub fn cmd_show_config(config: &Config) {
         );
         c::new_line();
     }
+
 
     // Aggregated library
     c::centered_print(

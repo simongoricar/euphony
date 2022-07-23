@@ -132,7 +132,7 @@ impl FileWorkPacket {
             )
             .collect();
 
-        // Run ffmpeg
+        // Run the actual transcode using ffmpeg.
         let ffmpeg_command = Command::new(&config.tools.ffmpeg.binary)
             .args(ffmpeg_arguments)
             .output()?;

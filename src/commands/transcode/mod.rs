@@ -1,11 +1,15 @@
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
 use console::Color::Color256;
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 
 use directories as dirs;
 
@@ -124,18 +128,20 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let files_progress_bar = multi_pbr.add(ProgressBar::new(0));
     files_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
+    let files_progress_bar_ref = Arc::new(Mutex::new(files_progress_bar));
+
     let albums_progress_bar = multi_pbr.add(ProgressBar::new(0));
     albums_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
     let library_progress_bar = multi_pbr.add(ProgressBar::new(filtered_library_packets.len() as u64));
     library_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
-    files_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
+    files_progress_bar_ref.clone().lock().unwrap().enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
     albums_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
     library_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
 
     let set_current_file  = |file_name: &str| {
-        files_progress_bar.set_message(
+        files_progress_bar_ref.clone().lock().unwrap().set_message(
             format!(
                 "🎵  {}",
                 style(file_name)
@@ -177,6 +183,9 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     set_current_album("/");
     set_current_file("/");
 
+    // TODO Make thread num configurable.
+    let thread_pool = ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+
     // Iterate over libraries and process each album.
     for (library, album_packets) in filtered_library_packets {
         set_current_library(&library.name);
@@ -190,15 +199,54 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
             let file_packets = album_packet.get_work_packets(config)?;
 
-            files_progress_bar.reset();
-            files_progress_bar.set_length(file_packets.len() as u64);
-            files_progress_bar.set_position(0);
+            {
+                let fpb_locked = files_progress_bar_ref.lock().unwrap();
+                fpb_locked.reset();
+                fpb_locked.set_length(file_packets.len() as u64);
+                fpb_locked.set_position(0);
+            }
 
-            for file_packet in file_packets {
-                set_current_file(&file_packet.get_file_name()?);
+            // TODO Figure out a way to properly track progress using the progress bar.
+            let fpb_threadpool_clone = files_progress_bar_ref.clone();
+            let (tx, rx): (Sender<Error>, Receiver<Error>) = channel();
 
-                file_packet.process(config)?;
-                files_progress_bar.inc(1);
+            thread_pool.scope(move |s| {
+                for file_packet in file_packets {
+                    let thread_tx = tx.clone();
+                    let inner_progress_bar = fpb_threadpool_clone.clone();
+
+                    s.spawn(move |_| {
+                        let result = file_packet.process(config);
+
+                        let progress_bar_lock = inner_progress_bar.lock().unwrap();
+                        progress_bar_lock.inc(1);
+
+                        if result.is_err() {
+                            // DEBUGONLY
+                            eprintln!("DEBUG: Something went wrong with packet: {:?}", file_packet);
+                            thread_tx.send(result.unwrap_err())
+                                .expect("Work thread could not send error to main thread!");
+                        }
+                    });
+                }
+            });
+
+            let mut collected_thread_errors: Vec<Error> = Vec::new();
+            collected_thread_errors.extend(rx.try_iter());
+
+            if collected_thread_errors.len() > 0 {
+                eprintln!(
+                    "{}",
+                    style("Something went wrong with one or more workers:")
+                        .red(),
+                );
+                for err in collected_thread_errors {
+                    eprintln!(
+                        "  {}",
+                        err,
+                    );
+                }
+                return Err(Error::new(ErrorKind::Other, "One or more transcoding threads errored."));
             }
 
             album_packet.save_fresh_meta(config, true)?;
@@ -208,7 +256,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         library_progress_bar.inc(1);
     }
 
-    files_progress_bar.finish();
+    files_progress_bar_ref.lock().unwrap().finish();
     albums_progress_bar.finish();
     library_progress_bar.finish();
 
