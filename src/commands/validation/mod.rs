@@ -37,13 +37,14 @@ fn validate_library(
     // <library directory>
     // |-- <artist directory>
     // |   |-- <album directory>
-    // |   |   |-- <... audio files (whichever you allow inside each library's configuration)>
-    // |   |   |-- <... optionally, cover art (whatever you allow in the validation configuration)>
-    // |   |   |-- <... optionally, some album-related README, logs, etc. (whatever you allow in the validation configuration)>
+    // |   |   |-- <... audio files (whichever types you allow inside each library's configuration)>
+    // |   |   |-- <... optionally, cover art>
+    // |   |   |-- <... optionally, some album-related README, logs, etc.>
     // |   |   |-- <... optionally, other directories that don't really matter for this purpose (they are ignored)>
+    // |   |   |   [the second two are examples, euphony will allow whatever you set in the validation configuration]
     // |   |-- <... possibly some artist-related README, etc. (whatever you allow in the validation configuration table)>
     // | [other artist directories ...]
-    // | [other files (whichever you allow in the validation configuration) ...]
+    // | [other files (again, whichever types/names you allow in the validation configuration) ...]
 
     // This closure will attempt to match the given list of file entries with
     // allowed_other_files_by_extension and allowed_other_files_by_name.
