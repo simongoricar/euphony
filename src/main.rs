@@ -71,6 +71,12 @@ struct TranscodeLibraryArgs {
 }
 
 #[derive(Parser)]
+#[clap(
+    name = "euphony",
+    author = "Simon G. <simon.peter.goricar@gmail.com>",
+    about = "An opinionated music library transcode manager.",
+    version
+)]
 struct CLIArgs {
     #[clap(subcommand)]
     command: CLICommand,
