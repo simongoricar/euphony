@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
 use crate::{Config, filesystem};
 
+#[derive(Clone)]
 pub struct LibraryWorkPacket {
     pub name: String,
     pub album_packets: Vec<AlbumWorkPacket>,

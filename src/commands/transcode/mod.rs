@@ -28,11 +28,13 @@ lazy_static! {
         .progress_chars("#>-");
 }
 
+/// This function lists all the albums in all of the libraries that need to be transcoded
+/// and performs the transcode using ffmpeg (for audio files) and simple file copy (for data files).
 pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     c::horizontal_line_with_text(
         format!(
             "{}",
-            style("full library aggregation")
+            style("transcoding (all libraries)")
                 .cyan()
                 .bold()
         ),
@@ -42,6 +44,14 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
     let processing_begin_time = Instant::now();
 
+    println!(
+        "{}",
+        style("Scanning libraries for changes...")
+            .yellow()
+            .bright(),
+    );
+
+    // List all libraries.
     let mut library_packets: Vec<LibraryWorkPacket> = Vec::new();
     for (library_name, library) in &config.libraries {
         library_packets.push(
@@ -53,26 +63,14 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         );
     }
 
-    println!(
-        "{} {}",
-        style("Total libraries: ")
-            .yellow()
-            .bright(),
-        style(library_packets.len())
-            .green()
-            .bold(),
-    );
-    println!(
-        "{}",
-        style("Libraries to be processed: ")
-            .yellow()
-            .bright(),
-    );
+    let total_libraries = library_packets.len();
 
+    // Filter libraries to ones that need at least one album processed.
     let mut filtered_library_packets: Vec<(LibraryWorkPacket, Vec<AlbumWorkPacket>)> = Vec::new();
     for mut library_packet in library_packets {
+        // Not all albums need to be processed each time, this function returns only the list
+        // of albums that need are either mising or have changed according to the .librarymeta file.
         let mut albums_in_need_of_processing = library_packet.get_albums_in_need_of_processing(config)?;
-
         albums_in_need_of_processing.sort_unstable_by(
             |first, second| {
                 first.album_info.album_title.cmp(&second.album_info.album_title)
@@ -80,15 +78,6 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         );
 
         if albums_in_need_of_processing.len() > 0 {
-            println!(
-                "  {}: {} pending albums",
-                library_packet.name,
-                style(albums_in_need_of_processing.len())
-                    .yellow()
-                    .bright()
-                    .bold(),
-            );
-
             filtered_library_packets.push((library_packet, albums_in_need_of_processing));
         }
     }
@@ -99,8 +88,37 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         }
     );
 
-    c::new_line();
+    let total_filtered_libraries = filtered_library_packets.len();
+    if total_filtered_libraries == 0 {
+        println!(
+            "{}",
+            style("All transcodes are already up to date.")
+                .green()
+                .bright()
+                .bold(),
+        );
+        return Ok(());
+    } else {
+        println!(
+            "{}/{} libraries need transcoding:",
+            style(total_filtered_libraries)
+                .bold()
+                .italic(),
+            style(total_libraries)
+                .bold(),
+        );
+        for (library, albums) in &filtered_library_packets {
+            println!(
+                "  {:12} {} new or changed albums.",
+                format!("{}:", library.name),
+                style(albums.len())
+                    .bold()
+            );
+        }
+        c::new_line();
+    }
 
+    // Set up progress bars (three bars, one for current file, another for albums, the third for libraries).
     let multi_pbr = MultiProgress::new();
 
     let files_progress_bar = multi_pbr.add(ProgressBar::new(0));
@@ -119,10 +137,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let set_current_file  = |file_name: &str| {
         files_progress_bar.set_message(
             format!(
-                "{} {}",
-                style("File:")
-                    .black()
-                    .bright(),
+                "🎵  {}",
                 style(file_name)
                     .fg(Color256(131))
                     .underlined(),
@@ -133,8 +148,8 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let set_current_album = |album_name: &str| {
         albums_progress_bar.set_message(
             format!(
-                "{} {}",
-                style("💽 Album:")
+                "💽  {} {}",
+                style("Album:")
                     .black()
                     .bright(),
                 style(album_name)
@@ -147,8 +162,8 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let set_current_library = |library_name: &str| {
         library_progress_bar.set_message(
             format!(
-                "{} {}",
-                style("📖 Library:")
+                "📖  {} {}",
+                style("Library:")
                     .black()
                     .bright(),
                 style(library_name)
@@ -162,6 +177,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     set_current_album("/");
     set_current_file("/");
 
+    // Iterate over libraries and process each album.
     for (library, album_packets) in filtered_library_packets {
         set_current_library(&library.name);
 
@@ -198,7 +214,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
     let processing_time_delta = processing_begin_time.elapsed();
     println!(
-        "All libraries processed in {:.1?}.",
+        "Transcoding completed in {:.1?} seconds.",
         processing_time_delta,
     );
 
@@ -206,7 +222,8 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     Ok(())
 }
 
-
+/// This function lists all the allbums in the selected library that need to be transcoded
+/// and performs the actual transcode using ffmpeg (for audio files) and simple file copy (for data files).
 pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Result<(), Error> {
     if !library_directory.is_dir() {
         println!("Directory is invalid.");
@@ -216,7 +233,7 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     c::horizontal_line_with_text(
         format!(
             "{}",
-            style("library aggregation")
+            style("transcoding (single library)")
                 .cyan()
                 .bold(),
         ),
@@ -229,18 +246,16 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     let library_directory_string = library_directory.to_string_lossy().to_string();
     println!(
         "{} {}",
-        style("Using library directory: ")
+        style("Library directory: ")
             .italic(),
-        style(library_directory_string)
-            .yellow()
-            .bold()
+        library_directory_string,
     );
     c::new_line();
 
     if !config.is_library(library_directory) {
         println!(
             "{}",
-            style("Directory is not a library, exiting.")
+            style("Selected directory is not a registered library, exiting.")
                 .red(),
         );
 
@@ -249,7 +264,7 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
 
     println!(
         "{}",
-        style("Scanning library.")
+        style("Scanning library for changes...")
             .yellow()
             .bright(),
     );
@@ -263,42 +278,32 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
         config,
     )?;
 
-    println!(
-        "{} {}",
-        style("Total albums:    ")
-            .yellow()
-            .bright(),
-        style(library_packet.album_packets.len())
-            .green()
-            .bold(),
-    );
-
     // Filter to just the albums that need to be processed.
     let mut filtered_album_packets = library_packet.get_albums_in_need_of_processing(config)?;
+    let total_filtered_albums = filtered_album_packets.len();
 
-    println!(
-        "{} {}",
-        style("To be processed: ")
-            .yellow()
-            .bright(),
-        style(filtered_album_packets.len())
-            .green()
-            .bold()
-    );
-    c::new_line();
-
-    if filtered_album_packets.len() == 0 {
+    if total_filtered_albums == 0 {
         println!(
             "{}",
-            style("Aggregated library is up to date, no need to continue.")
+            style("Transcodes of this library are already up to date.")
                 .green()
                 .bright()
                 .bold(),
         );
-
         return Ok(());
+    } else {
+        println!(
+            "{}/{} albums in this library are new or have changed.",
+            style(total_filtered_albums)
+                .bold()
+                .underlined(),
+            style(library_packet.album_packets.len())
+                .bold(),
+        );
+        c::new_line();
     }
 
+    // Set up two progress bars, one for the current file, another for the current album.
     let multi_pbr = MultiProgress::new();
 
     let file_progress_bar = multi_pbr.add(ProgressBar::new(0));
@@ -313,8 +318,8 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     let set_current_file = |file_name: &str| {
         file_progress_bar.set_message(
             format!(
-                "{} {}",
-                style("🎵 File:")
+                "🎵  {} {}",
+                style("File:")
                     .black()
                     .bright(),
                 style(file_name)
@@ -327,8 +332,8 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     let set_current_album = |album_name: &str| {
         album_progress_bar.set_message(
             format!(
-                "{} {}",
-                style("💽 Album:")
+                "💽  {} {}",
+                style("Album:")
                     .black()
                     .bright(),
                 style(album_name)
@@ -342,6 +347,7 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     set_current_file("/");
     set_current_album("/");
 
+    // Transcode all albums that are new or have changed.
     for album_packet in &mut filtered_album_packets {
         set_current_album(&album_packet.album_info.album_title);
 
@@ -367,14 +373,14 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
 
     let processing_time_delta = processing_begin_time.elapsed();
     println!(
-        "Library processed in {:.1?}.",
+        "Library transcoded in {:.1?} seconds.",
         processing_time_delta,
     );
 
     Ok(())
 }
 
-
+/// This function transcodes a single album using ffmpeg (for audio files) and simple file copy (for data files).
 pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<(), Error> {
     if !album_directory.is_dir() {
         println!("Directory is invalid.");
@@ -384,7 +390,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     c::horizontal_line_with_text(
         format!(
             "{}",
-            style("album aggregation")
+            style("transcoding (single album)")
                 .cyan()
                 .bold(),
         ),
@@ -397,11 +403,9 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     let album_directory_string = album_directory.to_string_lossy().to_string();
     println!(
         "{} {}",
-        style("Using album directory: ")
+        style("Album directory: ")
             .italic(),
-        style(album_directory_string)
-            .bold()
-            .yellow()
+        album_directory_string,
     );
     c::new_line();
 
@@ -409,7 +413,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     if !dirs::directory_is_album(config, album_directory) {
         eprintln!(
             "{}",
-            style("Directory is not an album directory, exiting.")
+            style("Not an album directory, exiting.")
                 .red()
         );
 
@@ -418,7 +422,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
 
     println!(
         "{}",
-        style("Scanning album.")
+        style("Scanning album...")
             .yellow()
             .bright(),
     );
@@ -429,25 +433,14 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     )?;
     let total_track_count = album_packet.get_total_track_count(config)?;
 
-    println!(
-        "{} {}",
-        style("Total album tracks:  ")
-            .yellow()
-            .bright(),
-        style(total_track_count)
-            .green()
-            .bold(),
-    );
-
     let file_packets = album_packet.get_work_packets(config)?;
 
     println!(
-        "{} {}",
-        style("To be processed:     ")
-            .yellow()
-            .bright(),
+        "{}/{} files in this album are new or have changed.",
         style(file_packets.len())
-            .green()
+            .bold()
+            .underlined(),
+        style(total_track_count)
             .bold(),
     );
     c::new_line();
@@ -455,7 +448,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     if file_packets.len() == 0 {
         println!(
             "{}",
-            style("Aggregated album is up to date, no need to continue.")
+            style("Transcoded album is already up to date.")
                 .green()
                 .bright()
                 .bold(),
@@ -464,6 +457,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
         return Ok(());
     }
 
+    // Set up a progress bar for the current file.
     let file_progress_bar = ProgressBar::new(file_packets.len() as u64);
     file_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
@@ -472,8 +466,8 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     let set_current_file = |file_name: &str| {
         file_progress_bar.set_message(
             format!(
-                "{} {}",
-                style("🎵 File:")
+                "🎵  {} {}",
+                style("File:")
                     .black()
                     .bright(),
                 style(file_name)
@@ -497,7 +491,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
 
     let processing_time_delta = processing_begin_time.elapsed();
     println!(
-        "Album processed in {:.1?}.",
+        "Album transcoded in {:.1?} seconds.",
         processing_time_delta,
     );
 
