@@ -40,7 +40,7 @@ enum CLICommand {
 
     #[clap(
         name = "validate-all",
-        about = "Validate all of the available (sub)libraries for inconsistencies, such as \
+        about = "Validate all the available (sub)libraries for inconsistencies, such as \
                  forbidden files, any inter-library collisions that would cause problems \
                  when aggregating (transcoding), etc."
     )]
@@ -48,7 +48,7 @@ enum CLICommand {
 
     #[clap(
         name = "validate-library",
-        about = "Validate a specific library for for inconsistencies, such as forbidden files."
+        about = "Validate a specific library for inconsistencies, such as forbidden files."
     )]
     ValidateLibrary(ValidateLibraryArgs),
 
@@ -61,7 +61,7 @@ enum CLICommand {
 
     #[clap(
         name = "list-libraries",
-        about = "List all of the registered libraries."
+        about = "List all the registered libraries."
     )]
     ListLibraries,
 }
@@ -96,8 +96,10 @@ struct ValidateLibraryArgs {
     name = "euphony",
     author = "Simon G. <simon.peter.goricar@gmail.com>",
     about = "An opinionated music library transcode manager.",
-    // TODO
-    // long_about = "TODO",
+    long_about = "Euphony is an opinionated music library transcode manager that allows the user to \
+                  retain high quality audio files in multiple separate libraries while also enabling \
+                  the listener to transcode their library with ease into a smaller format (MP3 V0) \
+                  to take with them on the go. For more info, see the README file in the repository.",
     version
 )]
 struct CLIArgs {

@@ -70,55 +70,73 @@ configuration file to a relative path from the euphony binary to the ffmpeg bina
 Change any other configuration values you wish to, then save. You're done!
 
 ## 2. Usage
-Run euphony with the `--help` option to get all available commands:
+Run euphony with the `--help` option to get all available commands and their short explanations:
 ```html
-euphony 
+euphony 0.1.0
+Simon G. <simon.peter.goricar@gmail.com>
+Euphony is an opinionated music library transcode manager that allows the user to retain high quality audio files in multiple separate libraries while also
+enabling the listener to transcode their library with ease into a smaller format (MP3 V0) to take with them on the go. For more info, see the README file in
+the repository.
 
 USAGE:
-    euphony.exe <SUBCOMMAND>
+euphony.exe [OPTIONS] <SUBCOMMAND>
 
-OPTIONS:
-    -h, --help    Print help information
+  OPTIONS:
+  -c, --config <CONFIG>
+        Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might
+        not always be the most convinient location.
 
-SUBCOMMANDS:
-    help                 Print this message or the help of the given subcommand(s)
-    show-config          Show the current configuration.
-    transcode-album      Transcode the selected album into the aggregated library.
-    transcode-all        Transcode all available libraries into the aggregated library.
-    transcode-library    Transcode the selected library into the aggregated library.
-    validate-all         Validate all libraries for aggregation (collisions, unwanted files, etc.).
+  -h, --help
+        Print help information
+
+  -V, --version
+        Print version information
+
+  SUBCOMMANDS:
+  help
+        Print this message or the help of the given subcommand(s)
+  list-libraries
+        List all the registered libraries.
+  show-config
+        Loads, validates and prints the current configuration from `./data/configuration.toml`.
+  transcode-album
+        Transcode only the specified album into the aggregated (transcoded) library. The current directory is used by default, but you may pass a
+        different one using "--dir <path>".
+  transcode-all
+        Transcode all registered libraries into the aggregated (transcoded) library.
+  transcode-library
+        Transcode only the specified library into the aggregated (transcoded) library. Requires a single positional parameter: the library name (by full
+        name), as configured in the configuration file.
+  validate-all
+        Validate all the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems
+        when aggregating (transcoding), etc.
+  validate-library
+        Validate a specific library for inconsistencies, such as forbidden files.
 ```
 
-For more info about each individual command, run `euphony <command-name> --help`. A quick rundown:
-
-| Command           | Description                                                                                                                                   |
-|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| show-config       | Loads, validates and prints the current configuration from `./data/configuration.toml`.                                                       |
-| validate-all      | Validates all of the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions, etc.                |
-| transcode-album   | Transcode a single album. By default euphony uses the current directory, but you may pass a different one using `--dir <path>`.               |
-| transcode-library | Transcode an entire (sub)library. Requires a single positional parameter: the library name (by key), as configured in the configuration file. |
-| transcode-all     | Transcode all of the available (sub)libraries.                                                                                                |
-
+For more info about each individual command, run `euphony <command-name> --help`.
 
 ### 2.1 About transcoding ("aggregation")
-Using any of the `transcode-*` command will attempt to transcode the selected part of the music library 
+Using any of the `transcode-*` command will attempt to transcode (sometimes called aggregate) the selected part of the music library 
 into a single folder called the aggregated library path (see `aggregated_library.path` in the configuration file).
 This is the directory that will contain all the transcodes, or to put it differently, this is the portable smaller library. 
-The files are all MP3 V0, reasoning explained above.
+The files are all MP3 V0 (though customizing should be reasonably easy through the configuration file, see `tools.ffmpeg.to_mp3_v0_args`), reasoning explained above.
 
 
 #### 2.2 `.librarymeta` implementation details
 To make sure we don't have to transcode or copy all the files again when changing a single one, 
-euphony stores a special file in the root directory of each **album**: `.librarymeta`.
+euphony stores a special file in the root directory of each **album** called `.librarymeta`.
 
 The contents of the file a JSON document, similar to this one:
 ```json5
 {
-  // All tracked files in the directory are listed here.
+  // All tracked files in the directory are listed here. 
+  // Which files are tracked is dictated by the configuration in the file_metadata table 
+  // (tracked_audio_extensions and tracked_other_extensions) and not by any other option.
   "files": {
-    // Each file has several attributes - if any of them 
-    // mismatch, the file has likely changed.
-    // Paths are relative to the .librarymeta file.
+    // Each file has several attributes - if any of them don't match, 
+    // the file has likely changed and will be transcoded or copied again.
+    // Paths are relative to the .librarymeta file in question.
     "01 Amos Roddy - Aeronaut.mp3": {
       "size_bytes": 235901,
       "time_modified": 9234759811, // or null
