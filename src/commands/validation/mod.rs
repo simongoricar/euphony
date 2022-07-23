@@ -34,16 +34,16 @@ fn validate_library(
     let (library_root_files, library_root_dirs) = mfs::list_directory_contents(library_root_path)?;
 
     // As explained in the README and configuration template, library structure is expected to be:
-    //  <library directory>
-    //  |-- <artist>
-    //  |   |-- <album>
-    //  |   |   |-- <... audio files>
-    //  |   |   |-- <... cover art>
-    //  |   |   |-- <... possibly some album-related README, logs, etc.>
-    //  |   |   |-- <... possibly other directory that don't matter>
-    //  |   |-- <... possibly some artist-related README, etc.>
-    //  | ...
-    //  |-- ...
+    // <library directory>
+    // |-- <artist directory>
+    // |   |-- <album directory>
+    // |   |   |-- <... audio files (whichever you allow inside each library's configuration)>
+    // |   |   |-- <... optionally, cover art (whatever you allow in the validation configuration)>
+    // |   |   |-- <... optionally, some album-related README, logs, etc. (whatever you allow in the validation configuration)>
+    // |   |   |-- <... optionally, other directories that don't really matter for this purpose (they are ignored)>
+    // |   |-- <... possibly some artist-related README, etc. (whatever you allow in the validation configuration table)>
+    // | [other artist directories ...]
+    // | [other files (whichever you allow in the validation configuration) ...]
 
     // This closure will attempt to match the given list of file entries with
     // allowed_other_files_by_extension and allowed_other_files_by_name.

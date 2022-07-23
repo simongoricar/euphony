@@ -45,7 +45,26 @@ Regardless, euphony's place in the music library toolset is well-defined: a CLI 
 
 ---
 
-## 1. Installation
+## 1. Library structure
+Having the library structure be configurable would get incredibly complex very quickly, so `euphony` uses (expects) the user
+to have the following structure in each registered library:
+
+```markdown
+  <library directory>
+  |-- <artist directory>
+  |   |-- <album directory>
+  |   |   |-- <... audio files (whichever you allow inside each library's configuration)>
+  |   |   |-- <... optionally, cover art (whatever you allow in the validation configuration)>
+  |   |   |-- <... optionally, some album-related README, logs, etc. (whatever you allow in the validation configuration)>
+  |   |   |-- <... optionally, other directories that don't really matter for this purpose (they are ignored)>
+  |   |-- <... possibly some artist-related README, etc. (whatever you allow in the validation configuration table)>
+  | [other artist directories ...]
+  | [other files (whichever you allow in the validation configuration) ...]
+```
+
+Any other structure will almost certainly fail.
+
+## 2. Installation
 Prerequisites for installation:
 - [Rust](https://www.rust-lang.org/),
 - a [copy of ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
@@ -55,7 +74,7 @@ Clone (or download) the repository to your local machine, then move into the dir
 - Other: run `cargo build --release` to compile the project, after which you'll have to get the binary 
   from `./target/release/euphony.exe` and copy it to a place of your choosing.
 
-## 2. Preparation
+## 3. Preparation
 Before running the binary you've built in the previous step, make sure you have the `configuration.TEMPLATE.toml` handy.
 If you used the `install-euphony.ps1` script, it will already be prepared. If you're on a different platform, copy one from the `data` directory.
 
@@ -71,7 +90,7 @@ configuration file to a path to the ffmpeg binary.
 
 Change any other configuration values you haven't yet, then save. **You're ready!**
 
-## 2. Usage
+## 4. Usage
 Run `euphony` with the `--help` option to get all available commands and their short explanations:
 ```html
 euphony 0.1.0
@@ -118,14 +137,14 @@ euphony.exe [OPTIONS] <SUBCOMMAND>
 
 For more info about each individual command, run `euphony <command-name> --help`.
 
-### 2.1 About transcoding ("aggregation")
+### 4.1 About transcoding ("aggregation")
 Using any of the `transcode-*` command will attempt to transcode (sometimes called aggregate) the selected part of the music library 
 into a single folder called the aggregated library path (see `aggregated_library.path` in the configuration file).
 This is the directory that will contain all the transcodes, or to put it differently, this is the portable smaller library. 
 The files are all MP3 V0 (though customizing should be reasonably easy through the configuration file, see `tools.ffmpeg.to_mp3_v0_args`), reasoning explained above.
 
 
-#### 2.2 `.librarymeta` implementation details
+#### 4.2 `.librarymeta` implementation details
 To make sure we don't have to transcode or copy all the files again when changing a single one, 
 euphony stores a special file in the root directory of each **album** called `.librarymeta`.
 
