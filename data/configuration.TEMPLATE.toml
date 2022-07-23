@@ -10,7 +10,7 @@
 # - aggregated_library.
 base_library_path = "D:/_temp/MusicTesting"
 # `base_tools_path` will become the "{TOOLS_BASE}" placeholder for use in the `tools` configuration table below.
-base_tools_path = "{SELF}/../tools/"
+base_tools_path = "{SELF}/tools/"
 
 
 ####
@@ -93,7 +93,7 @@ allowed_audio_files_by_extension = ["mp3"]
 
 
 ####
-# AGGREGATED LIBRARY
+# AGGREGATED LIBRARY (also called the transcoded library)
 # The philosophy of this music library manager is that you should split your library
 # into smaller parts: one for lossless audio, one for lossy, one for a specific collection, etc.
 # However, this philosophy also acknowledges that you might want to take the library with you on the go,
@@ -103,7 +103,12 @@ allowed_audio_files_by_extension = ["mp3"]
 # (see `libraries` above) and transcodes them down into MP3 V0 into a single aggregated library you may then take along with you.
 ####
 [aggregated_library]
+# This path should point to the destination directory of your transcoded (aggregated) library.
 path = "{LIBRARY_BASE}/MusicLibrary"
+# In order to speed up the transcoding, you can increase the amount of threads that are transcoding at once.
+# Anywhere between a half and all of your CPU cores are a good choice and an incredible speedup.
+# The minimum value is 1.
+transcode_threads = 6
 
 
 ####

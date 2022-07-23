@@ -113,8 +113,10 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         );
         for (library, albums) in &filtered_library_packets {
             println!(
-                "  {:12} {} new or changed albums.",
-                format!("{}:", library.name),
+                "  {:20} {} new or changed albums.",
+                style(format!("{}:", library.name))
+                    .yellow()
+                    .italic(),
                 style(albums.len())
                     .bold()
             );
@@ -183,8 +185,10 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     set_current_album("/");
     set_current_file("/");
 
-    // TODO Make thread num configurable.
-    let thread_pool = ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+    let thread_pool = ThreadPoolBuilder::new()
+        .num_threads(config.aggregated_library.transcode_threads as usize)
+        .build()
+        .unwrap();
 
     // Iterate over libraries and process each album.
     for (library, album_packets) in filtered_library_packets {

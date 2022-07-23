@@ -149,11 +149,16 @@ impl ConfigLibrary {
 #[derive(Deserialize)]
 pub struct ConfigAggregated {
     pub path: String,
+    pub transcode_threads: u16,
 }
 
 impl ConfigAggregated {
     fn after_load_init(&mut self, essentials: &ConfigEssentials) {
         self.path = self.path.replace("{LIBRARY_BASE}", &essentials.base_library_path);
+
+        if self.transcode_threads == 0 {
+            panic!("transcode_threads is set to 0! The minimum value is 1.");
+        }
     }
 }
 
