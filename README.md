@@ -26,27 +26,29 @@ as described in the preamble, this philosophy also acknowledges that you might w
 go, something that is hard to do when a part of your library contains possibly huge lossless files.
 
 Here's how euphony opts to solve this:
-- *you register a list of sublibraries* that contain the same basic folder structure (one directory per artist containing one directory per album),
-- you may opt to *validate the library for any collisions* (see the `validate` command) so you don't store two copies of the same album in two separate sublibraries,
+- *you register a list of sub-libraries* that contain the same basic folder structure (one directory per artist containing one directory per album),
+- you may opt to *validate the library for any collisions* (see the `validate-all` command) so you don't store two copies of the same album in two separate sublibraries,
 - when you wish to assemble your entire library into a smaller transcoded copy, you run one of the `transcode-*` commands, 
-  which takes all of your registered sublibraries that contain original files and transcodes each one into MP3 V0 and puts it into the transcoded library.
+  which takes all of your registered sub-libraries that contain original files and transcodes everything into MP3 V0 and puts the resulting files into the transcoded 
+  library - this is the library that you probably want to take with you "on the go".
 
 As mentioned, audio files are transcoded into MP3 V0 in the process. I've chosen MP3 V0 for now due to a 
 good tradeoff between space on disk and quality (V0 is pretty much transparent anyway, and you still have original files).
-For transcoding efficiency it also stores very minimal metadata about each album in a file called `.librarymeta` in order 
-to know which files haven't changed and can be skipped the next time you request transcoding of your library.
+For transcoding efficiency euphony also stores very minimal metadata about each album in a file called `.librarymeta` in order 
+to know which files haven't changed and can be skipped the next time you request transcoding of your library. Implementation details of this are available below.
 
 More importantly, **euphony *does not* organise your (original) audio files** - [MusicBrainz Picard](https://picard.musicbrainz.org/) 
-is a full-featured tagger, a several magnitudes better fit for this than this project could ever achieve. 
-You may even opt to use [Beets](https://beets.readthedocs.io/en/stable/) for most of this work. Regardless, euphony's place
-in the music library toolset is well-defined: software for validating your library and managing transcodes.  
+is a full-featured tagger, a several magnitudes better fit purpose for this than this project could ever achieve. 
+You may even opt to use [Beets](https://beets.readthedocs.io/en/stable/) for most of this work.
+
+Regardless, euphony's place in the music library toolset is well-defined: a CLI for validating your library and managing transcodes for on-the-go listening.  
 
 ---
 
 ## 1. Installation
 Prerequisites for installation:
 - [Rust](https://www.rust-lang.org/),
-- a copy of [ffmpeg](https://ffmpeg.org/) handy for later ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
+- a [copy of ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
 
 Clone (or download) the repository to your local machine, then move into the directory of the project and:
 - Windows: run the `./install-euphony.ps1` PowerShell script to compile the project and copy the required files into the `bin` directory,
@@ -55,22 +57,22 @@ Clone (or download) the repository to your local machine, then move into the dir
 
 ## 2. Preparation
 Before running the binary you've built in the previous step, make sure you have the `configuration.TEMPLATE.toml` handy.
-If you used the `install-euphony.ps1` script, it will already be prepared. If you're on a different platform, copy one from `data`.
+If you used the `install-euphony.ps1` script, it will already be prepared. If you're on a different platform, copy one from the `data` directory.
 
 **The `configuration.toml` file must be in `./data/configuration.toml` (relative to the binary).** Again, the Windows install script
 places this automatically (you just need to rename and fill out the file), other platforms will require a manual copy.
 
-Make sure the file name is `configuration.toml` and fill out the configuration. It is mostly about specifying where
-your libraries reside and what you want to have/forbid in them.
+Make sure the file name is `configuration.toml`, *carefully read* the explanations in the template and fill out the contents. 
+It is mostly about specifying where your libraries reside and what you want to have or forbid in them.
 
 Next, **extract the portable copy of ffmpeg** that was mentioned above. Again, unless you know how this works,
-it should be just next to the binary in a folder called `tools`. Adapt the `tools.ffmpeg.binary` value in the 
-configuration file to a relative path from the euphony binary to the ffmpeg binary.
+it should be just next to the binary in a folder called `tools`. Adapt the `tools.ffmpeg.binary` configuration value in the 
+configuration file to a path to the ffmpeg binary.
 
-Change any other configuration values you wish to, then save. You're done!
+Change any other configuration values you haven't yet, then save. **You're ready!**
 
 ## 2. Usage
-Run euphony with the `--help` option to get all available commands and their short explanations:
+Run `euphony` with the `--help` option to get all available commands and their short explanations:
 ```html
 euphony 0.1.0
 Simon G. <simon.peter.goricar@gmail.com>
