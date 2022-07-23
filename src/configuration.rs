@@ -271,4 +271,14 @@ impl Config {
 
         None
     }
+
+    pub fn get_library_by_full_name<S: AsRef<str>>(&self, library_name: S) -> Option<&ConfigLibrary> {
+        for (_, library) in &self.libraries {
+            if library.name.eq(library_name.as_ref()) {
+                return Some(&library);
+            }
+        }
+
+        None
+    }
 }

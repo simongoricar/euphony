@@ -36,9 +36,15 @@ enum CLICommand {
 
     #[clap(
         name = "validate-all",
-        about = "Validate all libraries for aggregation (collisions, unwanted files, etc.)."
+        about = "Validate all libraries (collisions, unwanted files, etc.)."
     )]
     ValidateAll,
+
+    #[clap(
+        name = "validate-library",
+        about = "Validate a specific library for unwanted files."
+    )]
+    ValidateLibrary(ValidateLibraryArgs),
 
     #[clap(
         name = "show-config",
@@ -66,6 +72,14 @@ struct TranscodeAlbumArgs {
 struct TranscodeLibraryArgs {
     #[clap(
         help = "Library to process (by full name)."
+    )]
+    library_name: String,
+}
+
+#[derive(Args, PartialEq, Eq)]
+struct ValidateLibraryArgs {
+    #[clap(
+    help = "Library to process (by full name)."
     )]
     library_name: String,
 }
@@ -174,7 +188,7 @@ fn main() {
         };
 
     } else if let CLICommand::TranscodeLibrary(args) = args.command {
-        let selected_library = match config.libraries.get(&args.library_name) {
+        let selected_library = match config.get_library_by_full_name(&args.library_name) {
             Some(library) => library,
             None => {
                 eprintln!(
@@ -215,10 +229,16 @@ fn main() {
         }
 
     } else if args.command == CLICommand::ValidateAll {
-        match commands::cmd_validate(&config) {
+        match commands::cmd_validate_all(&config) {
             true => exit(0),
             false => exit(1),
         }
+
+    } else if let CLICommand::ValidateLibrary(args) = args.command {
+        match commands::cmd_validate_library(&config, args.library_name) {
+            true => exit(0),
+            false => exit(1),
+        };
 
     } else if args.command == CLICommand::ShowConfig {
         commands::cmd_show_config(&config);

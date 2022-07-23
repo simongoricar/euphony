@@ -167,7 +167,7 @@ fn validate_library(
     }
 }
 
-pub fn cmd_validate(config: &Config) -> bool {
+pub fn cmd_validate_all(config: &Config) -> bool {
     c::horizontal_line_with_text(
         format!(
             "{} {}{}{}{}",
@@ -342,4 +342,108 @@ pub fn cmd_validate(config: &Config) -> bool {
     }
 
     has_unexpected_files || has_collisions
+}
+
+pub fn cmd_validate_library<S: AsRef<str>>(config: &Config, library_name: S) -> bool {
+    let library = match config.get_library_by_full_name(library_name.as_ref()) {
+        Some(library) => library,
+        None => {
+            eprintln!(
+                "{} {}",
+                style("No such library:")
+                    .red(),
+                style(library_name.as_ref())
+                    .bold(),
+            );
+            return false;
+        }
+    };
+
+
+    c::horizontal_line_with_text(
+        format!(
+            "{}",
+            style("Library validation").fg(Color256(152)),
+        ),
+        None, None,
+    );
+
+    c::new_line();
+    c::centered_print(
+        format!(
+            "{}{} {}",
+            style("🧾 Selected library").fg(Color256(11)),
+            style(":").fg(Color256(7)),
+            style(&library.name).yellow(),
+        ),
+        None,
+    );
+
+    let mut unused_collision_auditor = CollisionAudit::new();
+    let library_validation = match validate_library(config, library, &mut unused_collision_auditor) {
+        Ok(validation) => validation,
+        Err(error) => {
+            eprintln!(
+                "{} Errored while validating: {}",
+                style("❗")
+                    .red()
+                    .bold(),
+                style(error)
+                    .red()
+            );
+            return false;
+        }
+    };
+
+    match library_validation {
+        LibraryValidationResult::Valid => {
+            println!(
+                "{} Library valid!",
+                style("☑")
+                    .green()
+                    .bold(),
+            );
+
+            c::new_line();
+            c::horizontal_line_with_text(
+                format!(
+                    "{}",
+                    style("Library validated, NO ERRORS.")
+                        .green()
+                        .bright(),
+                ),
+                None, None,
+            );
+
+            true
+        },
+        LibraryValidationResult::Invalid { invalid_file_messages } => {
+            println!(
+                "{} Invalid entries:",
+                style("❌")
+                    .red()
+                    .bold(),
+            );
+            for (index, err) in invalid_file_messages.iter().enumerate() {
+                println!(
+                    "  {}. {}",
+                    index + 1,
+                    err,
+                );
+            }
+
+            c::new_line();
+            c::horizontal_line_with_text(
+                format!(
+                    "{}",
+                    style("Library could not be validated, THERE WERE SOME ERRORS!")
+                        .red()
+                        .bright()
+                ),
+                None, None,
+            );
+
+            false
+        }
+    }
 }
