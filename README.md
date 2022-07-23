@@ -13,12 +13,12 @@
 > (or possibly even more if you're doing some involved sorting).
 >
 > Now, if you only listen on one device, none of those approaches are likely to be a problem, but for multi-device users,
-> this quickly becomes a storage nightmare.
+> this quickly becomes a storage and deduplication nightmare.
 > Ideally, you'd want a way to maintain two separate copies of the entire library:
 > - one with all the **original files intact** (be it lossless or lossy) and
-> - a separate ("aggregated", if you will) copy that contains all the files transcoded down to a more manageable size.
+> - a separate (aggregated, if you will) copy that contains all the files transcoded down to a more manageable size.
 >
-> **Managing this system easily and efficiently is what euphony was made to solve.**
+> **`euphony` was written to solve this problem efficiently.**
 
 Euphony's philosophy is that you should split your library into smaller chunks: one directory for lossless, one for lossy audio, one for a specific
 collection, etc. (as many as you need). It does not force you to have multiple libraries, it works just as well with one library. However, 
@@ -33,21 +33,23 @@ Here's how euphony opts to solve this:
   library - this is the library that you probably want to take with you "on the go".
 
 As mentioned, audio files are transcoded into MP3 V0 in the process. I've chosen MP3 V0 for now due to a 
-good tradeoff between space on disk and quality (V0 is pretty much transparent anyway, and you still have original files).
-For transcoding efficiency euphony also stores very minimal metadata about each album in a file called `.librarymeta` in order 
-to know which files haven't changed and can be skipped the next time you request transcoding of your library. Implementation details of this are available below.
+good tradeoff between space on disk and quality (V0 is pretty much transparent anyway and should be more than enough for on-the-go listening, and you *still* have original files).
+For transcoding efficiency euphony also stores minimal metadata about each album's contents in a file called `.librarymeta`. 
+This is done to know which files haven't changed and can be skipped the next time you request transcoding of your library. 
+Implementation details are available below in `4.2`.
 
-More importantly, **euphony *does not* organise your (original) audio files** - [MusicBrainz Picard](https://picard.musicbrainz.org/) 
-is a full-featured tagger, a several magnitudes better fit purpose for this than this project could ever achieve. 
-You may even opt to use [Beets](https://beets.readthedocs.io/en/stable/) for most of this work.
+**More importantly, euphony *does not* organise your (original) audio files** - for this job [MusicBrainz Picard](https://picard.musicbrainz.org/) 
+is a full-featured tagger (just a recommendation); it is several magnitudes better than this project could ever achieve. 
+You may even opt to use [Beets](https://beets.readthedocs.io/en/stable/) for most tasks regarding source library organisation.
 
-Regardless, euphony's place in the music library toolset is well-defined: a CLI for validating your library and managing transcodes for on-the-go listening.  
+**Regardless, `euphony`'s place in my (and maybe yours) music library toolset is well-defined: 
+a CLI for validating your library and managing transcodes for on-the-go listening quickly and efficiently.**  
 
 ---
 
 ## 1. Library structure
-Having the library structure be configurable would get incredibly complex very quickly, so `euphony` uses (expects) the user
-to have the following structure in each registered library:
+Having the library structure be configurable would get incredibly complex very quickly, so `euphony` expects the user
+to have the following exact structure in each registered library:
 
 ```markdown
   <library directory>
@@ -63,27 +65,33 @@ to have the following structure in each registered library:
   | [other files (again, whichever types/names you allow in the validation configuration) ...]
 ```
 
-Any other structure will almost certainly fail.
+Any other structure will almost certainly fail with `euphony`.
 
 ## 2. Installation
 Prerequisites for installation:
 - [Rust](https://www.rust-lang.org/),
 - a [copy of ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
 
-Clone (or download) the repository to your local machine, then move into the directory of the project and:
-- Windows: run the `./install-euphony.ps1` PowerShell script to compile the project and copy the required files into the `bin` directory,
-- Other: run `cargo build --release` to compile the project, after which you'll have to get the binary 
-  from `./target/release/euphony.exe` and copy it to a place of your choosing.
+Clone (or download) the repository to your local machine, then move into the directory of the project and do the following:
+- on Windows, run the `./install-euphony.ps1` PowerShell script to compile the project and copy the required files into the `bin` directory,
+- otherwise, run `cargo build --release` to compile the project, after which you'll have to get the binary 
+  from `./target/release/euphony.exe` and copy it (and the configuration file) to a place of your choosing.
 
 ## 3. Preparation
 Before running the binary you've built in the previous step, make sure you have the `configuration.TEMPLATE.toml` handy.
-If you used the `install-euphony.ps1` script, it will already be prepared. If you're on a different platform, copy one from the `data` directory.
+If you used the `install-euphony.ps1` script, it will already be prepared in the `bin` directory. 
+If you're on a different platform, copy one from the `data` directory.
 
-**The `configuration.toml` file must be in `./data/configuration.toml` (relative to the binary).** Again, the Windows install script
-places this automatically (you just need to rename and fill out the file), other platforms will require a manual copy.
+The `configuration.toml` file must be in `./data/configuration.toml` (relative to the binary) or explicitly stated with the `--config` option.
+The PowerShell install script places this automatically (you just need to rename and fill out the file), other platforms will require a manual copy.
 
-Make sure the file name is `configuration.toml`, *carefully read* the explanations in the template and fill out the contents. 
-It is mostly about specifying where your libraries reside and what you want to have or forbid in them.
+Make sure the file name is `configuration.toml`, *carefully read* the explanations inside and fill out the contents. 
+It is mostly about specifying where ffmpeg is, which files to track, where your libraries reside and what files you want to allow or forbid inside.
+
+> As an example, let's say I have two separate libraries: a lossy and a lossless one. The lossless one has its 
+> `allowed_audio_files_by_extension` value set to `["flac"]`, as I don't want any other file types inside. The lossy one instead
+> has the value `["mp3"]`, because MP3 is my format of choice for lossy audio for now. If I were to place a non-FLAC file inside the
+> lossless library, euphony would flag it for me when I tried to run `euphony validate-all`.
 
 Next, **extract the portable copy of ffmpeg** that was mentioned above. Again, unless you know how this works,
 it should be just next to the binary in a folder called `tools`. Adapt the `tools.ffmpeg.binary` configuration value in the 

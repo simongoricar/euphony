@@ -1,7 +1,7 @@
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -9,7 +9,7 @@ use console::Color::Color256;
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
-use rayon::ThreadPoolBuilder;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use directories as dirs;
 
@@ -26,10 +26,29 @@ const DEFAULT_PROGRESS_BAR_TICK_INTERVAL: Duration = Duration::from_millis(100);
 
 lazy_static! {
     static ref DEFAULT_PROGRESS_BAR_STYLE: ProgressStyle = ProgressStyle::with_template(
-        "{msg:^50!} [{elapsed_precise} | {pos:>3}/{len:3}] [{bar:80.cyan/blue}]"
+        "{msg:^50!} [{elapsed_precise} | {pos:>3}/{len:3}] [{bar:50.cyan/blue}]"
     )
         .unwrap()
         .progress_chars("#>-");
+}
+
+fn build_progress_bar_style_with_header<S: AsRef<str>>(header_str: S) -> ProgressStyle {
+    ProgressStyle::with_template(
+        &format!(
+            "{}{}",
+            header_str.as_ref(),
+            "{msg:^42!} [{elapsed_precise} | {pos:>3}/{len:3}] [{bar:45.cyan/blue}]"
+        ),
+    )
+        .unwrap()
+        .progress_chars("#>-")
+}
+
+fn build_transcode_thread_pool(config: &Config) -> ThreadPool {
+    ThreadPoolBuilder::new()
+        .num_threads(config.aggregated_library.transcode_threads as usize)
+        .build()
+        .unwrap()
 }
 
 /// This function lists all the albums in all of the libraries that need to be transcoded
@@ -128,24 +147,30 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let multi_pbr = MultiProgress::new();
 
     let files_progress_bar = multi_pbr.add(ProgressBar::new(0));
-    files_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
+    files_progress_bar.set_style(
+        build_progress_bar_style_with_header(format!("{:9}", "(file)")),
+    );
 
     let files_progress_bar_ref = Arc::new(Mutex::new(files_progress_bar));
 
     let albums_progress_bar = multi_pbr.add(ProgressBar::new(0));
-    albums_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
+    albums_progress_bar.set_style(
+        build_progress_bar_style_with_header(format!("{:9}", "(album)")),
+    );
 
     let library_progress_bar = multi_pbr.add(ProgressBar::new(filtered_library_packets.len() as u64));
-    library_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
+    library_progress_bar.set_style(
+        build_progress_bar_style_with_header(format!("{:9}", "(library)")),
+    );
 
-    files_progress_bar_ref.clone().lock().unwrap().enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
+    files_progress_bar_ref.lock().unwrap().enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
     albums_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
     library_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
 
-    let set_current_file  = |file_name: &str| {
-        files_progress_bar_ref.clone().lock().unwrap().set_message(
+    let set_current_file  = |file_name: &str, progress_bar: &MutexGuard<ProgressBar>| {
+        progress_bar.set_message(
             format!(
-                "🎵  {}",
+                "{}",
                 style(file_name)
                     .fg(Color256(131))
                     .underlined(),
@@ -156,10 +181,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let set_current_album = |album_name: &str| {
         albums_progress_bar.set_message(
             format!(
-                "💽  {} {}",
-                style("Album:")
-                    .black()
-                    .bright(),
+                "{}",
                 style(album_name)
                     .fg(Color256(103))
                     .underlined(),
@@ -170,10 +192,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let set_current_library = |library_name: &str| {
         library_progress_bar.set_message(
             format!(
-                "📖  {} {}",
-                style("Library:")
-                    .black()
-                    .bright(),
+                "{}",
                 style(library_name)
                     .white()
                     .underlined(),
@@ -183,12 +202,9 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
     set_current_library("/");
     set_current_album("/");
-    set_current_file("/");
+    set_current_file("/", &files_progress_bar_ref.lock().unwrap());
 
-    let thread_pool = ThreadPoolBuilder::new()
-        .num_threads(config.aggregated_library.transcode_threads as usize)
-        .build()
-        .unwrap();
+    let thread_pool = build_transcode_thread_pool(config);
 
     // Iterate over libraries and process each album.
     for (library, album_packets) in filtered_library_packets {
@@ -210,7 +226,6 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
                 fpb_locked.set_position(0);
             }
 
-            // TODO Figure out a way to properly track progress using the progress bar.
             let fpb_threadpool_clone = files_progress_bar_ref.clone();
             let (tx, rx): (Sender<Error>, Receiver<Error>) = channel();
 
@@ -219,15 +234,26 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
                     let thread_tx = tx.clone();
                     let inner_progress_bar = fpb_threadpool_clone.clone();
 
+                    let file_name = match file_packet.get_file_name() {
+                        Ok(name) => name,
+                        Err(err) => {
+                            thread_tx.send(err)
+                                .expect("Work thread could not send file name error to main thread!");
+                            return
+                        }
+                    };
+
                     s.spawn(move |_| {
                         let result = file_packet.process(config);
 
                         let progress_bar_lock = inner_progress_bar.lock().unwrap();
                         progress_bar_lock.inc(1);
+                        set_current_file(
+                            &file_name,
+                            &progress_bar_lock
+                        );
 
                         if result.is_err() {
-                            // DEBUGONLY
-                            eprintln!("DEBUG: Something went wrong with packet: {:?}", file_packet);
                             thread_tx.send(result.unwrap_err())
                                 .expect("Work thread could not send error to main thread!");
                         }

@@ -308,10 +308,10 @@ impl Config {
     }
 
     pub fn get_library_name_from_path(&self, library_path: &Path) -> Option<String> {
-        for (library_name, library) in &self.libraries {
+        for (_, library) in &self.libraries {
             let current_path = Path::new(&library.path);
             if current_path.eq(library_path) {
-                return Some(library_name.clone());
+                return Some(library.name.clone());
             }
         }
 
