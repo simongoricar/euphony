@@ -109,45 +109,40 @@ Change any other configuration values you haven't yet, then save. **You're ready
 ## 4. Usage
 Run `euphony` with the `--help` option to get all available commands and their short explanations:
 ```html
-euphony 0.1.0
+euphony 1.0.0
 Simon G. <simon.peter.goricar@gmail.com>
-Euphony is an opinionated music library transcode manager that allows the user to retain high quality audio files in multiple separate libraries while also
-enabling the listener to transcode their library with ease into a smaller format (MP3 V0) to take with them on the go. For more info, see the README file in
-the repository.
+Euphony is an opinionated music library transcode manager that allows the user to retain high quality audio files in multiple separate libraries while also enabling the listener to transcode their library with ease into a smaller
+format (MP3 V0) to take with them on the go. For more info, see the README file in the repository.
 
 USAGE:
-euphony.exe [OPTIONS] <SUBCOMMAND>
+    euphony.exe [OPTIONS] <SUBCOMMAND>
 
-  OPTIONS:
-  -c, --config <CONFIG>
-        Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might
-        not always be the most convinient location.
+OPTIONS:
+    -c, --config <CONFIG>
+        Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might not always be the most convinient location.
 
-  -h, --help
+    -h, --help
         Print help information
 
-  -V, --version
+    -V, --version
         Print version information
 
-  SUBCOMMANDS:
-  help
+SUBCOMMANDS:
+    help
         Print this message or the help of the given subcommand(s)
-  list-libraries
+    list-libraries
         List all the registered libraries.
-  show-config
+    show-config
         Loads, validates and prints the current configuration from `./data/configuration.toml`.
-  transcode-album
-        Transcode only the specified album into the aggregated (transcoded) library. The current directory is used by default, but you may pass a
-        different one using "--dir <path>".
-  transcode-all
+    transcode-album
+        Transcode only the specified album into the aggregated (transcoded) library. The current directory is used by default, but you may pass a different one using "--dir <path>".
+    transcode-all
         Transcode all registered libraries into the aggregated (transcoded) library.
-  transcode-library
-        Transcode only the specified library into the aggregated (transcoded) library. Requires a single positional parameter: the library name (by full
-        name), as configured in the configuration file.
-  validate-all
-        Validate all the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems
-        when aggregating (transcoding), etc.
-  validate-library
+    transcode-library
+        Transcode only the specified library into the aggregated (transcoded) library. Requires a single positional parameter: the library name (by full name), as configured in the configuration file.
+    validate-all
+        Validate all the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems when aggregating (transcoding), etc.
+    validate-library
         Validate a specific library for inconsistencies, such as forbidden files.
 ```
 
