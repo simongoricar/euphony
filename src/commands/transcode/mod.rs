@@ -167,6 +167,10 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     albums_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
     library_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
 
+    // TODO Manually truncate names that are too long (42), automatic truncation trims only the colours.
+
+    // TODO If the user interrupts a transcode, ask if they want to delete the currently half-transcoded album.
+
     let set_current_file  = |file_name: &str, progress_bar: &MutexGuard<ProgressBar>| {
         progress_bar.set_message(
             format!(
@@ -239,7 +243,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
                         Err(err) => {
                             thread_tx.send(err)
                                 .expect("Work thread could not send file name error to main thread!");
-                            return
+                            return;
                         }
                     };
 
@@ -261,9 +265,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
                 }
             });
 
-            let mut collected_thread_errors: Vec<Error> = Vec::new();
-            collected_thread_errors.extend(rx.try_iter());
-
+            let collected_thread_errors: Vec<Error> = Vec::from_iter(rx.try_iter());
             if collected_thread_errors.len() > 0 {
                 eprintln!(
                     "{}",
@@ -276,7 +278,9 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
                         err,
                     );
                 }
-                return Err(Error::new(ErrorKind::Other, "One or more transcoding threads errored."));
+                return Err(
+                    Error::new(ErrorKind::Other, "One or more transcoding threads errored."),
+                );
             }
 
             album_packet.save_fresh_meta(config, true)?;
@@ -292,7 +296,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
     let processing_time_delta = processing_begin_time.elapsed();
     println!(
-        "Transcoding completed in {:.1?} seconds.",
+        "Transcoding completed in {:.1?}.",
         processing_time_delta,
     );
 
@@ -387,14 +391,16 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     let file_progress_bar = multi_pbr.add(ProgressBar::new(0));
     file_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
+    let file_progress_bar_ref = Arc::new(Mutex::new(file_progress_bar));
+
     let album_progress_bar = multi_pbr.add(ProgressBar::new(filtered_album_packets.len() as u64));
     album_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
 
-    file_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
+    file_progress_bar_ref.lock().unwrap().enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
     album_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
 
-    let set_current_file = |file_name: &str| {
-        file_progress_bar.set_message(
+    let set_current_file = |file_name: &str, progress_bar: &MutexGuard<ProgressBar>| {
+        progress_bar.set_message(
             format!(
                 "🎵  {} {}",
                 style("File:")
@@ -422,8 +428,10 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     };
 
 
-    set_current_file("/");
+    set_current_file("/", &file_progress_bar_ref.lock().unwrap());
     set_current_album("/");
+
+    let thread_pool = build_transcode_thread_pool(config);
 
     // Transcode all albums that are new or have changed.
     for album_packet in &mut filtered_album_packets {
@@ -431,27 +439,76 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
 
         let file_work_packets = album_packet.get_work_packets(config)?;
 
-        file_progress_bar.reset();
-        file_progress_bar.set_length(file_work_packets.len() as u64);
-        file_progress_bar.set_position(0);
+        {
+            let fpb_lock = file_progress_bar_ref.lock().unwrap();
+            fpb_lock.reset();
+            fpb_lock.set_length(file_work_packets.len() as u64);
+            fpb_lock.set_position(0);
+        }
 
-        for file_packet in file_work_packets {
-            set_current_file(&file_packet.get_file_name()?);
+        let fpb_threadpool_clone = file_progress_bar_ref.clone();
+        let (tx, rx): (Sender<Error>, Receiver<Error>) = channel();
 
-            file_packet.process(config)?;
-            file_progress_bar.inc(1);
+        thread_pool.scope(move |s| {
+            for file_packet in file_work_packets {
+                let thread_tx = tx.clone();
+                let inner_progress_bar = fpb_threadpool_clone.clone();
+
+                let file_name = match file_packet.get_file_name() {
+                    Ok(name) => name,
+                    Err(err) => {
+                        thread_tx.send(err)
+                            .expect("Work thread could not send file name error to main thread.");
+                        return;
+                    }
+                };
+
+                s.spawn(move |_| {
+                    let result = file_packet.process(config);
+
+                    let fpb_thread_lock = inner_progress_bar.lock().unwrap();
+                    fpb_thread_lock.inc(1);
+                    set_current_file(
+                        &file_name,
+                        &fpb_thread_lock,
+                    );
+
+                    if result.is_err() {
+                        thread_tx.send(result.unwrap_err())
+                            .expect("Work thread could not send error to main thread!");
+                    }
+                });
+            }
+        });
+
+        let collected_thread_errors: Vec<Error> = Vec::from_iter(rx.try_iter());
+        if collected_thread_errors.len() > 0 {
+            eprintln!(
+                "{}",
+                style("Something went wrong with one or more workers:")
+                    .red(),
+            );
+            for err in collected_thread_errors {
+                eprintln!(
+                    "  {}",
+                    err,
+                );
+            }
+            return Err(
+                Error::new(ErrorKind::Other, "One or more transcoding threads errored."),
+            );
         }
 
         album_packet.save_fresh_meta(config, true)?;
         album_progress_bar.inc(1);
     }
 
-    file_progress_bar.finish();
+    file_progress_bar_ref.lock().unwrap().finish();
     album_progress_bar.finish();
 
     let processing_time_delta = processing_begin_time.elapsed();
     println!(
-        "Library transcoded in {:.1?} seconds.",
+        "Library transcoded in {:.1?}.",
         processing_time_delta,
     );
 
@@ -538,11 +595,12 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     // Set up a progress bar for the current file.
     let file_progress_bar = ProgressBar::new(file_packets.len() as u64);
     file_progress_bar.set_style((*DEFAULT_PROGRESS_BAR_STYLE).clone());
-
     file_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
 
-    let set_current_file = |file_name: &str| {
-        file_progress_bar.set_message(
+    let file_progress_bar_ref = Arc::new(Mutex::new(file_progress_bar));
+
+    let set_current_file = |file_name: &str, progress_bar: &MutexGuard<ProgressBar>| {
+        progress_bar.set_message(
             format!(
                 "🎵  {} {}",
                 style("File:")
@@ -555,21 +613,68 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
         );
     };
 
-    for file_packet in file_packets {
-        let file_name = file_packet.get_file_name()?;
-        set_current_file(&file_name);
+    let thread_pool = build_transcode_thread_pool(config);
 
-        file_packet.process(config)?;
-        file_progress_bar.inc(1);
+    let fpb_threadpool_clone = file_progress_bar_ref.clone();
+    let (tx, rx): (Sender<Error>, Receiver<Error>) = channel();
+
+    thread_pool.scope(move |s| {
+        for file_packet in file_packets {
+            let thread_tx = tx.clone();
+            let thread_progress_bar = fpb_threadpool_clone.clone();
+
+            let file_name = match file_packet.get_file_name() {
+                Ok(name) => name,
+                Err(err) => {
+                    thread_tx.send(err)
+                        .expect("Work thread could not send file name error to main thread.");
+                    return;
+                }
+            };
+
+            s.spawn(move |_| {
+                let result = file_packet.process(config);
+
+                let thread_progress_bar_lock = thread_progress_bar.lock().unwrap();
+                thread_progress_bar_lock.inc(1);
+                set_current_file(
+                    &file_name,
+                    &thread_progress_bar_lock,
+                );
+
+                if result.is_err() {
+                    thread_tx.send(result.unwrap_err())
+                        .expect("Work thread could not send error to main thread!");
+                }
+            });
+        }
+    });
+
+    let collected_thread_errors: Vec<Error> = Vec::from_iter(rx.try_iter());
+    if collected_thread_errors.len() > 0 {
+        eprintln!(
+            "{}",
+            style("Something went wrong with one or more workers:")
+                .red(),
+        );
+        for err in collected_thread_errors {
+            eprintln!(
+                "  {}",
+                err,
+            );
+        }
+        return Err(
+            Error::new(ErrorKind::Other, "One or more transcoding threads errored."),
+        );
     }
 
     album_packet.save_fresh_meta(config, true)?;
 
-    file_progress_bar.finish();
+    file_progress_bar_ref.lock().unwrap().finish();
 
     let processing_time_delta = processing_begin_time.elapsed();
     println!(
-        "Album transcoded in {:.1?} seconds.",
+        "Album transcoded in {:.1?}.",
         processing_time_delta,
     );
 

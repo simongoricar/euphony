@@ -108,6 +108,13 @@ fn validate_library(
     for artist_directory in &library_root_dirs {
         let artist_name = artist_directory.file_name().to_string_lossy().to_string();
 
+        // Make sure to ignore (skip) any directories matching ignored_directories_in_base_dir.
+        if let Some(ignores) = &library.ignored_directories_in_base_dir {
+            if ignores.contains(&artist_name) {
+                continue;
+            }
+        }
+
         let (artist_dir_files, artist_dir_dirs) = mfs::list_dir_entry_contents(artist_directory)?;
 
         // There shouldn't be any unexpected files in the artist directory.

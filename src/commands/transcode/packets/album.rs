@@ -69,7 +69,8 @@ impl AlbumWorkPacket {
 
         let fresh_meta = LibraryMeta::generate(
             &full_album_directory_path,
-            None,
+            // Only scan the album directory and not any subdirectories.
+            Some(1),
             &config.file_metadata.tracked_extensions,
         )?;
         self.cached_fresh_meta.set(fresh_meta.clone());

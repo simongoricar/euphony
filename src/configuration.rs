@@ -116,6 +116,8 @@ pub struct ConfigLibrary {
     /// A list of allowed audio extensions.
     /// Any not specified here are forbidden, see configuration template for more information.
     pub allowed_audio_files_by_extension: Vec<String>,
+    /// A list of directories that should be ignored when scanning for artist directories.
+    pub ignored_directories_in_base_dir: Option<Vec<String>>,
 }
 
 impl ConfigLibrary {

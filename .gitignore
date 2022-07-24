@@ -24,3 +24,4 @@ data/configuration.toml
 bin
 tools/ffmpeg
 *.exe
+*.ffs_db
