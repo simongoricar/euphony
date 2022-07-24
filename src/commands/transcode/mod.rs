@@ -6,7 +6,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use console::Color::Color256;
-use console::{style, Style};
+use console::{measure_text_width, style, Style};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
@@ -37,15 +37,43 @@ fn build_progress_bar_style_with_header<S: AsRef<str>>(header_str: S) -> Progres
         .progress_chars("#>-")
 }
 
+fn truncate_string_with_ending<S: AsRef<str>>(
+    text: S,
+    max_width: usize,
+    overflow_string: Option<S>,
+) -> String {
+    const OVERFLOW_DEFAULT_ENDING: &str = "..";
+
+    let overflow_string = match overflow_string {
+        Some(overflow_string) => overflow_string.as_ref().to_string(),
+        None => OVERFLOW_DEFAULT_ENDING.to_string(),
+    };
+
+    let text = text.as_ref();
+    let total_width = measure_text_width(text);
+
+    if total_width > max_width {
+        let mut truncated_text = text.to_string();
+        truncated_text.truncate(max_width - overflow_string.len());
+        truncated_text.push_str(&overflow_string);
+
+        truncated_text
+    } else {
+        text.to_string()
+    }
+}
+
 /// A HOF (Higher-order-function) that takes a ProgressBar reference and a text Style and
 /// *returns* a function that will then always take a single parameter: the text to set on the progress bar.
 fn build_styled_progress_bar_message_fn(
     progress_bar: &ProgressBar,
     text_style: Style,
+    max_text_width: usize,
 ) -> impl Fn(&str) + Send + Clone {
     let progress_bar = progress_bar.clone();
 
     move |text: &str| {
+        let text = truncate_string_with_ending(text, max_text_width, None);
         progress_bar.set_message(
             format!(
                 "{}",
@@ -62,8 +90,10 @@ fn build_styled_progress_bar_message_fn(
 /// (meaning that we have it locked at call time).
 fn build_styled_progress_bar_message_fn_dynamic_locked_bar(
     text_style: Style,
+    max_text_width: usize,
 ) -> impl Fn(&str, &MutexGuard<ProgressBar>) + Send + Clone {
     move |text: &str, progress_bar: &MutexGuard<ProgressBar>| {
+        let text = truncate_string_with_ending(text, max_text_width, None);
         progress_bar.set_message(
             format!(
                 "{}",
@@ -282,16 +312,19 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
     let set_current_file = build_styled_progress_bar_message_fn_dynamic_locked_bar(
         Style::new().fg(Color256(131)).underlined(),
+        42,
     );
 
     let set_current_album = build_styled_progress_bar_message_fn(
         &albums_progress_bar,
         Style::new().fg(Color256(131)).underlined(),
+        42,
     );
 
     let set_current_library = build_styled_progress_bar_message_fn(
         &library_progress_bar,
         Style::new().white().underlined(),
+        42,
     );
 
     set_current_file("/", &files_progress_bar_ref.lock().unwrap());
@@ -455,11 +488,13 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
 
     let set_current_file = build_styled_progress_bar_message_fn_dynamic_locked_bar(
         Style::new().fg(Color256(131)).underlined(),
+        42,
     );
 
     let set_current_album = build_styled_progress_bar_message_fn(
         &album_progress_bar,
         Style::new().fg(Color256(103)).underlined(),
+        42,
     );
 
 
@@ -594,6 +629,7 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
 
     let set_current_file = build_styled_progress_bar_message_fn_dynamic_locked_bar(
         Style::new().fg(Color256(131)).underlined(),
+        42,
     );
 
 
