@@ -1,26 +1,27 @@
-use std::io::{Error, ErrorKind, stderr, Write};
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use console::Color::Color256;
 use console::{measure_text_width, style, Style};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use directories as dirs;
 
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
-use crate::commands::transcode::packets::file::FileWorkPacket;
+use crate::commands::transcode::packets::file::ProcessingResult;
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
+use crate::commands::transcode::processing::{build_transcode_thread_pool, process_file_packets_in_threadpool, ThreadPoolWorkResult};
 use crate::configuration::Config;
 use crate::console as c;
+use crate::globals::verbose_enabled;
 
 mod meta;
 mod directories;
 mod packets;
+mod processing;
 
 const DEFAULT_PROGRESS_BAR_TICK_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -103,92 +104,80 @@ fn build_styled_progress_bar_message_fn_dynamic_locked_bar(
     }
 }
 
-/// Builds a ThreadPool using the `transcode_threads` configuration value.
-fn build_transcode_thread_pool(config: &Config) -> ThreadPool {
-    ThreadPoolBuilder::new()
-        .num_threads(config.aggregated_library.transcode_threads as usize)
-        .build()
-        .unwrap()
-}
-
-/// Processes all given `FileWorkPacket`s in parallel as allowed by the given ThreadPool.
-/// Updates the progress bar after each successful step.
-fn process_file_packets_in_threadpool<F: Fn(&str, &MutexGuard<ProgressBar>) + Send + Clone>(
-    config: &Config,
-    thread_pool: &ThreadPool,
-    file_packets: Vec<FileWorkPacket>,
-    file_progress_bar_arc: &Arc<Mutex<ProgressBar>>,
-    file_progress_bar_set_fn: F,
-) -> Result<(), Vec<Error>> {
-    if file_packets.len() == 0 {
+fn print_errored_worker_logs(thread_pool_result: &ThreadPoolWorkResult) -> Result<(), Error> {
+    if !thread_pool_result.has_errors() {
         return Ok(());
     }
 
-    let fpb_threadpool_clone = file_progress_bar_arc.clone();
-    let (tx, rx): (Sender<Error>, Receiver<Error>) = channel();
+    let errored_logs = thread_pool_result.get_errored_results();
 
-    let progress_bar_callback = file_progress_bar_set_fn.clone();
-
-    thread_pool.scope(move |s| {
-        for file_packet in file_packets {
-            let thread_tx = tx.clone();
-            let thread_progress_bar = fpb_threadpool_clone.clone();
-            let thread_pbc = progress_bar_callback.clone();
-
-            let file_name = match file_packet.get_file_name() {
-                Ok(name) => name,
-                Err(error) => {
-                    thread_tx.send(error)
-                        .expect("Work thread could not send file name error to main thread.");
-                    return;
-                }
-            };
-
-            s.spawn(move |_| {
-                let work_result = file_packet.process(config);
-
-                let thread_progress_bar_lock = thread_progress_bar.lock().unwrap();
-                thread_progress_bar_lock.inc(1);
-                thread_pbc(
-                    &file_name,
-                    &thread_progress_bar_lock,
-                );
-
-                if work_result.is_err() {
-                    thread_tx.send(work_result.unwrap_err())
-                        .expect("Work thread could not send error to main thread!");
-                }
-            });
-        }
-    });
-
-    let collected_thread_errors: Vec<Error> = Vec::from_iter(rx.try_iter());
-    return if collected_thread_errors.len() == 0 {
-        Ok(())
-    } else {
-        Err(collected_thread_errors)
-    }
-}
-
-/// Just a handy shortcut for printing a Vec of Errors when one or more worker threads fail.
-/// Always returns Err(Error).
-fn print_error_vector_and_return_err(errors: Vec<Error>) -> Result<(), Error> {
     eprintln!(
         "{}",
-        style("Something went wrong with one or more worker threads:")
-            .red(),
+        style("Something went wrong with one or more worker threads:").red(),
     );
-    for err in errors {
-        eprintln!("  {}", err);
+    for result in errored_logs {
+        match result {
+            ProcessingResult::Error { error, verbose_info: _verbose_info } => {
+                eprintln!(
+                    "  {} {}",
+                    style("[Error]").red().italic(),
+                    error,
+                );
+            },
+            ProcessingResult::Ok { verbose_info: _verbose_info } => {
+                panic!("BUG: A ProcessingResult::Ok should not be among the array return from get_errored_results!");
+            }
+        }
     }
-    stderr().flush().expect("Could not flush stderr.");
+    eprintln!();
 
-    return Err(
+    Err(
         Error::new(
             ErrorKind::Other,
-            "One or more transcoding threads errored.",
-        ),
-    );
+            "One or more transcoding threads errored."
+        )
+    )
+}
+
+/// Print the verbose logs from the thread pool work results. Uses the ProgressBar println if specified.
+fn print_verbose_worker_logs(
+    thread_pool_result: &ThreadPoolWorkResult,
+    progress_bar: Option<&ProgressBar>,
+) {
+    if progress_bar.is_none() {
+        println!(
+            "Verbose thread worker logs:"
+        );
+    } else {
+        progress_bar.unwrap().println(
+            "Verbose thread worker logs:"
+        );
+    }
+
+    for result in &thread_pool_result.results {
+        let log = match result {
+            ProcessingResult::Ok { verbose_info } => {
+                format!("  [OK] {}", verbose_info.clone().unwrap_or(String::from("MISSING")))
+            },
+            ProcessingResult::Error { error: _error, verbose_info } => {
+                format!("  [ERROR] {}", verbose_info.clone().unwrap_or(String::from("MISSING")))
+            }
+        };
+
+        if progress_bar.is_none() {
+            println!("  {}", log);
+        } else {
+            progress_bar.unwrap().println(
+                format!("  {}", log),
+            );
+        }
+    }
+
+    if progress_bar.is_none() {
+        println!();
+    } else {
+        progress_bar.unwrap().println(" ");
+    }
 }
 
 
@@ -353,18 +342,26 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
                 fpb_locked.set_position(0);
             }
 
-            match process_file_packets_in_threadpool(
+            let results = process_file_packets_in_threadpool(
                 config,
                 &thread_pool,
                 file_packets,
                 &files_progress_bar_ref,
                 set_current_file.clone(),
-            ) {
-                Ok(()) => (),
-                Err(errors) => {
-                    return print_error_vector_and_return_err(errors);
-                }
-            };
+            );
+
+            if verbose_enabled() {
+                print_verbose_worker_logs(
+                    &results,
+                    Some(&library_progress_bar),
+                );
+            }
+            if results.has_errors() {
+                files_progress_bar_ref.lock().unwrap().finish();
+                albums_progress_bar.finish();
+                library_progress_bar.finish();
+                return print_errored_worker_logs(&results);
+            }
 
             album_packet.save_fresh_meta(config, true)?;
             albums_progress_bar.inc(1);
@@ -516,17 +513,24 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
             fpb_lock.set_position(0);
         }
 
-        match process_file_packets_in_threadpool(
+        let results = process_file_packets_in_threadpool(
             config,
             &thread_pool,
             file_work_packets,
             &file_progress_bar_ref,
             set_current_file.clone(),
-        ) {
-            Ok(()) => (),
-            Err(errors) => {
-                return print_error_vector_and_return_err(errors);
-            }
+        );
+
+        if verbose_enabled() {
+            print_verbose_worker_logs(
+                &results,
+                Some(&album_progress_bar),
+            );
+        }
+        if results.has_errors() {
+            file_progress_bar_ref.lock().unwrap().finish();
+            album_progress_bar.finish();
+            return print_errored_worker_logs(&results);
         }
 
         album_packet.save_fresh_meta(config, true)?;
@@ -632,21 +636,25 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
         42,
     );
 
-
     let thread_pool = build_transcode_thread_pool(config);
-
-    match process_file_packets_in_threadpool(
+    let results = process_file_packets_in_threadpool(
         config,
         &thread_pool,
         file_packets,
         &file_progress_bar_arc,
         set_current_file.clone(),
-    ) {
-        Ok(()) => (),
-        Err(errors) => {
-            return print_error_vector_and_return_err(errors);
-        }
-    };
+    );
+
+    if verbose_enabled() {
+        print_verbose_worker_logs(
+            &results,
+            Some(&file_progress_bar_arc.lock().unwrap())
+        );
+    }
+    if results.has_errors() {
+        file_progress_bar_arc.lock().unwrap().finish();
+        return print_errored_worker_logs(&results);
+    }
 
     album_packet.save_fresh_meta(config, true)?;
 

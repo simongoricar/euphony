@@ -6,12 +6,14 @@ use ::console::style;
 use clap::{Args, Parser, Subcommand};
 
 use configuration::Config;
+use crate::globals::VERBOSE;
 
 mod configuration;
 mod filesystem;
 mod commands;
 mod console;
 mod cached;
+mod globals;
 
 
 #[derive(Subcommand, PartialEq, Eq)]
@@ -112,6 +114,13 @@ struct CLIArgs {
     )]
     config: Option<String>,
 
+    #[clap(
+        short = 'v',
+        long = "verbose",
+        help = "Increase the verbosity of output."
+    )]
+    verbose: bool,
+
     #[clap(subcommand)]
     command: CLICommand,
 }
@@ -126,6 +135,8 @@ fn get_configuration(args: &CLIArgs) -> Config {
 
 fn main() {
     let args: CLIArgs = CLIArgs::parse();
+
+    VERBOSE.set(args.verbose);
 
     if args.command == CLICommand::TranscodeAll {
         match commands::cmd_transcode_all(&get_configuration(&args)) {

@@ -115,6 +115,10 @@ path = "{LIBRARY_BASE}/MusicLibrary"
 # Anywhere between a half and all of your CPU cores are a good choice and an incredible speedup.
 # The minimum value is 1.
 transcode_threads = 6
+# In case processing of a file fails (be it a transcode or a copy), you may want to allow
+# for a retry a specific amount of times (each time delayed by a few seconds).
+max_processing_retries = 2
+processing_retry_delay_seconds = 2
 
 
 ####

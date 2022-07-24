@@ -21,3 +21,4 @@ console = "0.15.0"
 dialoguer = "0.10.1"
 dunce = "1.0.2"
 rayon = { version = "1.5.3" }
+state = "0.5.3"

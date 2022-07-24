@@ -153,6 +153,8 @@ impl ConfigLibrary {
 pub struct ConfigAggregated {
     pub path: String,
     pub transcode_threads: u16,
+    pub max_processing_retries: u16,
+    pub processing_retry_delay_seconds: u16,
 }
 
 impl ConfigAggregated {
