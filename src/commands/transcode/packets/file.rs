@@ -245,39 +245,66 @@ impl FileWorkPacket {
             }
         };
 
-        if ffmpeg_command.status.success() {
-            FileProcessingResult::new_ok(
-                self.clone(),
-                verbose_enabled().then_some(format!("ffmpeg exited (0). {:?}", self)),
-            )
-        } else {
-            let ffmpeg_exit_code = ffmpeg_command.status.code()
-                .ok_or(
-                    Error::new(
-                        ErrorKind::Other,
-                        "Could not get ffmpeg exit code!"
-                    )
-                );
-
-            if ffmpeg_exit_code.is_err() {
+        // TODO Show ffmpeg stdout output in verbose_info on error!
+        match ffmpeg_command.status.code()
+            .ok_or(
+                Error::new(
+                    ErrorKind::Other,
+                    "Could not get ffmpeg exit code!"
+                )
+            ) {
+            Err(error_getting_code) => {
                 FileProcessingResult::new_errored(
                     self.clone(),
-                    ffmpeg_exit_code.unwrap_err().to_string(),
+                    error_getting_code.to_string(),
                     verbose_enabled().then_some(format!("Couldn't get ffmpeg exit code. {:?}", self)),
                 )
-            } else {
-                let ffmpeg_exit_code = ffmpeg_exit_code.unwrap();
-
-                if ffmpeg_exit_code == 0 {
+            },
+            Ok(error_code) => {
+                if error_code == 0 {
                     FileProcessingResult::new_ok(
                         self.clone(),
                         verbose_enabled().then_some(format!("ffmpeg exited (0). {:?}", self)),
                     )
                 } else {
+                    let ffmpeg_stdout = match String::from_utf8(ffmpeg_command.stdout) {
+                        Ok(stdout) => stdout,
+                        Err(error) => {
+                            return FileProcessingResult::new_errored(
+                                self.clone(),
+                                format!("Couldn't get ffmpeg stdout! {}", error),
+                                verbose_enabled().then_some(
+                                    format!("from_utf8(ffmpeg.stdout) failed! {:?}", self)
+                                ),
+                            );
+                        }
+                    };
+
+                    let ffmpeg_stderr = match String::from_utf8(ffmpeg_command.stderr) {
+                        Ok(stderr) => stderr,
+                        Err(error) => {
+                            return FileProcessingResult::new_errored(
+                                self.clone(),
+                                format!("Couldn't get ffmpeg stderr! {}", error),
+                                verbose_enabled().then_some(
+                                    format!("from_utf8(ffmpeg.stderr) failed! {:?}", self),
+                                )
+                            );
+                        }
+                    };
+
                     FileProcessingResult::new_errored(
                         self.clone(),
-                        format!("Non-zero ffmpeg exit code: {}", ffmpeg_exit_code),
-                        verbose_enabled().then_some(format!("ffmpeg exited ({}): {:?}", ffmpeg_exit_code, self)),
+                        format!("Non-zero ffmpeg exit code: {}", error_code),
+                        verbose_enabled().then_some(
+                            format!(
+                                "ffmpeg exited ({}): {:?}\nffmpeg stdout: {}\nffmpeg stderr: {}",
+                                error_code,
+                                self,
+                                ffmpeg_stdout,
+                                ffmpeg_stderr,
+                            )
+                        ),
                     )
                 }
             }
