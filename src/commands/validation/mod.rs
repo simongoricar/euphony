@@ -278,7 +278,6 @@ pub fn cmd_validate_all(config: &Config) -> bool {
                 .bold()
         );
 
-        // TODO
         for (index, collision) in collision_auditor.collisions.iter().enumerate() {
             let collision_title = format!(
                 "{} - {}",

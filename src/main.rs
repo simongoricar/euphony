@@ -14,6 +14,7 @@ mod commands;
 mod console;
 mod cached;
 mod globals;
+mod observer;
 
 
 #[derive(Subcommand, PartialEq, Eq)]
@@ -57,7 +58,6 @@ enum CLICommand {
     #[clap(
         name = "show-config",
         about = "Loads, validates and prints the current configuration from `./data/configuration.toml`."
-        // TODO Continue from here.
     )]
     ShowConfig,
 

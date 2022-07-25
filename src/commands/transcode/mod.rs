@@ -11,9 +11,12 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use directories as dirs;
 
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
-use crate::commands::transcode::packets::file::ProcessingResult;
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
-use crate::commands::transcode::processing::{build_transcode_thread_pool, process_file_packets_in_threadpool, ThreadPoolWorkResult};
+use crate::commands::transcode::processing::{
+    build_transcode_thread_pool,
+    process_file_packets_in_threadpool,
+    ProcessingObserver,
+};
 use crate::configuration::Config;
 use crate::console as c;
 use crate::globals::verbose_enabled;
@@ -104,80 +107,42 @@ fn build_styled_progress_bar_message_fn_dynamic_locked_bar(
     }
 }
 
-fn print_errored_worker_logs(thread_pool_result: &ThreadPoolWorkResult) -> Result<(), Error> {
-    if !thread_pool_result.has_errors() {
-        return Ok(());
-    }
+fn build_processing_observer(
+    progress_bar: Arc<Mutex<ProgressBar>>,
+    progress_bar_set_text_fn: Box<dyn Fn(&str, &MutexGuard<ProgressBar>) + Send + Sync>,
+) -> ProcessingObserver {
+    ProcessingObserver::new(Box::new(move |event| {
+        let counter_pbr_lock = progress_bar.lock().unwrap();
 
-    let errored_logs = thread_pool_result.get_errored_results();
-
-    eprintln!(
-        "{}",
-        style("Something went wrong with one or more worker threads:").red(),
-    );
-    for result in errored_logs {
-        match result {
-            ProcessingResult::Error { error, verbose_info: _verbose_info } => {
-                eprintln!(
-                    "  {} {}",
-                    style("[Error]").red().italic(),
-                    error,
-                );
-            },
-            ProcessingResult::Ok { verbose_info: _verbose_info } => {
-                panic!("BUG: A ProcessingResult::Ok should not be among the array return from get_errored_results!");
-            }
+        if counter_pbr_lock.is_finished() {
+            eprintln!("Warning: observer triggered after progress bar has finished. Ignoring event.");
+            return;
         }
-    }
-    eprintln!();
 
-    Err(
-        Error::new(
-            ErrorKind::Other,
-            "One or more transcoding threads errored."
-        )
-    )
-}
-
-/// Print the verbose logs from the thread pool work results. Uses the ProgressBar println if specified.
-fn print_verbose_worker_logs(
-    thread_pool_result: &ThreadPoolWorkResult,
-    progress_bar: Option<&ProgressBar>,
-) {
-    if progress_bar.is_none() {
-        println!(
-            "Verbose thread worker logs:"
-        );
-    } else {
-        progress_bar.unwrap().println(
-            "Verbose thread worker logs:"
-        );
-    }
-
-    for result in &thread_pool_result.results {
-        let log = match result {
-            ProcessingResult::Ok { verbose_info } => {
-                format!("  [OK] {}", verbose_info.clone().unwrap_or(String::from("MISSING")))
-            },
-            ProcessingResult::Error { error: _error, verbose_info } => {
-                format!("  [ERROR] {}", verbose_info.clone().unwrap_or(String::from("MISSING")))
-            }
-        };
-
-        if progress_bar.is_none() {
-            println!("  {}", log);
-        } else {
-            progress_bar.unwrap().println(
-                format!("  {}", log),
+        if event.is_final {
+            counter_pbr_lock.inc(1);
+            (*progress_bar_set_text_fn)(
+                &event.file_work_packet.get_file_name()
+                    .unwrap(),
+                &counter_pbr_lock,
             );
         }
-    }
 
-    if progress_bar.is_none() {
-        println!();
-    } else {
-        progress_bar.unwrap().println(" ");
-    }
+        if verbose_enabled() && event.verbose_info.is_some() {
+            counter_pbr_lock.println(
+                format!(
+                    "  [DEBUG] {}",
+                    event.verbose_info.unwrap()
+                ),
+            );
+        }
+
+        if event.error.is_some() {
+            counter_pbr_lock.println(
+                format!("  [Worker Error] {}", event.error.unwrap()),
+            );
+        }
+    }))
 }
 
 
@@ -296,7 +261,6 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     );
     library_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
 
-    // TODO Manually truncate names that are too long (42), automatic truncation trims only the colours.
     // TODO If the user interrupts a transcode, ask if they want to delete the currently half-transcoded album.
 
     let set_current_file = build_styled_progress_bar_message_fn_dynamic_locked_bar(
@@ -321,6 +285,10 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     set_current_library("/");
 
     let thread_pool = build_transcode_thread_pool(config);
+    let observer = build_processing_observer(
+        files_progress_bar_ref.clone(),
+        Box::new(set_current_file.clone())
+    );
 
     // Iterate over libraries and process each album.
     for (library, album_packets) in filtered_library_packets {
@@ -342,25 +310,14 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
                 fpb_locked.set_position(0);
             }
 
-            let results = process_file_packets_in_threadpool(
+            let successful = process_file_packets_in_threadpool(
                 config,
                 &thread_pool,
                 file_packets,
-                &files_progress_bar_ref,
-                set_current_file.clone(),
+                &observer,
             );
-
-            if verbose_enabled() {
-                print_verbose_worker_logs(
-                    &results,
-                    Some(&library_progress_bar),
-                );
-            }
-            if results.has_errors() {
-                files_progress_bar_ref.lock().unwrap().finish();
-                albums_progress_bar.finish();
-                library_progress_bar.finish();
-                return print_errored_worker_logs(&results);
+            if !successful {
+                return Err(Error::new(ErrorKind::Other, "One or more transcoding threads errored."))
             }
 
             album_packet.save_fresh_meta(config, true)?;
@@ -380,7 +337,6 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
         processing_time_delta,
     );
 
-    // TODO Check why sometimes the process fails with "The system cannot find the path specified. (os error 3)"
     Ok(())
 }
 
@@ -499,6 +455,10 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     set_current_album("/");
 
     let thread_pool = build_transcode_thread_pool(config);
+    let observer = build_processing_observer(
+        file_progress_bar_ref.clone(),
+        Box::new(set_current_file.clone()),
+    );
 
     // Transcode all albums that are new or have changed.
     for album_packet in &mut filtered_album_packets {
@@ -513,24 +473,14 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
             fpb_lock.set_position(0);
         }
 
-        let results = process_file_packets_in_threadpool(
+        let successful = process_file_packets_in_threadpool(
             config,
             &thread_pool,
             file_work_packets,
-            &file_progress_bar_ref,
-            set_current_file.clone(),
+            &observer,
         );
-
-        if verbose_enabled() {
-            print_verbose_worker_logs(
-                &results,
-                Some(&album_progress_bar),
-            );
-        }
-        if results.has_errors() {
-            file_progress_bar_ref.lock().unwrap().finish();
-            album_progress_bar.finish();
-            return print_errored_worker_logs(&results);
+        if !successful {
+            return Err(Error::new(ErrorKind::Other, "One or more transcoding threads errored."))
         }
 
         album_packet.save_fresh_meta(config, true)?;
@@ -637,23 +587,19 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
     );
 
     let thread_pool = build_transcode_thread_pool(config);
-    let results = process_file_packets_in_threadpool(
+    let observer = build_processing_observer(
+        file_progress_bar_arc.clone(),
+        Box::new(set_current_file.clone()),
+    );
+
+    let successful = process_file_packets_in_threadpool(
         config,
         &thread_pool,
         file_packets,
-        &file_progress_bar_arc,
-        set_current_file.clone(),
+        &observer,
     );
-
-    if verbose_enabled() {
-        print_verbose_worker_logs(
-            &results,
-            Some(&file_progress_bar_arc.lock().unwrap())
-        );
-    }
-    if results.has_errors() {
-        file_progress_bar_arc.lock().unwrap().finish();
-        return print_errored_worker_logs(&results);
+    if !successful {
+        return Err(Error::new(ErrorKind::Other, "One or more transcoding threads errored."))
     }
 
     album_packet.save_fresh_meta(config, true)?;

@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -8,10 +8,19 @@ use crate::{Config, filesystem};
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::globals::verbose_enabled;
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Clone)]
 enum FilePacketType {
     AudioFile,
     DataFile,
+}
+
+impl Display for FilePacketType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AudioFile => write!(f, "audio file"),
+            Self::DataFile => write!(f, "data file"),
+        }
+    }
 }
 
 impl FilePacketType {
@@ -29,40 +38,66 @@ impl FilePacketType {
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Clone)]
 pub enum FilePacketAction {
     Process,
     Remove,
 }
 
 #[derive(Clone)]
-pub enum ProcessingResult {
-    Ok {
-        verbose_info: Option<String>,
-    },
-    Error {
-        error: String,
-        verbose_info: Option<String>,
-    },
+pub struct FileProcessingResult {
+    /// Whether this instance is the last emmited one for the given FileWorkPacket.
+    /// (there are cases with verbose errors where we emit *all* the intermediate errors, meanining
+    /// there are multiple FileProcessingResults emmited for the same FileWorkPacket)
+    pub is_final: bool,
+    pub file_work_packet: FileWorkPacket,
+    pub error: Option<String>,
+    pub verbose_info: Option<String>,
 }
 
-impl ProcessingResult {
+impl FileProcessingResult {
     pub fn is_ok(&self) -> bool {
-        match self {
-            ProcessingResult::Ok {
-                verbose_info: _verbose_info,
-            } => true,
-            ProcessingResult::Error {
-                error: _error,
-                verbose_info: _verbose_info,
-            } => false,
+        self.error.is_none()
+    }
+}
+
+impl FileProcessingResult {
+    pub fn new_ok<S: Into<String>>(packet: FileWorkPacket, verbose_info: Option<S>) -> Self {
+        FileProcessingResult {
+            is_final: true,
+            file_work_packet: packet,
+            error: None,
+            verbose_info: match verbose_info {
+                Some(info) => Some(info.into()),
+                None => None,
+            },
         }
+    }
+
+    pub fn new_errored<S: Into<String>, T: Into<String>>(packet: FileWorkPacket, error: S, verbose_info: Option<T>) -> Self {
+        FileProcessingResult {
+            is_final: true,
+            file_work_packet: packet,
+            error: Some(error.into()),
+            verbose_info: match verbose_info {
+                Some(info) => Some(info.into()),
+                None => None,
+            },
+        }
+    }
+
+    pub fn clone_as_non_final(&self) -> Self {
+        let mut cloned = self.clone();
+        cloned.is_final = false;
+
+        cloned
     }
 }
 
 
 /// Represents the smallest unit of work we can generate - a single file.
 /// It contains all the information it needs to process the file.
+#[derive(Clone)]
 pub struct FileWorkPacket {
     pub source_file_path: PathBuf,
     pub target_file_path: PathBuf,
@@ -117,7 +152,7 @@ impl FileWorkPacket {
     /// Run the processing for this file packet. This involves either:
     /// - transcoding if it's an audio file,
     /// - or a simple file copy if it is a data file.
-    pub fn process(&self, config: &Config) -> ProcessingResult {
+    pub fn process(&self, config: &Config) -> FileProcessingResult {
         match self.action {
             FilePacketAction::Process => match self.file_type {
                 FilePacketType::AudioFile => self.transcode_into_mp3_v0(config),
@@ -129,18 +164,14 @@ impl FileWorkPacket {
 
     /// Transcode the current FileWorkPacket from the source file
     /// into a MP3 V0 file in the target path. Expects the work packet to be an audio file.
-    fn transcode_into_mp3_v0(&self, config: &Config) -> ProcessingResult {
+    fn transcode_into_mp3_v0(&self, config: &Config) -> FileProcessingResult {
         // Make sure we're actually a tracked audio file.
         if self.file_type != FilePacketType::AudioFile {
-            return ProcessingResult::Error {
-                error: String::from("Invalid source extension for transcode, not a tracked audio file."),
-                // TODO Is this even valid?
-                verbose_info: if verbose_enabled() {
-                    Some(format!("FilePacket: {:?}", self))
-                } else {
-                    None
-                },
-            };
+            return FileProcessingResult::new_errored(
+                self.clone(),
+                "Invalid source extension for transcode, not a tracked audio file.",
+                verbose_enabled().then_some(format!("Not an audio file. {:?}", self)),
+            );
         }
 
         // Ensure the target directory structure exists.
@@ -148,28 +179,22 @@ impl FileWorkPacket {
             .ok_or(Error::new(ErrorKind::NotFound, "No target directory.")) {
             Ok(path) => path,
             Err(error) => {
-                return ProcessingResult::Error {
-                    error: error.to_string(),
-                    verbose_info: if verbose_enabled() {
-                        Some(format!("FilePacket: {:?}", self))
-                    } else {
-                        None
-                    },
-                }
+                return FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self)),
+                );
             }
         };
 
         match fs::create_dir_all(target_directory) {
             Ok(()) => (),
             Err(error) =>{
-                return ProcessingResult::Error {
-                    error: error.to_string(),
-                    verbose_info: if verbose_enabled() {
-                        Some(format!("FilePacket: {:?}", self))
-                    } else {
-                        None
-                    },
-                }
+                return FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    verbose_enabled().then_some(format!("Couldn't create parent directories. {:?}", self)),
+                );
             }
         };
 
@@ -178,14 +203,11 @@ impl FileWorkPacket {
             .ok_or(Error::new(ErrorKind::Other, "Could not convert source path to str!")) {
             Ok(string) => string,
             Err(error) => {
-                return ProcessingResult::Error {
-                    error: error.to_string(),
-                    verbose_info: if verbose_enabled() {
-                        Some(format!("FilePacket: {:?}", self))
-                    } else {
-                        None
-                    },
-                }
+                return FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    verbose_enabled().then_some(format!("Couldn't construct source file path. {:?}", self)),
+                );
             }
         };
 
@@ -193,14 +215,11 @@ impl FileWorkPacket {
             .ok_or(Error::new(ErrorKind::Other, "Could not convert target path to str!")) {
             Ok(string) => string,
             Err(error) => {
-                return ProcessingResult::Error {
-                    error: error.to_string(),
-                    verbose_info: if verbose_enabled() {
-                        Some(format!("FilePacket: {:?}", self))
-                    } else {
-                        None
-                    },
-                }
+                return FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    verbose_enabled().then_some(format!("Couldn't construct target file path. {:?}", self)),
+                );
             }
         };
 
@@ -218,25 +237,19 @@ impl FileWorkPacket {
             .output() {
             Ok(output) => output,
             Err(error) => {
-                return ProcessingResult::Error {
-                    error: error.to_string(),
-                    verbose_info: if verbose_enabled() {
-                        Some(format!("FilePacket: {:?}", self))
-                    } else {
-                        None
-                    }
-                };
+                return FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    verbose_enabled().then_some(format!("ffmpeg couldn't be launched. {:?}", self)),
+                );
             }
         };
 
         if ffmpeg_command.status.success() {
-            ProcessingResult::Ok {
-                verbose_info: if verbose_enabled() {
-                    Some(format!("FilePacket: {:?}", self))
-                } else {
-                    None
-                }
-            }
+            FileProcessingResult::new_ok(
+                self.clone(),
+                verbose_enabled().then_some(format!("ffmpeg exited (0). {:?}", self)),
+            )
         } else {
             let ffmpeg_exit_code = ffmpeg_command.status.code()
                 .ok_or(
@@ -247,34 +260,25 @@ impl FileWorkPacket {
                 );
 
             if ffmpeg_exit_code.is_err() {
-                ProcessingResult::Error {
-                    error: ffmpeg_exit_code.unwrap_err().to_string(),
-                    verbose_info: if verbose_enabled() {
-                        Some(format!("FilePacket: {:?}", self))
-                    } else {
-                        None
-                    }
-                }
+                FileProcessingResult::new_errored(
+                    self.clone(),
+                    ffmpeg_exit_code.unwrap_err().to_string(),
+                    verbose_enabled().then_some(format!("Couldn't get ffmpeg exit code. {:?}", self)),
+                )
             } else {
                 let ffmpeg_exit_code = ffmpeg_exit_code.unwrap();
 
                 if ffmpeg_exit_code == 0 {
-                    ProcessingResult::Ok {
-                        verbose_info: if verbose_enabled() {
-                            Some(format!("FilePacket: {:?}", self))
-                        } else {
-                            None
-                        }
-                    }
+                    FileProcessingResult::new_ok(
+                        self.clone(),
+                        verbose_enabled().then_some(format!("ffmpeg exited (0). {:?}", self)),
+                    )
                 } else {
-                    ProcessingResult::Error {
-                        error: String::from("ffmpeg had non-zero exit code!"),
-                        verbose_info: if verbose_enabled() {
-                            Some(format!("FilePacket: {:?}", self))
-                        } else {
-                            None
-                        }
-                    }
+                    FileProcessingResult::new_errored(
+                        self.clone(),
+                        format!("Non-zero ffmpeg exit code: {}", ffmpeg_exit_code),
+                        verbose_enabled().then_some(format!("ffmpeg exited ({}): {:?}", ffmpeg_exit_code, self)),
+                    )
                 }
             }
         }
@@ -282,49 +286,37 @@ impl FileWorkPacket {
 
     /// Perform a simple file copy from the source path to the target path.
     /// Expects the file packet to be about a data file, *not* an audio file.
-    fn copy_data_file(&self) -> ProcessingResult {
+    fn copy_data_file(&self) -> FileProcessingResult {
         // Make sure we're actually a tracked data file.
         if self.file_type != FilePacketType::DataFile {
-            return ProcessingResult::Error {
-                error: String::from("Invalid source extension for copy: not a tracked data file."),
-                verbose_info: if verbose_enabled() {
-                    Some(format!("FilePacket: {:?}", self))
-                } else {
-                    None
-                }
-            };
+            return FileProcessingResult::new_errored(
+                self.clone(),
+                "Invalid source extension for copy: not a tracked data file.",
+                verbose_enabled().then_some(format!("Not a data file. {:?}", self)),
+            );
         }
 
         match fs::copy(&self.source_file_path, &self.target_file_path) {
             Ok(bytes_copied) => {
                 if bytes_copied > 0 {
-                    ProcessingResult::Ok {
-                        verbose_info: if verbose_enabled() {
-                            Some(format!("FilePacket: {:?}", self))
-                        } else {
-                            None
-                        }
-                    }
+                    FileProcessingResult::new_ok(
+                        self.clone(),
+                        verbose_enabled().then_some(format!("Copy operation complete. {:?}", self)),
+                    )
                 } else {
-                    ProcessingResult::Error {
-                        error: String::from("Copy operation technically complete, but 0 bytes copied."),
-                        verbose_info: if verbose_enabled() {
-                            Some(format!("FilePacket: {:?}", self))
-                        } else {
-                            None
-                        }
-                    }
+                    FileProcessingResult::new_errored(
+                        self.clone(),
+                        "Copy operation technically complete, but 0 bytes copied?!",
+                        verbose_enabled().then_some(format!("Copy complete, but 0 bytes copied. {:?}", self)),
+                    )
                 }
             },
             Err(error) => {
-                ProcessingResult::Error {
-                    error: error.to_string(),
-                    verbose_info: if verbose_enabled() {
-                        Some(format!("FilePacket: {:?}", self))
-                    } else {
-                        None
-                    }
-                }
+                FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    verbose_enabled().then_some(format!("Error while copying file. {:?}", self)),
+                )
             }
         }
     }
@@ -335,36 +327,26 @@ impl FileWorkPacket {
     }
 
     /// Remove the processed (transcoded/copied) file.
-    /// TODO From where will this be called? Should it be public?
-    fn remove_processed_file(&self, ignore_if_missing: bool) -> ProcessingResult {
+    fn remove_processed_file(&self, ignore_if_missing: bool) -> FileProcessingResult {
         if !self.target_file_exists() && ignore_if_missing {
-            ProcessingResult::Ok {
-                verbose_info: if verbose_enabled() {
-                    Some(format!("FilePacket: {:?}", self))
-                } else {
-                    None
-                }
-            }
+            FileProcessingResult::new_ok(
+                self.clone(),
+                verbose_enabled().then_some(format!("File didn't exist, ignoring. {:?}", self)),
+            )
         } else {
             match fs::remove_file(&self.target_file_path) {
                 Ok(()) => {
-                    ProcessingResult::Ok {
-                        verbose_info: if verbose_enabled() {
-                            Some(format!("FilePacket: {:?}", self))
-                        } else {
-                            None
-                        }
-                    }
+                    FileProcessingResult::new_ok(
+                        self.clone(),
+                        verbose_enabled().then_some(format!("File removed. {:?}", self)),
+                    )
                 },
                 Err(error) => {
-                    ProcessingResult::Error {
-                        error: error.to_string(),
-                        verbose_info: if verbose_enabled() {
-                            Some(format!("FilePacket: {:?}", self))
-                        } else {
-                            None
-                        }
-                    }
+                    FileProcessingResult::new_errored(
+                        self.clone(),
+                        error.to_string(),
+                        verbose_enabled().then_some(format!("Could not remove file. {:?}", self)),
+                    )
                 }
             }
         }
@@ -375,7 +357,7 @@ impl Debug for FileWorkPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "FileWorkPacket ({:?}): {:?} -> {:?}",
+            "<FileWorkPacket({}) {:?}=>{:?}>",
             self.file_type,
             self.source_file_path,
             self.target_file_path,
