@@ -88,9 +88,6 @@ impl AlbumMetadata {
             None => DEFAULT_MAX_DEPTH,
         };
 
-        // DEBUGONLY
-        println!("DEBUG: overrides={:?} maximum_tree_depth={}", overrides, maximum_tree_depth);
-
         // Enumerate files (including subdirectories up to a limit).
         let files = filesystem::list_directory_files_recusrively_filtered(
             directory_path,
