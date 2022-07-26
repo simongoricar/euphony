@@ -34,7 +34,7 @@ Here's how euphony opts to solve this:
 
 As mentioned, audio files are transcoded into MP3 V0 in the process. I've chosen MP3 V0 for now due to a 
 good tradeoff between space on disk and quality (V0 is pretty much transparent anyway and should be more than enough for on-the-go listening, and you *still* have original files).
-For transcoding efficiency euphony also stores minimal metadata about each album's contents in a file called `.librarymeta`. 
+For transcoding efficiency euphony also stores minimal metadata about each album's contents in a file called `.album.euphony`. 
 This is done to know which files haven't changed and can be skipped the next time you request transcoding of your library. 
 Implementation details are available below in `4.2`.
 
@@ -155,9 +155,9 @@ This is the directory that will contain all the transcodes, or to put it differe
 The files are all MP3 V0 (though customizing should be reasonably easy through the configuration file, see `tools.ffmpeg.to_mp3_v0_args`), reasoning explained above.
 
 
-#### 4.2 `.librarymeta` implementation details
+#### 4.2 `.album.euphony` implementation details
 To make sure we don't have to transcode or copy all the files again when changing a single one, 
-euphony stores a special file in the root directory of each **album** called `.librarymeta`.
+euphony stores a special file in the root directory of each **album** called `.album.euphony`.
 
 The contents of the file a JSON document, similar to this one:
 ```json5
@@ -168,7 +168,7 @@ The contents of the file a JSON document, similar to this one:
   "files": {
     // Each file has several attributes - if any of them don't match, 
     // the file has likely changed and will be transcoded or copied again.
-    // Paths are relative to the .librarymeta file in question.
+    // Paths are relative to the .album.euphony file in question.
     "01 Amos Roddy - Aeronaut.mp3": {
       "size_bytes": 235901,
       "time_modified": 9234759811, // or null

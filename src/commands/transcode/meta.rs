@@ -12,6 +12,9 @@ use crate::{Config, filesystem};
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
 
+const ALBUM_METADATA_FILE_NAME: &str = ".album.euphony";
+
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LibraryMeta {
     pub files: HashMap<String, LibraryMetaFile>,
@@ -20,7 +23,7 @@ pub struct LibraryMeta {
     pub base_directory: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LibraryMetaFile {
     // The BLAKE3 hash was removed mid-design due to likely not being
     // fast enough to scan the entire library each time we call the command.
@@ -48,7 +51,7 @@ impl FileChanges {
 
 fn get_librarymeta_path_from_directory(directory_path: &Path) -> PathBuf {
     let mut final_path = directory_path.to_path_buf();
-    final_path.push(".librarymeta");
+    final_path.push(ALBUM_METADATA_FILE_NAME);
 
     final_path
 }
@@ -79,7 +82,7 @@ impl LibraryMetaFile {
 }
 
 impl LibraryMeta {
-    /// Given a directory path, load its .librarymeta file, if it exists, into a LibraryMeta struct.
+    /// Given a directory path, load its .album.euphony file, if it exists, into a LibraryMeta struct.
     pub fn load(directory_path: &Path) -> Result<Option<LibraryMeta>, Error> {
         let file_path = get_librarymeta_path_from_directory(directory_path);
         if !file_path.is_file() {
@@ -168,7 +171,7 @@ impl LibraryMeta {
         })
     }
 
-    /// Given a directory, save the LibraryMeta struct in question into the .librarymeta file
+    /// Given a directory, save the LibraryMeta struct in question into the .album.euphony file
     /// as a JSON document.
     pub fn save(&self, directory_path: &Path, allow_overwrite: bool) -> Result<(), Error> {
         let file_path = get_librarymeta_path_from_directory(directory_path);

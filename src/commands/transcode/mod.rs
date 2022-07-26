@@ -113,7 +113,6 @@ fn build_processing_observer(
 ) -> ProcessingObserver {
     ProcessingObserver::new(Box::new(move |event| {
         let counter_pbr_lock = progress_bar.lock().unwrap();
-
         if counter_pbr_lock.is_finished() {
             eprintln!("Warning: observer triggered after progress bar has finished. Ignoring event.");
             return;
@@ -138,9 +137,15 @@ fn build_processing_observer(
         }
 
         if event.error.is_some() {
-            counter_pbr_lock.println(
-                format!("  [Worker Error] {}", event.error.unwrap()),
-            );
+            if event.is_final {
+                counter_pbr_lock.println(
+                    format!("  [Error] {}", event.error.unwrap()),
+                );
+            } else {
+                counter_pbr_lock.println(
+                    format!("  [Error (will retry)] {}", event.error.unwrap()),
+                );
+            }
         }
     }))
 }
@@ -187,7 +192,7 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
     let mut filtered_library_packets: Vec<(LibraryWorkPacket, Vec<AlbumWorkPacket>)> = Vec::new();
     for mut library_packet in library_packets {
         // Not all albums need to be processed each time, this function returns only the list
-        // of albums that need are either mising or have changed according to the .librarymeta file.
+        // of albums that need are either mising or have changed according to the .album.euphony file.
         let mut albums_in_need_of_processing = library_packet.get_albums_in_need_of_processing(config)?;
         albums_in_need_of_processing.sort_unstable_by(
             |first, second| {
@@ -300,6 +305,17 @@ pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
 
         for mut album_packet in album_packets {
             set_current_album(&album_packet.album_info.album_title);
+
+            if verbose_enabled() {
+                let fresh_meta = album_packet.get_fresh_meta(config)?;
+                albums_progress_bar.println(
+                    format!(
+                        "  [DEBUG] AlbumWorkPacket album: {:?}, files in meta: {:?}",
+                        album_packet.album_info,
+                        fresh_meta.files,
+                    ),
+                );
+            }
 
             let file_packets = album_packet.get_work_packets(config)?;
 

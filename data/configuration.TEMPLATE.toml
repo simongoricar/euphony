@@ -40,8 +40,8 @@ to_mp3_v0_args = ["-i", "{INPUT_FILE}", "-vn", "-codec:a", "libmp3lame", "-q:a",
 # but "audio" files mean those only in the album directories.
 allowed_other_files_by_extension = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
 # These files are always ignored and do not cause validation errors (these are matched by full file name).
-# (".librarymeta" is a mandatory entry if you use the transcode commands)
-allowed_other_files_by_name = [".librarymeta", "desktop.ini"]
+# (".album.euphony" is a mandatory entry if you use the transcode commands)
+allowed_other_files_by_name = [".album.euphony", "desktop.ini"]
 # NOTE: If a file without a valid extension or name match is found during the scan, it is marked
 # as an unexpected file and makes the validation fail (this is the entire point of validation).
 
@@ -124,7 +124,7 @@ processing_retry_delay_seconds = 2
 ####
 # FILE METADATA
 # In order to optimize the speed and remove redundant transcodes, euphony actually "tracks" your album files
-# via a special dotfile called ".librarymeta" (placed in each album directory).
+# via a special dotfile called ".album.euphony" (placed in each album directory).
 # Implementation details are available in the README, but the general idea and purpouse of those files are to
 # understand when any single file has changed and has to be reencoded (if it's an audio file) or recopied (if it's a data file).
 ####

@@ -189,7 +189,7 @@ impl FileWorkPacket {
 
         match fs::create_dir_all(target_directory) {
             Ok(()) => (),
-            Err(error) =>{
+            Err(error) => {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     error.to_string(),
@@ -245,7 +245,6 @@ impl FileWorkPacket {
             }
         };
 
-        // TODO Show ffmpeg stdout output in verbose_info on error!
         match ffmpeg_command.status.code()
             .ok_or(
                 Error::new(
@@ -319,8 +318,34 @@ impl FileWorkPacket {
             return FileProcessingResult::new_errored(
                 self.clone(),
                 "Invalid source extension for copy: not a tracked data file.",
-                verbose_enabled().then_some(format!("Not a data file. {:?}", self)),
+                verbose_enabled()
+                    .then_some(format!("Not a data file. {:?}", self)),
             );
+        }
+
+        let target_directory = match self.target_file_path.parent()
+            .ok_or(Error::new(ErrorKind::Other, "No target directory.")) {
+            Ok(path) => path,
+            Err(error) => {
+                return FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    verbose_enabled()
+                        .then_some(format!("Couldn't construct target directory. {:?}", self))
+                );
+            }
+        };
+
+        match fs::create_dir_all(target_directory) {
+            Ok(()) => (),
+            Err(error) => {
+                return FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    verbose_enabled()
+                        .then_some(format!("Couldn't create parent directories. {:?}", self))
+                );
+            }
         }
 
         match fs::copy(&self.source_file_path, &self.target_file_path) {

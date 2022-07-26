@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
@@ -98,5 +99,17 @@ impl AlbumDirectoryInfo {
         cloned_self.library_path = config.aggregated_library.path.clone();
 
         cloned_self
+    }
+}
+
+impl Debug for AlbumDirectoryInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<AlbumDirectoryInfo {} - {} library={}>",
+            self.artist_name,
+            self.album_title,
+            self.library_path,
+        )
     }
 }

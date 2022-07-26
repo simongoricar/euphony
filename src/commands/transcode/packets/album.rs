@@ -44,7 +44,7 @@ impl AlbumWorkPacket {
         path
     }
 
-    fn get_saved_meta(&mut self) -> Result<Option<LibraryMeta>, Error> {
+    pub fn get_saved_meta(&mut self) -> Result<Option<LibraryMeta>, Error> {
         if self.cached_saved_meta.is_cached() {
             return match self.cached_saved_meta.get() {
                 Some(meta) => Ok(Some(meta.clone())),
@@ -60,7 +60,7 @@ impl AlbumWorkPacket {
         Ok(saved_meta)
     }
 
-    fn get_fresh_meta(&mut self, config: &Config) -> Result<LibraryMeta, Error> {
+    pub fn get_fresh_meta(&mut self, config: &Config) -> Result<LibraryMeta, Error> {
         if self.cached_fresh_meta.is_cached() {
             return Ok(self.cached_fresh_meta.get().clone());
         }
