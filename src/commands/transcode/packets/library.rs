@@ -12,7 +12,7 @@ pub struct LibraryWorkPacket {
 
 impl LibraryWorkPacket {
     pub fn from_library_path(
-        library_name: &str,
+        library_key: &str,
         library_path: &Path,
         config: &Config,
     ) -> Result<LibraryWorkPacket, Error> {
@@ -26,11 +26,25 @@ impl LibraryWorkPacket {
             );
         }
 
+        let library = config.libraries.get(library_key)
+            .ok_or(
+                Error::new(
+                    ErrorKind::Other,
+                    format!("No such library: {}", library_key),
+                )
+            )?;
+
         let mut album_packets: Vec<AlbumWorkPacket> = Vec::new();
 
         let (_, artist_directories) = filesystem::list_directory_contents(library_path)?;
 
         for artist_directory in artist_directories {
+            let directory_name = artist_directory.file_name().to_string_lossy().to_string();
+            if library.ignored_directories_in_base_dir.is_some()
+                && library.ignored_directories_in_base_dir.as_ref().unwrap().contains(&directory_name) {
+                continue
+            }
+
             let (_, album_directories) = match filesystem::list_dir_entry_contents(&artist_directory) {
                 Ok(data) => data,
                 Err(error) => {
@@ -57,7 +71,7 @@ impl LibraryWorkPacket {
         }
 
         Ok(LibraryWorkPacket {
-            name: library_name.to_string(),
+            name: library_key.to_string(),
             album_packets,
         })
     }
