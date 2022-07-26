@@ -14,83 +14,44 @@ use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket
 
 const ALBUM_METADATA_FILE_NAME: &str = ".album.euphony";
 
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct LibraryMeta {
-    pub files: HashMap<String, LibraryMetaFile>,
-
-    #[serde(skip)]
-    pub base_directory: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct LibraryMetaFile {
-    // The BLAKE3 hash was removed mid-design due to likely not being
-    // fast enough to scan the entire library each time we call the command.
-    pub size_bytes: u64,
-    pub time_modified: f64,
-    pub time_created: f64,
-}
-
-
-#[derive(Debug)]
-pub struct FileChanges {
-    pub files_new: Vec<String>,
-    pub files_changed: Vec<String>,
-    pub files_removed: Vec<String>,
-}
-
-impl FileChanges {
-    pub fn has_any_changes(&self) -> bool {
-        self.files_new.len() > 0
-            || self.files_changed.len() > 0
-            || self.files_removed.len() > 0
-    }
-}
-
-
-fn get_librarymeta_path_from_directory(directory_path: &Path) -> PathBuf {
+/// Given a directory path, construct the full path to the album metadata file (.album.euphony).
+/// Example: given "D:/hello/world" (as a Path), we would get "D:/hello/world/.album.euphony" (as a PathBuf).
+fn get_album_metadata_filepath(directory_path: &Path) -> PathBuf {
     let mut final_path = directory_path.to_path_buf();
     final_path.push(ALBUM_METADATA_FILE_NAME);
 
     final_path
 }
 
+/// We store file creation and modification in 64-bit floats, but we usually compare two times
+/// that should match using some tolerance. This function is useful for the mentioned task,
+/// when you set the `max_distance` to a tolerance of your choice.
 fn f64_approximate_eq(first: f64, second: f64, max_distance: f64) -> bool {
     let distance = first.sub(second).abs();
     distance.lt(&max_distance)
 }
 
-impl LibraryMetaFile {
-    pub fn matches(&self, other_meta: &LibraryMetaFile) -> bool {
-        if self.size_bytes != other_meta.size_bytes {
-            return false;
-        }
 
-        static DEFAULT_MAX_DISTANCE: f64 = 0.01;
+/// Represents a single album and its associated tracked files.
+/// This is the structure that is generated/loaded from/saved into .album.euphony files.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AlbumMetadata {
+    pub files: HashMap<String, AlbumMetadataFile>,
 
-        if !f64_approximate_eq(self.time_created, other_meta.time_created, DEFAULT_MAX_DISTANCE) {
-            return false;
-        }
-
-        if !f64_approximate_eq(self.time_modified, other_meta.time_modified, DEFAULT_MAX_DISTANCE) {
-            return false;
-        }
-
-        true
-    }
+    #[serde(skip)]
+    pub base_directory: String,
 }
 
-impl LibraryMeta {
+impl AlbumMetadata {
     /// Given a directory path, load its .album.euphony file, if it exists, into a LibraryMeta struct.
-    pub fn load(directory_path: &Path) -> Result<Option<LibraryMeta>, Error> {
-        let file_path = get_librarymeta_path_from_directory(directory_path);
+    pub fn load(directory_path: &Path) -> Result<Option<AlbumMetadata>, Error> {
+        let file_path = get_album_metadata_filepath(directory_path);
         if !file_path.is_file() {
             return Ok(None);
         }
 
         let library_meta_string = fs::read_to_string(file_path)?;
-        let library_meta: LibraryMeta = serde_json::from_str(&library_meta_string)?;
+        let library_meta: AlbumMetadata = serde_json::from_str(&library_meta_string)?;
 
         Ok(Some(library_meta))
     }
@@ -101,7 +62,7 @@ impl LibraryMeta {
         directory_path: &Path,
         maximum_tree_depth: Option<usize>,
         extensions: &Vec<String>,
-    ) -> Result<LibraryMeta, Error> {
+    ) -> Result<AlbumMetadata, Error> {
         const DEFAULT_MAX_DEPTH: usize = 4;
 
         let maximum_tree_depth = maximum_tree_depth.unwrap_or(DEFAULT_MAX_DEPTH);
@@ -114,7 +75,7 @@ impl LibraryMeta {
         )?;
 
         // Generate info about each file (limited to relevant extensions).
-        let mut file_hashmap: HashMap<String, LibraryMetaFile> = HashMap::new();
+        let mut file_hashmap: HashMap<String, AlbumMetadataFile> = HashMap::new();
 
         for file in files {
             let file_metadata = file.metadata()?;
@@ -138,7 +99,7 @@ impl LibraryMeta {
                     }
             };
 
-            let file_metadata = LibraryMetaFile {
+            let file_metadata = AlbumMetadataFile {
                 size_bytes: file_size_bytes,
                 time_modified: file_modified_at_duration.as_secs_f64(),
                 time_created: file_created_at_duration.as_secs_f64(),
@@ -163,7 +124,7 @@ impl LibraryMeta {
             file_hashmap.insert(file_path_relative_to_meta_file, file_metadata);
         }
 
-        Ok(LibraryMeta {
+        Ok(AlbumMetadata {
             base_directory: directory_path.to_str()
                 .expect("Could not get library directory.")
                 .to_string(),
@@ -174,7 +135,7 @@ impl LibraryMeta {
     /// Given a directory, save the LibraryMeta struct in question into the .album.euphony file
     /// as a JSON document.
     pub fn save(&self, directory_path: &Path, allow_overwrite: bool) -> Result<(), Error> {
-        let file_path = get_librarymeta_path_from_directory(directory_path);
+        let file_path = get_album_metadata_filepath(directory_path);
         if file_path.exists() && !allow_overwrite {
             return Err(
                 Error::new(
@@ -194,7 +155,7 @@ impl LibraryMeta {
 
     /// Given another instance of the LibraryMeta struct (expected to be the fresh one),
     /// compare them and generate a list of new, changed and removed files between the snapshots.
-    pub fn diff(&self, current_meta_state: &LibraryMeta) -> FileChanges {
+    pub fn diff(&self, current_meta_state: &AlbumMetadata) -> FileChanges {
         let saved_file_paths: HashSet<&String> = self.files.keys().collect();
         let current_file_paths: HashSet<&String> = current_meta_state.files.keys().collect();
 
@@ -244,7 +205,7 @@ impl LibraryMeta {
     /// from the aggregated library, but no changes will be detected on a library transcode).
     pub fn diff_or_missing(
         &self,
-        current_meta_state: &LibraryMeta,
+        current_meta_state: &AlbumMetadata,
         album_info: &AlbumDirectoryInfo,
         config: &Config,
     ) -> Result<FileChanges, Error> {
@@ -270,5 +231,52 @@ impl LibraryMeta {
         diff.files_new.extend(files_missing_in_target);
 
         Ok(diff)
+    }
+}
+
+
+/// This struct holds information about a single tracked file.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AlbumMetadataFile {
+    // The BLAKE3 hash was removed mid-design due to likely not being
+    // fast enough to scan the entire library each time we call the command.
+    pub size_bytes: u64,
+    pub time_modified: f64,
+    pub time_created: f64,
+}
+
+impl AlbumMetadataFile {
+    pub fn matches(&self, other_meta: &AlbumMetadataFile) -> bool {
+        if self.size_bytes != other_meta.size_bytes {
+            return false;
+        }
+
+        static DEFAULT_MAX_DISTANCE: f64 = 0.01;
+
+        if !f64_approximate_eq(self.time_created, other_meta.time_created, DEFAULT_MAX_DISTANCE) {
+            return false;
+        }
+
+        if !f64_approximate_eq(self.time_modified, other_meta.time_modified, DEFAULT_MAX_DISTANCE) {
+            return false;
+        }
+
+        true
+    }
+}
+
+
+#[derive(Debug)]
+pub struct FileChanges {
+    pub files_new: Vec<String>,
+    pub files_changed: Vec<String>,
+    pub files_removed: Vec<String>,
+}
+
+impl FileChanges {
+    pub fn has_any_changes(&self) -> bool {
+        self.files_new.len() > 0
+            || self.files_changed.len() > 0
+            || self.files_removed.len() > 0
     }
 }

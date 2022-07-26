@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cached::CachedValue;
 use crate::commands::transcode::directories::AlbumDirectoryInfo;
-use crate::commands::transcode::meta::LibraryMeta;
+use crate::commands::transcode::meta::AlbumMetadata;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
 use crate::Config;
 
@@ -15,11 +15,11 @@ pub struct AlbumWorkPacket {
 
     /// Contains a cached version of the metadata available on disk (if any).
     /// Generated on first access.
-    cached_saved_meta: CachedValue<Option<LibraryMeta>>,
+    cached_saved_meta: CachedValue<Option<AlbumMetadata>>,
 
     /// Contains a cached version of the fresh file metadata.
     /// Generated on first access.
-    cached_fresh_meta: CachedValue<LibraryMeta>,
+    cached_fresh_meta: CachedValue<AlbumMetadata>,
 }
 
 impl AlbumWorkPacket {
@@ -44,7 +44,7 @@ impl AlbumWorkPacket {
         path
     }
 
-    pub fn get_saved_meta(&mut self) -> Result<Option<LibraryMeta>, Error> {
+    pub fn get_saved_meta(&mut self) -> Result<Option<AlbumMetadata>, Error> {
         if self.cached_saved_meta.is_cached() {
             return match self.cached_saved_meta.get() {
                 Some(meta) => Ok(Some(meta.clone())),
@@ -54,20 +54,20 @@ impl AlbumWorkPacket {
 
         let full_album_directory_path = self.get_album_directory_path();
 
-        let saved_meta = LibraryMeta::load(&full_album_directory_path)?;
+        let saved_meta = AlbumMetadata::load(&full_album_directory_path)?;
         self.cached_saved_meta.set(saved_meta.clone());
 
         Ok(saved_meta)
     }
 
-    pub fn get_fresh_meta(&mut self, config: &Config) -> Result<LibraryMeta, Error> {
+    pub fn get_fresh_meta(&mut self, config: &Config) -> Result<AlbumMetadata, Error> {
         if self.cached_fresh_meta.is_cached() {
             return Ok(self.cached_fresh_meta.get().clone());
         }
 
         let full_album_directory_path = self.get_album_directory_path();
 
-        let fresh_meta = LibraryMeta::generate(
+        let fresh_meta = AlbumMetadata::generate(
             &full_album_directory_path,
             // Only scan the album directory and not any subdirectories.
             Some(0),
