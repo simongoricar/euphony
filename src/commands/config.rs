@@ -124,6 +124,13 @@ pub fn cmd_show_config(config: &Config) {
             "    allowed_audio_files_by_extension = {:?}",
             &library.allowed_audio_files_by_extension,
         );
+        println!(
+            "    ignored_directories_in_base_dir = {}",
+            match &library.ignored_directories_in_base_dir {
+                Some(ignores) => format!("{:?}", ignores),
+                None => String::from("[]"),
+            },
+        );
         c::new_line();
     }
 
