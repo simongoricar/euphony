@@ -41,7 +41,7 @@ to_mp3_v0_args = ["-i", "{INPUT_FILE}", "-vn", "-codec:a", "libmp3lame", "-q:a",
 allowed_other_files_by_extension = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
 # These files are always ignored and do not cause validation errors (these are matched by full file name).
 # (".album.euphony" is a mandatory entry if you use the transcode commands)
-allowed_other_files_by_name = [".album.euphony", "desktop.ini"]
+allowed_other_files_by_name = [".album.euphony", ".album.override.euphony", "desktop.ini"]
 # NOTE: If a file without a valid extension or name match is found during the scan, it is marked
 # as an unexpected file and makes the validation fail (this is the entire point of validation).
 
