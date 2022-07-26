@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cached::CachedValue;
 use crate::commands::transcode::directories::AlbumDirectoryInfo;
-use crate::commands::transcode::meta::AlbumMetadata;
+use crate::commands::transcode::metadata::AlbumMetadata;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
 use crate::Config;
 
@@ -69,8 +69,6 @@ impl AlbumWorkPacket {
 
         let fresh_meta = AlbumMetadata::generate(
             &full_album_directory_path,
-            // Only scan the album directory and not any subdirectories.
-            Some(0),
             &config.file_metadata.tracked_extensions,
         )?;
         self.cached_fresh_meta.set(fresh_meta.clone());

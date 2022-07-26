@@ -21,10 +21,11 @@ use crate::configuration::Config;
 use crate::console as c;
 use crate::globals::verbose_enabled;
 
-mod meta;
+mod metadata;
 mod directories;
 mod packets;
 mod processing;
+mod overrides;
 
 const DEFAULT_PROGRESS_BAR_TICK_INTERVAL: Duration = Duration::from_millis(100);
 

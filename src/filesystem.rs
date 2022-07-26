@@ -67,7 +67,7 @@ pub fn list_directory_files_recursively(
 
 pub fn list_directory_files_recusrively_filtered(
     directory: &Path,
-    maximum_recursion_depth: usize,
+    maximum_recursion_depth: u16,
     extensions: &Vec<String>,
 ) -> Result<Vec<DirEntry>, Error> {
     let mut aggregated_files: Vec<DirEntry> = Vec::new();
@@ -75,7 +75,7 @@ pub fn list_directory_files_recusrively_filtered(
     // This function works non-recursively by having a stack of
     // pending directories to search, along with their depth to ensure
     // we don't exceed `maximum_recursion_depth`.
-    let mut pending_directories: Vec<(PathBuf, usize)> = Vec::new();
+    let mut pending_directories: Vec<(PathBuf, u16)> = Vec::new();
     pending_directories.push((directory.to_path_buf(), 0));
 
     while !pending_directories.is_empty() {

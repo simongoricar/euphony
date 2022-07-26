@@ -92,7 +92,8 @@ If you're on a different platform, copy one from the `data` directory.
 The `configuration.toml` file must be in `./data/configuration.toml` (relative to the binary) or explicitly stated with the `--config` option.
 The PowerShell install script places this automatically (you just need to rename and fill out the file), other platforms will require a manual copy.
 
-Make sure the file name is `configuration.toml`, *carefully read* the explanations inside and fill out the contents. 
+Make sure the file name is `configuration.toml`, *carefully read* the explanations inside and fill out the contents.
+If you're unfamiliar with the format, it's [TOML](https://toml.io/en/), chosen for its readability and ease of editing.
 It is mostly about specifying where ffmpeg is, which files to track, where your libraries reside and what files you want to allow or forbid inside.
 
 > As an example, let's say I have two separate libraries: a lossy and a lossless one. The lossless one has its 
@@ -105,6 +106,45 @@ it should be just next to the binary in a folder called `tools`. Adapt the `tool
 configuration file to a path to the ffmpeg binary.
 
 Change any other configuration values you haven't yet, then save. **You're ready!**
+
+### 3.1. Advanced usage: `.album.override.euphony` per-album files
+> This is an advanced feature.
+
+You may create an `.album.override.euphony` file in the root directory of each album (same directory as the `.album.euphony` file).
+This file is optional. Its purpose is to influence the scanning and transcoding process for the relevant album. In order to be
+easily readable and editable by humans, the chosen format for this file is [TOML](https://toml.io/en/) (same as configuration files).
+
+Available configuration values will likely expand in the future, but for now, the settings available are:
+```toml
+# This file serves as a sample of what can be done using album overrides.
+
+[scan]
+# How deep the transcoding scan should look.
+# 0 means only the album directory and no subdirectories (most common, this is also the default without this file).
+# 1 means only one directory level deeper, and so on.
+depth = 1
+```
+
+In case this description falls behind, an up-to-date documented version of the `.album.override.euphony` file is available
+in the `data` directory.
+
+Why is this useful? Well let's say you have an album that has multiple discs and so many tracks you'd like to keep each
+disc in a separate directory, like so:
+
+```markdown
+<album directory>
+ |- cover.jpg
+ |-- Disc 1
+ |   |- <a lot of audio files>
+ |-- Disc 2
+ |-- Disc 3
+ |-- Disc 4
+ |-- <...>
+```
+
+In this case you may create an `.album.override.euphony` file in the album directory and set the `depth` setting to 1.
+This will make euphony scan one directory deeper, catching your per-disc audio files.
+
 
 ## 4. Usage
 Run `euphony` with the `--help` option to get all available commands and their short explanations:
