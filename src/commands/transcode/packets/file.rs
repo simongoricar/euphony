@@ -9,7 +9,7 @@ use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::globals::verbose_enabled;
 
 #[derive(Eq, PartialEq, Clone)]
-enum FilePacketType {
+pub enum FilePacketType {
     AudioFile,
     DataFile,
 }
@@ -41,7 +41,7 @@ impl FilePacketType {
 #[derive(Eq, PartialEq, Clone)]
 pub enum FilePacketAction {
     Process,
-    Remove,
+    RemoveAtTarget,
 }
 
 #[derive(Clone)]
@@ -67,10 +67,7 @@ impl FileProcessingResult {
             is_final: true,
             file_work_packet: packet,
             error: None,
-            verbose_info: match verbose_info {
-                Some(info) => Some(info.into()),
-                None => None,
-            },
+            verbose_info: verbose_info.map(|info| info.into()),
         }
     }
 
@@ -79,10 +76,7 @@ impl FileProcessingResult {
             is_final: true,
             file_work_packet: packet,
             error: Some(error.into()),
-            verbose_info: match verbose_info {
-                Some(info) => Some(info.into()),
-                None => None,
-            },
+            verbose_info: verbose_info.map(|info| info.into()),
         }
     }
 
@@ -101,8 +95,8 @@ impl FileProcessingResult {
 pub struct FileWorkPacket {
     pub source_file_path: PathBuf,
     pub target_file_path: PathBuf,
-    file_type: FilePacketType,
-    action: FilePacketAction,
+    pub file_type: FilePacketType,
+    pub action: FilePacketAction,
 }
 
 impl FileWorkPacket {
@@ -143,9 +137,9 @@ impl FileWorkPacket {
 
     pub fn get_file_name(&self) -> Result<String, Error> {
         Ok(self.source_file_path.file_name()
-            .ok_or(Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
+            .ok_or_else(|| Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
             .to_str()
-            .ok_or(Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
+            .ok_or_else(|| Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
             .to_string())
     }
 
@@ -158,7 +152,7 @@ impl FileWorkPacket {
                 FilePacketType::AudioFile => self.transcode_into_mp3_v0(config),
                 FilePacketType::DataFile => self.copy_data_file(),
             },
-            FilePacketAction::Remove => self.remove_processed_file(true),
+            FilePacketAction::RemoveAtTarget => self.remove_processed_file(true),
         }
     }
 

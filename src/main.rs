@@ -1,31 +1,32 @@
-use std::{env, path};
-use std::path::PathBuf;
 use std::process::exit;
 
-use ::console::style;
 use clap::{Args, Parser, Subcommand};
+use crossterm::style::Stylize;
+use miette::Result;
 
 use configuration::Config;
+use crate::console_backends::{BareConsoleBackend, LogBackend, TerminalBackend, TUITerminalBackend};
 use crate::globals::VERBOSE;
 
 mod configuration;
 mod filesystem;
 mod commands;
-mod console;
 mod cached;
 mod globals;
 mod observer;
+mod console_backends;
 
 
 #[derive(Subcommand, PartialEq, Eq)]
 enum CLICommand {
-    #[clap(
-        name = "transcode-all",
+    #[command(
+        name = "transcode",
+        visible_aliases = ["transcode-all"],
         about = "Transcode all registered libraries into the aggregated (transcoded) library."
     )]
     TranscodeAll,
 
-    #[clap(
+    #[command(
         name = "transcode-library",
         about = "Transcode only the specified library into the aggregated (transcoded) library. \
                  Requires a single positional parameter: the library name (by full name), \
@@ -33,7 +34,7 @@ enum CLICommand {
     )]
     TranscodeLibrary(TranscodeLibraryArgs),
 
-    #[clap(
+    #[command(
         name = "transcode-album",
         about = "Transcode only the specified album into the aggregated (transcoded) library. \
                  The current directory is used by default, but you may pass a different one \
@@ -41,7 +42,7 @@ enum CLICommand {
     )]
     TranscodeAlbum(TranscodeAlbumArgs),
 
-    #[clap(
+    #[command(
         name = "validate-all",
         about = "Validate all the available (sub)libraries for inconsistencies, such as \
                  forbidden files, any inter-library collisions that would cause problems \
@@ -49,19 +50,19 @@ enum CLICommand {
     )]
     ValidateAll,
 
-    #[clap(
+    #[command(
         name = "validate-library",
         about = "Validate a specific library for inconsistencies, such as forbidden files."
     )]
     ValidateLibrary(ValidateLibraryArgs),
 
-    #[clap(
+    #[command(
         name = "show-config",
         about = "Loads, validates and prints the current configuration from `./data/configuration.toml`."
     )]
     ShowConfig,
 
-    #[clap(
+    #[command(
         name = "list-libraries",
         about = "List all the registered libraries."
     )]
@@ -70,7 +71,7 @@ enum CLICommand {
 
 #[derive(Args, PartialEq, Eq)]
 struct TranscodeAlbumArgs {
-    #[clap(
+    #[arg(
         long = "dir",
         help = "Directory to process, defaults to current directory."
     )]
@@ -79,7 +80,7 @@ struct TranscodeAlbumArgs {
 
 #[derive(Args, PartialEq, Eq)]
 struct TranscodeLibraryArgs {
-    #[clap(
+    #[arg(
         help = "Library to process (by full name)."
     )]
     library_name: String,
@@ -87,14 +88,14 @@ struct TranscodeLibraryArgs {
 
 #[derive(Args, PartialEq, Eq)]
 struct ValidateLibraryArgs {
-    #[clap(
+    #[arg(
         help = "Library to process (by full name)."
     )]
     library_name: String,
 }
 
 #[derive(Parser)]
-#[clap(
+#[command(
     name = "euphony",
     author = "Simon G. <simon.peter.goricar@gmail.com>",
     about = "An opinionated music library transcode manager.",
@@ -105,23 +106,24 @@ struct ValidateLibraryArgs {
     version
 )]
 struct CLIArgs {
-    #[clap(
+    #[arg(
         short = 'c',
         long = "config",
         help = "Optionally a path to your configuration file. Without this option, \
                 euphony tries to load ./data/configuration.toml, but understandably this \
-                might not always be the most convinient location."
+                might not always be the most convenient location."
     )]
     config: Option<String>,
 
-    #[clap(
+    #[arg(
         short = 'v',
         long = "verbose",
+        global = true,
         help = "Increase the verbosity of output."
     )]
     verbose: bool,
 
-    #[clap(subcommand)]
+    #[command(subcommand)]
     command: CLICommand,
 }
 
@@ -133,48 +135,124 @@ fn get_configuration(args: &CLIArgs) -> Config {
     }
 }
 
-fn main() {
-    let args: CLIArgs = CLIArgs::parse();
-
-    VERBOSE.set(args.verbose);
-
+fn process_cli_command(
+    args: CLIArgs,
+    config: &Config,
+) -> std::result::Result<(), i32> {
     if args.command == CLICommand::TranscodeAll {
-        match commands::cmd_transcode_all(&get_configuration(&args)) {
+        let mut tui_terminal = TUITerminalBackend::new()
+            .expect("Could not create tui terminal backend.");
+        
+        tui_terminal.setup()
+            .expect("Could not set up tui terminal backend.");
+        
+        match commands::cmd_transcode_all(config, &mut tui_terminal) {
             Ok(_) => {
-                console::new_line();
-                console::horizontal_line_with_text(
-                    format!(
-                        "{}",
-                        style("Full aggregation complete.")
-                            .green()
-                            .italic()
-                            .bold()
-                    ),
-                    None, None,
-                );
+                tui_terminal.log_newline();
+                tui_terminal.log_println("Transcoding finished.".green().italic());
+                
+                tui_terminal.destroy()
+                    .expect("Could not destroy tui terminal backend.");
+                
+                Ok(())
             },
             Err(error) => {
-                console::new_line();
-                console::horizontal_line_with_text(
-                    format!(
-                        "{}",
-                        style("Errors in full aggregation!")
-                            .red()
-                            .italic()
-                            .bold()
-                    ),
-                    None, None,
-                );
-                console::centered_print(
-                    format!(
-                        "{}",
-                        style(error)
-                            .red()
-                    ),
-                    None,
-                );
+                tui_terminal.log_newline();
+                tui_terminal.log_println(format!(
+                    "{} {}",
+                    "Errored while transcoding:".red(),
+                    error,
+                ));
+    
+                tui_terminal.destroy()
+                    .expect("Could not destroy tui terminal backend.");
+                
+                Err(1)
             }
-        };
+        }
+    } else if args.command == CLICommand::ShowConfig {
+        let mut bare_terminal = BareConsoleBackend::new();
+        
+        bare_terminal.setup()
+            .expect("Could not set up bare console backend.");
+        
+        commands::cmd_show_config(config, &mut bare_terminal);
+        
+        bare_terminal.destroy()
+            .expect("Could not destroy bare console backend.");
+        
+        Ok(())
+        
+    } else {
+        // TODO Other commands.
+        todo!("Unimplemented!");
+    }
+}
+
+fn main() -> Result<()> {
+    let args: CLIArgs = CLIArgs::parse();
+    VERBOSE.set(args.verbose);
+    
+    let configuration = get_configuration(&args);
+    
+    match process_cli_command(args, &configuration) {
+        Ok(_) => {
+            exit(0)
+        },
+        Err(exit_code) => {
+            exit(exit_code)
+        }
+    };
+    
+    /*
+    if args.command == CLICommand::TranscodeAll {
+        match commands::cmd_transcode_all(&configuration, &mut terminal_backend) {
+            Ok(_) => {
+                console.newline()?;
+                console.println_styled("Transcoding completed.".green().italic())?;
+                
+                Ok(())
+                
+                // console::new_line();
+                // console::horizontal_line_with_text(
+                //     format!(
+                //         "{}",
+                //         style("Full aggregation complete.")
+                //             .green()
+                //             .italic()
+                //             .bold()
+                //     ),
+                //     None, None,
+                // );
+            },
+            Err(error) => {
+                console.newline()?;
+                console.println_styled("Errored while transcoding:".red().bold())?;
+                console.println(error)?;
+                
+                // console::new_line();
+                // console::horizontal_line_with_text(
+                //     format!(
+                //         "{}",
+                //         style("Errors in full aggregation!")
+                //             .red()
+                //             .italic()
+                //             .bold()
+                //     ),
+                //     None, None,
+                // );
+                // console::centered_print(
+                //     format!(
+                //         "{}",
+                //         style(error)
+                //             .red()
+                //     ),
+                //     None,
+                // );
+                
+                Ok(())
+            }
+        }
 
     } else if let CLICommand::TranscodeAlbum(ta_args) = &args.command {
         let selected_directory = match &ta_args.directory {
@@ -187,42 +265,44 @@ fn main() {
 
         match commands::cmd_transcode_album(&selected_directory, &get_configuration(&args)) {
             Ok(_) => {
-                console::new_line();
-                console::horizontal_line_with_text(
-                    format!(
-                        "{}",
-                        style("Album aggregation complete.")
-                            .green()
-                            .italic()
-                            .bold()
-                    ),
-                    None, None,
-                );
+                // console::new_line();
+                // console::horizontal_line_with_text(
+                //     format!(
+                //         "{}",
+                //         style("Album aggregation complete.")
+                //             .green()
+                //             .italic()
+                //             .bold()
+                //     ),
+                //     None, None,
+                // );
+                
+                Ok(())
             },
             Err(error) => {
-                console::new_line();
-                console::horizontal_line_with_text(
-                    format!(
-                        "{}",
-                        style("Errors in album aggregation!")
-                            .red()
-                            .italic()
-                            .bold()
-                    ),
-                    None, None,
-                );
-                console::centered_print(
-                    format!(
-                        "{}",
-                        style(error)
-                            .red()
-                    ),
-                    None,
-                );
+                // console::new_line();
+                // console::horizontal_line_with_text(
+                //     format!(
+                //         "{}",
+                //         style("Errors in album aggregation!")
+                //             .red()
+                //             .italic()
+                //             .bold()
+                //     ),
+                //     None, None,
+                // );
+                // console::centered_print(
+                //     format!(
+                //         "{}",
+                //         style(error)
+                //             .red()
+                //     ),
+                //     None,
+                // );
 
                 exit(1);
             }
-        };
+        }
 
     } else if let CLICommand::TranscodeLibrary(tl_args) = &args.command {
         let config = get_configuration(&args);
@@ -230,12 +310,12 @@ fn main() {
         let selected_library = match config.get_library_by_full_name(&tl_args.library_name) {
             Some(library) => library,
             None => {
-                eprintln!(
-                    "{} {}",
-                    style("No such library:")
-                        .red(),
-                    tl_args.library_name,
-                );
+                // eprintln!(
+                //     "{} {}",
+                //     style("No such library:")
+                //         .red(),
+                //     tl_args.library_name,
+                // );
                 exit(1);
             }
         };
@@ -244,25 +324,27 @@ fn main() {
 
         match commands::cmd_transcode_library(&selected_library_path, &config) {
             Ok(_) => {
-                console::new_line();
-                console::horizontal_line_with_text(
-                    format!(
-                        "{}",
-                        style("Library aggregation complete.")
-                            .green()
-                            .italic()
-                            .bold()
-                    ),
-                    None, None,
-                );
+                // console::new_line();
+                // console::horizontal_line_with_text(
+                //     format!(
+                //         "{}",
+                //         style("Library aggregation complete.")
+                //             .green()
+                //             .italic()
+                //             .bold()
+                //     ),
+                //     None, None,
+                // );
+                
+                Ok(())
             },
             Err(error) => {
-                eprintln!(
-                    "{} {}",
-                    style("Error while transcoding library:")
-                        .red(),
-                    error,
-                );
+                // eprintln!(
+                //     "{} {}",
+                //     style("Error while transcoding library:")
+                //         .red(),
+                //     error,
+                // );
                 exit(1);
             }
         }
@@ -281,11 +363,15 @@ fn main() {
 
     } else if args.command == CLICommand::ShowConfig {
         commands::cmd_show_config(&get_configuration(&args));
+        Ok(())
 
     } else if args.command == CLICommand::ListLibraries {
         commands::cmd_list_libraries(&get_configuration(&args));
+        Ok(())
 
     } else {
         panic!("Unexpected/unimplemented command!");
     }
+    
+     */
 }

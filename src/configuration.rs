@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::filesystem;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Config {
     pub essentials: ConfigEssentials,
     pub tools: ConfigTools,
@@ -20,7 +20,7 @@ pub struct Config {
     pub configuration_file_path: PathBuf,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ConfigEssentials {
     pub base_library_path: String,
     pub base_tools_path: String,
@@ -58,7 +58,7 @@ impl ConfigEssentials {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ConfigTools {
     pub ffmpeg: ConfigToolsFFMPEG,
 }
@@ -69,7 +69,7 @@ impl ConfigTools {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ConfigToolsFFMPEG {
     pub binary: String,
     pub to_mp3_v0_args: Vec<String>,
@@ -93,7 +93,7 @@ impl ConfigToolsFFMPEG {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ConfigValidation {
     pub allowed_other_files_by_extension: Vec<String>,
     pub allowed_other_files_by_name: Vec<String>,
@@ -107,7 +107,7 @@ impl ConfigValidation {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ConfigLibrary {
     /// Full name of the library.
     pub name: String,
@@ -149,7 +149,7 @@ impl ConfigLibrary {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ConfigAggregated {
     pub path: String,
     pub transcode_threads: u16,
@@ -167,7 +167,7 @@ impl ConfigAggregated {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ConfigFileMetadata {
     pub tracked_audio_extensions: Vec<String>,
     pub tracked_other_extensions: Vec<String>,
@@ -267,6 +267,7 @@ pub fn get_configuration_file_path() -> String {
     )
 }
 
+#[allow(dead_code)]
 impl Config {
     pub fn load_from_path<S: Into<String>>(configuration_filepath: S) -> Config {
         let configuration_filepath = PathBuf::from(configuration_filepath.into());

@@ -33,6 +33,7 @@ pub fn list_directory_contents(directory: &Path)
 /// Given a `directory`, recursively scan its contents and return
 /// a Result: when Ok the inner value is a vector containing DirEntry elements - files
 /// in the directory (including subdirectories) up to the `maximum_recursion_depth` depth limit.
+#[allow(dead_code)]
 pub fn list_directory_files_recursively(
     directory: &Path,
     maximum_recursion_depth: usize,
@@ -132,6 +133,7 @@ pub fn list_dir_entry_contents(dir_entry: &DirEntry)
 }
 
 /// Check whether the file is directly in the provided directory.
+#[allow(dead_code)]
 pub fn is_file_directly_in_dir(file_path: &Path, directory_path: &Path) -> bool {
     match file_path.parent() {
         Some(parent) => parent.eq(directory_path),
@@ -140,10 +142,11 @@ pub fn is_file_directly_in_dir(file_path: &Path, directory_path: &Path) -> bool 
 }
 
 /// Compared to `is_file_directly_in_dir`, this searches subdirectories as well.
+#[allow(dead_code)]
 pub fn is_file_inside_directory(file_path: &Path, directory_path: &Path, recursion_limit: Option<u32>) -> bool {
     let recursion_limit = recursion_limit.unwrap_or(16);
 
-    if recursion_limit <= 0 {
+    if recursion_limit == 0 {
         false
     } else {
         match file_path.parent() {

@@ -1,32 +1,27 @@
-use std::io::{Error, ErrorKind};
-use std::path::{Path, PathBuf};
-use std::process::exit;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::mpsc;
+use std::sync::mpsc::{RecvTimeoutError, Sender};
+use std::thread;
 use std::time::{Duration, Instant};
+use crossterm::style::Stylize;
 
-use console::Color::Color256;
-use console::{measure_text_width, style, Style};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use miette::{IntoDiagnostic, Result};
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use directories as dirs;
 
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
+use crate::commands::transcode::packets::file::{FilePacketType, FileWorkPacket};
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
-use crate::commands::transcode::processing::{
-    build_transcode_thread_pool,
-    process_file_packets_in_threadpool,
-    ProcessingObserver,
-};
 use crate::configuration::Config;
-use crate::console as c;
+use crate::console_backends::{LogBackend, QueueItemID, TerminalBackend, TranscodeBackend};
 use crate::globals::verbose_enabled;
 
 mod metadata;
 mod directories;
 mod packets;
-mod processing;
 mod overrides;
 
+/*
 const DEFAULT_PROGRESS_BAR_TICK_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Builds a ProgressStyle that contains the requested header at the beginning of the line.
@@ -150,100 +145,253 @@ fn build_processing_observer(
         }
     }))
 }
+ */
 
+enum WorkerMessage {
+    StartingWithFile {
+        queue_item: QueueItemID,
+    },
+    FinishedWithFile {
+        queue_item: QueueItemID,
+        was_ok: bool,
+    },
+}
+
+/// Builds a ThreadPool using the `transcode_threads` configuration value.
+pub fn build_transcode_thread_pool(config: &Config) -> ThreadPool {
+    ThreadPoolBuilder::new()
+        .num_threads(config.aggregated_library.transcode_threads as usize)
+        .build()
+        .unwrap()
+}
+
+fn process_album(
+    album_file_packets: &Vec<(FileWorkPacket, QueueItemID)>,
+    config: &Config,
+    thread_pool: &ThreadPool,
+    update_sender: Sender<WorkerMessage>,
+) {
+    if album_file_packets.len() == 0 {
+        return;
+    }
+    
+    thread_pool.scope_fifo(move |s| {
+        for (file, queue_item) in album_file_packets {
+            let update_sender_thread_clone = update_sender.clone();
+            
+            s.spawn_fifo(move |_| {
+                update_sender_thread_clone.send(WorkerMessage::StartingWithFile {
+                    queue_item: *queue_item,
+                }).expect("Could not send message from worker to main thread.");
+    
+                // TODO Retries.
+                
+                let work_result = file.process(config);
+                let was_ok = work_result.is_ok();
+    
+                update_sender_thread_clone.send(WorkerMessage::FinishedWithFile {
+                    queue_item: *queue_item,
+                    was_ok,
+                }).expect("Could not send message from worker to main thread.");
+            });
+        }
+    });
+}
+
+// TODO Consider reimplementing transcode for specific library and specific album, like before.
 
 /// This function lists all the albums in all of the libraries that need to be transcoded
 /// and performs the transcode using ffmpeg (for audio files) and simple file copy (for data files).
-pub fn cmd_transcode_all(config: &Config) -> Result<(), Error> {
-    c::horizontal_line_with_text(
-        format!(
-            "{}",
-            style("transcoding (all libraries)")
-                .cyan()
-                .bold()
-        ),
-        None, None,
-    );
-    c::new_line();
-
+pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
+    config: &Config,
+    terminal: &mut T
+) -> Result<()> {
+    terminal.log_println("Mode: transcode all libraries.".cyan().bold());
+    terminal.log_println("Scanning all libraries for changes...");
+    
     let processing_begin_time = Instant::now();
 
-    println!(
-        "{}",
-        style("Scanning libraries for changes...")
-            .yellow()
-            .bright(),
-    );
-
-    // List all libraries.
-    let mut library_packets: Vec<LibraryWorkPacket> = Vec::new();
-    for (library_name, library) in &config.libraries {
-        library_packets.push(
+    // Generate a list of `LibraryWorkPacket` for each library.
+    let library_work_packets: Vec<LibraryWorkPacket> = config.libraries
+        .iter()
+        .map(|(name, library)|
             LibraryWorkPacket::from_library_path(
-                library_name,
-                Path::new(&library.path),
+                name,
+                &library.path,
                 config,
-            )?,
-        );
-    }
-
-    let total_libraries = library_packets.len();
+            ).into_diagnostic()
+        )
+        .collect::<Result<Vec<LibraryWorkPacket>>>()?;
 
     // Filter libraries to ones that need at least one album processed.
     let mut filtered_library_packets: Vec<(LibraryWorkPacket, Vec<AlbumWorkPacket>)> = Vec::new();
-    for mut library_packet in library_packets {
-        // Not all albums need to be processed each time, this function returns only the list
+    for mut library_packet in library_work_packets {
+        // Not all albums need to be processed each time - this generates only the list
         // of albums that need are either mising or have changed according to the .album.euphony file.
-        let mut albums_in_need_of_processing = library_packet.get_albums_in_need_of_processing(config)?;
-        albums_in_need_of_processing.sort_unstable_by(
-            |first, second| {
+        let mut albums_to_process = library_packet
+            .get_albums_in_need_of_processing(config)
+            .into_diagnostic()?;
+        
+        // For convenience (and because why not), we sort the album list for each library alphabetically.
+        albums_to_process.sort_unstable_by(
+            |first, second|
                 first.album_info.album_title.cmp(&second.album_info.album_title)
-            }
         );
-
-        if albums_in_need_of_processing.len() > 0 {
-            filtered_library_packets.push((library_packet, albums_in_need_of_processing));
+        
+        // (skip albums without any changed/unprocessed files)
+        if albums_to_process.len() > 0 {
+            filtered_library_packets.push((library_packet, albums_to_process));
         }
     }
-
+    
+    // For convenience (and because why not), we sort the libraries alphabetically.
     filtered_library_packets.sort_unstable_by(
-        |(first, _), (second, _)| {
+        |(first, _), (second, _)|
             first.name.cmp(&second.name)
-        }
     );
 
-    let total_filtered_libraries = filtered_library_packets.len();
-    if total_filtered_libraries == 0 {
-        println!(
-            "{}",
-            style("All transcodes are already up to date.")
-                .green()
-                .bright()
-                .bold(),
-        );
+    // Skip processing if there are no changes,
+    // otherwise show a short summary of changes and start transcoding.
+    if filtered_library_packets.len() == 0 {
+        terminal.log_println("Transcodes are already up to date.".green().bold());
         return Ok(());
     } else {
-        println!(
-            "{}/{} libraries need transcoding:",
-            style(total_filtered_libraries)
-                .bold()
-                .italic(),
-            style(total_libraries)
-                .bold(),
+        // Number of files that need to be processed (copied or transcoded).
+        let total_filtered_packets = filtered_library_packets.iter_mut()
+            .map(|(_, albums)| albums)
+            .flatten()
+            .map(|album| album.get_work_packets(config).unwrap_or_default().len())
+            .sum::<usize>();
+        
+        terminal.log_println(
+            format!(
+                "Detected {} changed files, transcoding.",
+                total_filtered_packets.to_string().bold()
+            )
         );
-        for (library, albums) in &filtered_library_packets {
-            println!(
-                "  {:20} {} new or changed albums.",
-                style(format!("{}:", library.name))
-                    .yellow()
-                    .italic(),
-                style(albums.len())
-                    .bold()
-            );
-        }
-        c::new_line();
+        terminal.log_newline();
     }
+    
+    let mut thread_pool = build_transcode_thread_pool(config);
+    
+    // Iterate over all available libraries.
+    for (_, album_packets) in filtered_library_packets {
+        // Iterate over each library' albums that are in need of transcoding.
+        for mut album_packet in album_packets {
+            terminal.queue_begin();
+            terminal.progress_begin();
+            
+            if verbose_enabled() {
+                let fresh_metadata = album_packet.get_fresh_meta(config)
+                    .into_diagnostic()?;
+                
+                terminal.log_println(format!(
+                    "[VERBOSE] AlbumWorkPacket album: {:?}; files in meta: {:?}",
+                    album_packet.album_info,
+                    fresh_metadata.files,
+                ));
+            }
+            
+            // TODO Verbose logging per-file.
+            
+            let file_packets = album_packet
+                .get_work_packets(config)
+                .into_diagnostic()?;
+    
+            // Fill up the terminal queue with items.
+            let queued_files = file_packets
+                .into_iter()
+                .map(|file_packet| {
+                    let item_info = format!(
+                        "[{}] {}",
+                        match file_packet.file_type {
+                            FilePacketType::AudioFile => "audio",
+                            FilePacketType::DataFile => "data",
+                        },
+                        match file_packet.target_file_path.file_name() {
+                            Some(name) => name.to_string_lossy().to_string(),
+                            None => "UNKNOWN".into()
+                        },
+                    );
+                    
+                    // Maps the original FileWorkPacket to a tuple of `(FileWorkPacket, QueueItemID)`
+                    // if adding the item to the queue was successful,
+                    // otherwise returns an `Err` with the original error.
+                    match terminal.queue_item_add(item_info) {
+                        Ok(queue_item_id) => Ok((file_packet, queue_item_id)),
+                        Err(error) => Err(error)
+                    }
+                })
+                .collect::<Result<Vec<(FileWorkPacket, QueueItemID)>>>()?;
+            
+            let (tx, rx) = mpsc::channel::<WorkerMessage>();
+    
+            let config_clone = config.clone();
+            let main_processing_thread_handle = thread::spawn(move || {
+                process_album(
+                    &queued_files,
+                    &config_clone,
+                    &thread_pool,
+                    tx,
+                );
+    
+                // Return the thread pool back.
+                thread_pool
+            });
+            
+            loop {
+                // Wait for message from worker threads.
+                let message = rx.recv_timeout(Duration::from_millis(50));
+                match message {
+                    Ok(message) => match message {
+                        WorkerMessage::StartingWithFile { queue_item } => {
+                            terminal.queue_item_start(queue_item)?;
+                        },
+                        WorkerMessage::FinishedWithFile { queue_item, was_ok } => {
+                            terminal.queue_item_finish(queue_item, was_ok)?;
+                        },
+                    },
+                    Err(error) => {
+                        // If the main processing thread stopped, the channel will be disconnected,
+                        // in which case we should stop waiting.
+                        if error == RecvTimeoutError::Disconnected {
+                            break;
+                        }
+                    }
+                };
+                
+                // Make sure the main processing thread is still alive.
+                if main_processing_thread_handle.is_finished() {
+                    break;
+                }
+            }
+            
+            thread_pool = main_processing_thread_handle.join()
+                .expect("Could not join main processing thread.");
+            
+            // Update the metadata in .album.euphony file, saving details that will ensure
+            // they are not needlessly transcoded again next time.
+            album_packet.save_fresh_meta(config, true)
+                .into_diagnostic()?;
+            
+            terminal.queue_end();
+            terminal.progress_end();
+        }
+    }
+    
+    let processing_time_delta = processing_begin_time.elapsed().as_secs_f64();
+    terminal.log_println(format!(
+        "Transcoding completed in {:.1}",
+        processing_time_delta,
+    ));
+    
+    Ok(())
+    
+    
+    // DEPRECATED BELOW
 
+    /*
+    //  TODO Upgrade to custom progress implementation.
     // Set up progress bars (three bars, one for current file, another for albums, the third for libraries).
     let multi_pbr = MultiProgress::new();
 
@@ -514,8 +662,10 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     );
 
     Ok(())
+     */
 }
 
+/*
 /// This function transcodes a single album using ffmpeg (for audio files) and simple file copy (for data files).
 pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<(), Error> {
     if !album_directory.is_dir() {
@@ -631,3 +781,4 @@ pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<()
 
     Ok(())
 }
+ */

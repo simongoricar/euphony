@@ -146,7 +146,7 @@ impl AlbumWorkPacket {
                         Path::new(&removed_file_name),
                         &self.album_info,
                         config,
-                        FilePacketAction::Remove,
+                        FilePacketAction::RemoveAtTarget,
                     )?,
                 );
             }

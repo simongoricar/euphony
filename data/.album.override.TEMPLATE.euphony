@@ -4,4 +4,4 @@
 # How deep the transcoding scan should look.
 # 0 means only the album directory and no subdirectories (most common, this is also the default without this file).
 # 1 means only one directory level deeper, and so on.
-depth = 1
+depth = 0

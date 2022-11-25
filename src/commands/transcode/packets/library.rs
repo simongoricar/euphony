@@ -11,11 +11,13 @@ pub struct LibraryWorkPacket {
 }
 
 impl LibraryWorkPacket {
-    pub fn from_library_path(
+    pub fn from_library_path<P: AsRef<Path>>(
         library_key: &str,
-        library_path: &Path,
+        library_path: P,
         config: &Config,
     ) -> Result<LibraryWorkPacket, Error> {
+        let library_path = library_path.as_ref();
+        
         // Make sure this is a valid library path.
         if !config.is_library(library_path) {
             return Err(
