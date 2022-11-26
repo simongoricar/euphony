@@ -44,7 +44,7 @@ impl Config {
         // Run init methods for all sub-configurations.
         config.essentials.after_load_init();
         
-        for (_, library) in &mut config.libraries {
+        for library in config.libraries.values_mut() {
             library.after_load_init(&config.essentials);
         }
         
@@ -61,7 +61,7 @@ impl Config {
     }
     
     pub fn is_library<P: AsRef<Path>>(&self, library_path: P) -> bool {
-        for (_, library) in &self.libraries {
+        for library in self.libraries.values() {
             let current_path = Path::new(&library.path);
             if current_path.eq(library_path.as_ref()) {
                 return true;
@@ -72,7 +72,7 @@ impl Config {
     }
     
     pub fn get_library_name_from_path<P: AsRef<Path>>(&self, library_path: P) -> Option<String> {
-        for (_, library) in &self.libraries {
+        for library in self.libraries.values() {
             let current_path = Path::new(&library.path);
             if current_path.eq(library_path.as_ref()) {
                 return Some(library.name.clone());
@@ -83,13 +83,11 @@ impl Config {
     }
     
     pub fn get_library_by_full_name<S: AsRef<str>>(&self, library_name: S) -> Option<&ConfigLibrary> {
-        for (_, library) in &self.libraries {
-            if library.name.eq(library_name.as_ref()) {
-                return Some(&library);
-            }
-        }
-        
-        None
+        self.libraries
+            .values()
+            .find(|library| {
+                library.name.eq(library_name.as_ref())
+            })
     }
 }
 
@@ -113,22 +111,18 @@ impl AfterLoadInitable for ConfigEssentials {
             .replace("{SELF}", &executable_dir);
         
         self.base_library_path = dunce::canonicalize(&self.base_library_path)
-            .expect(
-                &format!(
-                    "Could not canonicalize base_library_path \"{}\", make sure it exists.",
-                    self.base_library_path,
-                ),
-            )
+            .unwrap_or_else(|_| panic!(
+                "Could not canonicalize base_library_path \"{}\", make sure it exists.",
+                self.base_library_path,
+            ))
             .to_string_lossy()
             .to_string();
         
         self.base_tools_path = dunce::canonicalize(&self.base_tools_path)
-            .expect(
-                &format!(
-                    "Could not canonicalize base_tools_path \"{}\", make sure it exists.",
-                    self.base_tools_path,
-                ),
-            )
+            .unwrap_or_else(|_| panic!(
+                "Could not canonicalize base_tools_path \"{}\", make sure it exists.",
+                self.base_tools_path,
+            ))
             .to_string_lossy()
             .to_string();
     }
@@ -158,12 +152,10 @@ impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
             .replace("{TOOLS_BASE}", &essentials.base_tools_path);
         
         let canocalized_ffmpeg = dunce::canonicalize(ffmpeg.clone())
-            .expect(
-                &format!(
-                    "Could not canocalize ffmpeg binary path: \"{}\", make sure the path is valid.",
-                    ffmpeg,
-                ),
-            );
+            .unwrap_or_else(|_| panic!(
+                "Could not canocalize ffmpeg binary path: \"{}\", make sure the path is valid.",
+                ffmpeg,
+            ));
         
         self.binary = canocalized_ffmpeg
             .to_string_lossy()
@@ -211,13 +203,11 @@ impl AfterLoadWithEssentialsInitable for ConfigLibrary {
             .replace("{LIBRARY_BASE}", &essentials.base_library_path);
         
         let canonicalized_path = dunce::canonicalize(parsed_path)
-            .expect(
-                &format!(
-                    "Library \"{}\" could not be found at path \"{}\"!",
-                    self.name,
-                    self.path,
-                ),
-            );
+            .unwrap_or_else(|_| panic!(
+                "Library \"{}\" could not be found at path \"{}\"!",
+                self.name,
+                self.path,
+            ));
         
         if !canonicalized_path.is_dir() {
             panic!(

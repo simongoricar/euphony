@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::fs;
-use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -74,20 +73,17 @@ impl FileProcessingResult {
         }
     }
 
-    pub fn new_errored<S: Into<String>, T: Into<String>>(packet: FileWorkPacket, error: S, verbose_info: Option<T>) -> Self {
+    pub fn new_errored<S: Into<String>, T: Into<String>>(
+        packet: FileWorkPacket,
+        error: S,
+        verbose_info: Option<T>,
+    ) -> Self {
         FileProcessingResult {
             is_final: true,
             file_work_packet: packet,
             error: Some(error.into()),
             verbose_info: verbose_info.map(|info| info.into()),
         }
-    }
-
-    pub fn clone_as_non_final(&self) -> Self {
-        let mut cloned = self.clone();
-        cloned.is_final = false;
-
-        cloned
     }
 }
 
@@ -133,10 +129,11 @@ impl FileWorkPacket {
         })
     }
 
-    pub fn get_file_name(&self) -> Result<String, Error> {
+    pub fn get_file_name(&self) -> Result<String> {
         Ok(self.source_file_path.file_name()
-            .ok_or_else(|| Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
-            .to_string_lossy()
+            .ok_or_else(|| miette!("Could not extract file name from source path."))?
+            .to_str()
+            .ok_or_else(|| miette!("Could not extract file name: invalid utf-8!"))?
             .to_string())
     }
 
@@ -166,14 +163,13 @@ impl FileWorkPacket {
         }
 
         // Ensure the target directory structure exists.
-        let target_directory = match self.target_file_path.parent()
-            .ok_or(Error::new(ErrorKind::NotFound, "No target directory.")) {
-            Ok(path) => path,
-            Err(error) => {
+        let target_directory = match self.target_file_path.parent() {
+            Some(parent) => parent,
+            None => {
                 return FileProcessingResult::new_errored(
                     self.clone(),
-                    error.to_string(),
-                    verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self)),
+                    "No target directory.",
+                    verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
                 );
             }
         };
@@ -190,26 +186,24 @@ impl FileWorkPacket {
         };
 
         // Compute ffmpeg arguments.
-        let source_file_path_str = match self.source_file_path.to_str()
-            .ok_or(Error::new(ErrorKind::Other, "Could not convert source path to str!")) {
-            Ok(string) => string,
-            Err(error) => {
+        let source_file_path_str = match self.source_file_path.to_str() {
+            Some(str) => str,
+            None => {
                 return FileProcessingResult::new_errored(
                     self.clone(),
-                    error.to_string(),
-                    verbose_enabled().then_some(format!("Couldn't construct source file path. {:?}", self)),
+                    "Could not convert source path to str!",
+                    verbose_enabled().then_some(format!("Couldn't construct source file path. {:?}", self))
                 );
             }
         };
-
-        let target_file_path_str = match self.target_file_path.to_str()
-            .ok_or(Error::new(ErrorKind::Other, "Could not convert target path to str!")) {
-            Ok(string) => string,
-            Err(error) => {
+    
+        let target_file_path_str = match self.target_file_path.to_str() {
+            Some(str) => str,
+            None => {
                 return FileProcessingResult::new_errored(
                     self.clone(),
-                    error.to_string(),
-                    verbose_enabled().then_some(format!("Couldn't construct target file path. {:?}", self)),
+                    "Could not convert target path to str!",
+                    verbose_enabled().then_some(format!("Couldn't construct target file path. {:?}", self))
                 );
             }
         };
@@ -235,22 +229,9 @@ impl FileWorkPacket {
                 );
             }
         };
-
-        match ffmpeg_command.status.code()
-            .ok_or(
-                Error::new(
-                    ErrorKind::Other,
-                    "Could not get ffmpeg exit code!"
-                )
-            ) {
-            Err(error_getting_code) => {
-                FileProcessingResult::new_errored(
-                    self.clone(),
-                    error_getting_code.to_string(),
-                    verbose_enabled().then_some(format!("Couldn't get ffmpeg exit code. {:?}", self)),
-                )
-            },
-            Ok(error_code) => {
+        
+        match ffmpeg_command.status.code() {
+            Some(error_code) => {
                 if error_code == 0 {
                     FileProcessingResult::new_ok(
                         self.clone(),
@@ -263,26 +244,24 @@ impl FileWorkPacket {
                             return FileProcessingResult::new_errored(
                                 self.clone(),
                                 format!("Couldn't get ffmpeg stdout! {}", error),
-                                verbose_enabled().then_some(
-                                    format!("from_utf8(ffmpeg.stdout) failed! {:?}", self)
-                                ),
+                                verbose_enabled()
+                                    .then_some(format!("from_utf8(ffmpeg.stdout) failed! {:?}", self)),
                             );
                         }
                     };
-
+        
                     let ffmpeg_stderr = match String::from_utf8(ffmpeg_command.stderr) {
                         Ok(stderr) => stderr,
                         Err(error) => {
                             return FileProcessingResult::new_errored(
                                 self.clone(),
                                 format!("Couldn't get ffmpeg stderr! {}", error),
-                                verbose_enabled().then_some(
-                                    format!("from_utf8(ffmpeg.stderr) failed! {:?}", self),
-                                )
+                                verbose_enabled()
+                                    .then_some(format!("from_utf8(ffmpeg.stderr) failed! {:?}", self))
                             );
                         }
                     };
-
+        
                     FileProcessingResult::new_errored(
                         self.clone(),
                         format!("Non-zero ffmpeg exit code: {}", error_code),
@@ -297,6 +276,13 @@ impl FileWorkPacket {
                         ),
                     )
                 }
+            },
+            None => {
+                FileProcessingResult::new_errored(
+                    self.clone(),
+                    "Could not get ffmpeg exit code!",
+                    verbose_enabled().then_some(format!("Couldn't get ffmpeg exit code. {:?}", self))
+                )
             }
         }
     }
@@ -314,15 +300,13 @@ impl FileWorkPacket {
             );
         }
 
-        let target_directory = match self.target_file_path.parent()
-            .ok_or(Error::new(ErrorKind::Other, "No target directory.")) {
-            Ok(path) => path,
-            Err(error) => {
+        let target_directory = match self.target_file_path.parent() {
+            Some(path) => path,
+            None => {
                 return FileProcessingResult::new_errored(
                     self.clone(),
-                    error.to_string(),
-                    verbose_enabled()
-                        .then_some(format!("Couldn't construct target directory. {:?}", self))
+                    "No target directory.",
+                    verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
                 );
             }
         };

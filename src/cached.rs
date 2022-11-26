@@ -1,6 +1,5 @@
 /// Represents a value that is initially empty, but might become cached at some point
 /// after it is requested once. This is a generic wrapper around a "cached value" concept.
-#[derive(Clone)]
 pub struct CachedValue<T> {
     value: Option<T>,
 }
@@ -31,5 +30,13 @@ impl<T> CachedValue<T> {
         self.value
             .as_ref()
             .expect("Could not get value.")
+    }
+}
+
+impl<T> Clone for CachedValue<T> where T: Clone {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+        }
     }
 }

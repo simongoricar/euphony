@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, LinkedList};
+use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
 
 /// ArtistAlbumEntry is a way of identifying a single artist-album combination in the library.
@@ -108,7 +109,7 @@ impl CollisionAudit {
                 album_title: existing_album_entry.album_title.clone(),
                 colliding_libraries_by_name: (
                     existing_album_entry.source_library_name.clone(),
-                    source_library_name.into(),
+                    source_library_name,
                 )
             };
 
@@ -117,18 +118,21 @@ impl CollisionAudit {
             return false;
         }
 
-        if !self.artist_name_to_album_entry_set.contains_key(&artist_name) {
+        if let Entry::Vacant(e) =
+            self.artist_name_to_album_entry_set.entry(artist_name.clone())
+        {
             // First album for this artist
             let mut album_set = HashSet::new();
             album_set.insert(
                 ArtistAlbumEntry::new(&artist_name, &album_title, &source_library_name)
             );
 
-            self.artist_name_to_album_entry_set.insert(artist_name, album_set);
+            e.insert(album_set);
 
         } else {
             // This artist already has some albums
-            let artist_album_set = self.artist_name_to_album_entry_set.get_mut(&artist_name)
+            let artist_album_set = self.artist_name_to_album_entry_set
+                .get_mut(&artist_name)
                 .expect("Key was found but get_mut returned None?");
 
             artist_album_set.insert(
@@ -136,10 +140,10 @@ impl CollisionAudit {
             );
         }
 
-        return true;
+        true
     }
 
     pub fn has_collisions(&self) -> bool {
-        self.collisions.len() > 0
+        !self.collisions.is_empty()
     }
 }

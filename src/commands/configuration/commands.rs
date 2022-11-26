@@ -8,7 +8,7 @@ pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
     terminal: &mut T,
 ) {
     terminal.log_println("⚙ Configuration ⚙");
-
+    
     let configuration_file_path_str = config.configuration_file_path
         .to_string_lossy();
     
@@ -21,8 +21,8 @@ pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
     ));
     terminal.log_newline();
     terminal.log_newline();
-
-
+    
+    
     // Essentials
     terminal.log_println("-- essentials --");
     terminal.log_println(format!(
@@ -34,8 +34,8 @@ pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
         config.essentials.base_tools_path,
     ));
     terminal.log_newline();
-
-
+    
+    
     // Tools
     terminal.log_println("-- tools --");
     terminal.log_println(format!(
@@ -51,8 +51,8 @@ pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
         config.tools.ffmpeg.to_mp3_v0_args,
     ));
     terminal.log_newline();
-
-
+    
+    
     // Validation
     terminal.log_println("-- validation --");
     
@@ -65,11 +65,11 @@ pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
         config.validation.allowed_other_files_by_name,
     ));
     terminal.log_newline();
-
-
+    
+    
     // Libraries
     terminal.log_println("-- libraries --");
-
+    
     let library_count = config.libraries.len();
     terminal.log_println(format!(
         "({} available)",
@@ -77,14 +77,14 @@ pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
             .to_string()
             .bold()
     ));
-
+    
     for (library_key, library) in &config.libraries {
         terminal.log_println(format!(
-            "  {} {}:",
+            "  {} ({}):",
             library.name,
-            format!("({})", library_key)
+            library_key,
         ));
-    
+        
         terminal.log_println(format!(
             "    path = {}",
             library.path,
@@ -102,8 +102,8 @@ pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
         ));
         terminal.log_newline();
     }
-
-
+    
+    
     // Aggregated library
     terminal.log_println("-- aggregated_library --");
     terminal.log_println(format!(
@@ -127,14 +127,14 @@ pub fn cmd_list_libraries<T: TerminalBackend + LogBackend>(
             .italic()
     ));
     terminal.log_newline();
-
+    
     terminal.log_println(format!(
         "{} libraries are available:",
         config.libraries.len()
             .to_string()
             .bold()
     ));
-
+    
     for (library_key, library) in &config.libraries {
         terminal.log_println(format!(
             "  {:>22} {}",

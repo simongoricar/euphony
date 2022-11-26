@@ -75,7 +75,7 @@ impl AlbumMetadata {
     /// scan the given directory recursively and generate a fresh LibraryMeta struct.
     pub fn generate(
         directory_path: &Path,
-        extensions: &Vec<String>,
+        extensions: &[String],
     ) -> Result<AlbumMetadata> {
         let overrides = AlbumOverride::load(directory_path)?;
 
@@ -83,8 +83,8 @@ impl AlbumMetadata {
             Some(overrides) => {
                 if overrides.scan.is_some() {
                     let depth_setting = overrides.scan.clone().unwrap().depth;
-                    if depth_setting.is_some() {
-                        depth_setting.unwrap()
+                    if let Some(depth_setting) = depth_setting {
+                        depth_setting
                     } else {
                         DEFAULT_MAX_DEPTH
                     }
@@ -250,7 +250,7 @@ impl AlbumMetadata {
         // TODO Test this code.
         let mut files_missing_in_target: Vec<String> = Vec::new();
 
-        for (file_name, _) in &self.files {
+        for file_name in self.files.keys() {
             // Check if this file exists in the target directory.
             // If it doesn't, add it to the missing file list.
             let file_packet = FileWorkPacket::new(
@@ -313,8 +313,8 @@ pub struct FileChanges {
 
 impl FileChanges {
     pub fn has_any_changes(&self) -> bool {
-        self.files_new.len() > 0
-            || self.files_changed.len() > 0
-            || self.files_removed.len() > 0
+        !self.files_new.is_empty()
+            || !self.files_changed.is_empty()
+            || !self.files_removed.is_empty()
     }
 }

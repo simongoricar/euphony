@@ -7,13 +7,13 @@ use crate::configuration::Config;
 
 
 pub fn directory_is_library(config: &Config, directory_path: &Path) -> bool {
-    for (_, library) in &config.libraries {
+    for library in config.libraries.values() {
         if Path::new(&library.path).eq(directory_path) {
             return true;
         }
     }
 
-    return false;
+    false
 }
 
 pub fn directory_is_artist(config: &Config, directory_path: &Path) -> bool {

@@ -171,7 +171,7 @@ fn process_album(
     thread_pool: &ThreadPool,
     update_sender: Sender<WorkerMessage>,
 ) {
-    if album_file_packets.len() == 0 {
+    if album_file_packets.is_empty() {
         return;
     }
     
@@ -198,7 +198,7 @@ fn process_album(
     });
 }
 
-// TODO Consider reimplementing transcode for specific library and specific album, like before.
+// TODO Consider reimplementing transcode for specific library and specific album, like in previous versions.
 
 /// This function lists all the albums in all of the libraries that need to be transcoded
 /// and performs the transcode using ffmpeg (for audio files) and simple file copy (for data files).
@@ -210,9 +210,9 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
     terminal.log_println("Scanning all libraries for changes...");
     
     let processing_begin_time = Instant::now();
-
+    
     // Generate a list of `LibraryWorkPacket` for each library.
-    let library_work_packets: Vec<LibraryWorkPacket> = config.libraries
+    let mut all_libraries: Vec<LibraryWorkPacket> = config.libraries
         .iter()
         .map(|(name, library)|
             LibraryWorkPacket::from_library_path(
@@ -222,50 +222,64 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
             )
         )
         .collect::<Result<Vec<LibraryWorkPacket>>>()?;
-
-    // Filter libraries to ones that need at least one album processed.
-    let mut filtered_library_packets: Vec<(LibraryWorkPacket, Vec<AlbumWorkPacket>)> = Vec::new();
-    for mut library_packet in library_work_packets {
-        // Not all albums need to be processed each time - this generates only the list
-        // of albums that need are either mising or have changed according to the .album.euphony file.
-        let mut albums_to_process = library_packet
+    
+    all_libraries.sort_unstable_by(
+        |first, second|
+            first.name.cmp(&second.name)
+    );
+    
+    // Generate a complete list of work to be done (all the libraries, albums and individual files
+    // that will be transcoded or copied). This skips libraries and their albums that have already
+    // been transcoded (and haven't changed).
+    type AlbumsWorkload = Vec<(AlbumWorkPacket, Vec<FileWorkPacket>)>;
+    type FullWorkload = Vec<(LibraryWorkPacket, AlbumsWorkload)>;
+    
+    let mut full_workload: FullWorkload = Vec::new();
+    
+    for mut library in all_libraries {
+        let mut albums_to_process = library
             .get_albums_in_need_of_processing(config)?;
-        
-        // For convenience (and because why not), we sort the album list for each library alphabetically.
+    
+        // For convenience (and because why not), both libraries and albums are sorted alphabetically.
         albums_to_process.sort_unstable_by(
             |first, second|
                 first.album_info.album_title.cmp(&second.album_info.album_title)
         );
         
-        // (skip albums without any changed/unprocessed files)
-        if albums_to_process.len() > 0 {
-            filtered_library_packets.push((library_packet, albums_to_process));
+        if !albums_to_process.is_empty() {
+            // For each album in the library that was changed, generate a list of files to process.
+            let mut albums_workload: AlbumsWorkload = Vec::new();
+            
+            for mut album in albums_to_process {
+                if album.needs_processing(config)? {
+                    let files = album.get_work_packets(config)?;
+                    albums_workload.push((album, files));
+                }
+            }
+            
+            full_workload.push((library, albums_workload));
         }
     }
     
-    // For convenience (and because why not), we sort the libraries alphabetically.
-    filtered_library_packets.sort_unstable_by(
-        |(first, _), (second, _)|
-            first.name.cmp(&second.name)
-    );
-
     // Skip processing if there are no changes,
     // otherwise show a short summary of changes and start transcoding.
-    if filtered_library_packets.len() == 0 {
+    if full_workload.is_empty() {
         terminal.log_println("Transcodes are already up to date.".green().bold());
         return Ok(());
     } else {
         // Number of files that need to be processed (copied or transcoded).
-        let total_filtered_packets = filtered_library_packets.iter_mut()
-            .map(|(_, albums)| albums)
-            .flatten()
-            .map(|album| album.get_work_packets(config).unwrap_or_default().len())
+        let total_files_to_process = full_workload
+            .iter_mut()
+            .flat_map(|(_, albums)| albums)
+            .map(|(_, files)| files.len())
             .sum::<usize>();
         
         terminal.log_println(
             format!(
                 "Detected {} changed files, transcoding.",
-                total_filtered_packets.to_string().bold()
+                total_files_to_process
+                    .to_string()
+                    .bold()
             )
         );
         terminal.log_newline();
@@ -273,71 +287,68 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
     
     let mut thread_pool = build_transcode_thread_pool(config);
     
-    // Iterate over all available libraries.
-    for (_, album_packets) in filtered_library_packets {
-        // Iterate over each library' albums that are in need of transcoding.
-        for mut album_packet in album_packets {
+    terminal.progress_begin();
+    
+    for (library, albums) in full_workload {
+        terminal.log_println(format!(
+            "Transcoding library: {}",
+            library.name
+        ));
+        
+        for (mut album, files) in albums {
             terminal.queue_begin();
-            terminal.progress_begin();
             
             if verbose_enabled() {
-                let fresh_metadata = album_packet.get_fresh_meta(config)?;
-                
+                let fresh_metadata = album.get_fresh_meta(config)?;
+    
                 terminal.log_println(format!(
                     "[VERBOSE] AlbumWorkPacket album: {:?}; files in meta: {:?}",
-                    album_packet.album_info,
+                    album.album_info,
                     fresh_metadata.files,
                 ));
             }
             
-            // TODO Verbose logging per-file.
-            
-            let file_packets = album_packet
-                .get_work_packets(config)?;
-    
-            // Fill up the terminal queue with items.
-            let queued_files = file_packets
+            // Enter all album files into queue, generating a list of files and their associated queue IDs.
+            // TODO A percentage of storage saved after each file finishes would be cool.
+            let queued_files = files
                 .into_iter()
-                .map(|file_packet| {
-                    let item_info = format!(
-                        "[{}] {}",
-                        match file_packet.file_type {
+                .map(|file| {
+                    let item_description = format!(
+                        "[{:>5}] {}",
+                        match file.file_type {
                             FilePacketType::AudioFile => "audio",
                             FilePacketType::DataFile => "data",
                         },
-                        match file_packet.target_file_path.file_name() {
-                            Some(name) => name.to_string_lossy().to_string(),
-                            None => "UNKNOWN".into()
-                        },
+                        file.get_file_name()?,
                     );
-                    
-                    // Maps the original FileWorkPacket to a tuple of `(FileWorkPacket, QueueItemID)`
-                    // if adding the item to the queue was successful,
-                    // otherwise returns an `Err` with the original error.
-                    match terminal.queue_item_add(item_info) {
-                        Ok(queue_item_id) => Ok((file_packet, queue_item_id)),
-                        Err(error) => Err(error)
+    
+                    // If adding the item to the queue was successful, this maps the original `FileWorkPacket`
+                    // to a tuple of `(FileWorkPacket, QueueItemID)`, otherwise returns an `Err` with the original error.
+                    match terminal.queue_item_add(item_description) {
+                        Ok(queue_item_id) => Ok((file, queue_item_id)),
+                        Err(error) => Err(error),
                     }
                 })
                 .collect::<Result<Vec<(FileWorkPacket, QueueItemID)>>>()?;
             
             let (tx, rx) = mpsc::channel::<WorkerMessage>();
-    
-            let config_clone = config.clone();
-            let main_processing_thread_handle = thread::spawn(move || {
+            
+            let config_thread_clone = config.clone();
+            let processing_thread_handle = thread::spawn(move || {
                 process_album(
                     &queued_files,
-                    &config_clone,
+                    &config_thread_clone,
                     &thread_pool,
                     tx,
                 );
-    
-                // Return the thread pool back.
+                
+                // Return the thread pool back into the main thread.
                 thread_pool
             });
             
+            // Wait for processing thread to complete. Meanwhile, keep receiving progress messages
+            // from the processing thread and update the terminal backend accordingly.
             loop {
-                // Wait for message from worker threads.
                 let message = rx.recv_timeout(Duration::from_millis(50));
                 match message {
                     Ok(message) => match message {
@@ -355,25 +366,26 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                             break;
                         }
                     }
-                };
-                
+                }
+    
                 // Make sure the main processing thread is still alive.
-                if main_processing_thread_handle.is_finished() {
+                if processing_thread_handle.is_finished() {
                     break;
                 }
             }
             
-            thread_pool = main_processing_thread_handle.join()
+            thread_pool = processing_thread_handle.join()
                 .expect("Could not join main processing thread.");
-            
+    
             // Update the metadata in .album.euphony file, saving details that will ensure
             // they are not needlessly transcoded again next time.
-            album_packet.save_fresh_meta(config, true)?;
+            album.save_fresh_meta(config, true)?;
             
             terminal.queue_end();
-            terminal.progress_end();
         }
     }
+    
+    terminal.progress_end();
     
     let processing_time_delta = processing_begin_time.elapsed().as_secs_f64();
     terminal.log_println(format!(
@@ -382,125 +394,9 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
     ));
     
     Ok(())
-    
-    
-    // DEPRECATED BELOW
-
-    /*
-    //  TODO Upgrade to custom progress implementation.
-    // Set up progress bars (three bars, one for current file, another for albums, the third for libraries).
-    let multi_pbr = MultiProgress::new();
-
-    let files_progress_bar = multi_pbr.add(ProgressBar::new(0));
-    files_progress_bar.set_style(
-        build_progress_bar_style_with_header(format!("{:9}", "(file)")),
-    );
-    files_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
-
-    let files_progress_bar_ref = Arc::new(Mutex::new(files_progress_bar));
-
-    let albums_progress_bar = multi_pbr.add(ProgressBar::new(0));
-    albums_progress_bar.set_style(
-        build_progress_bar_style_with_header(format!("{:9}", "(album)")),
-    );
-    albums_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
-
-    let library_progress_bar = multi_pbr.add(ProgressBar::new(filtered_library_packets.len() as u64));
-    library_progress_bar.set_style(
-        build_progress_bar_style_with_header(format!("{:9}", "(library)")),
-    );
-    library_progress_bar.enable_steady_tick(DEFAULT_PROGRESS_BAR_TICK_INTERVAL);
-
-    // TODO If the user interrupts a transcode, ask if they want to delete the currently half-transcoded album.
-
-    let set_current_file = build_styled_progress_bar_message_fn_dynamic_locked_bar(
-        Style::new().fg(Color256(131)).underlined(),
-        42,
-    );
-
-    let set_current_album = build_styled_progress_bar_message_fn(
-        &albums_progress_bar,
-        Style::new().fg(Color256(131)).underlined(),
-        42,
-    );
-
-    let set_current_library = build_styled_progress_bar_message_fn(
-        &library_progress_bar,
-        Style::new().white().underlined(),
-        42,
-    );
-
-    set_current_file("/", &files_progress_bar_ref.lock().unwrap());
-    set_current_album("/");
-    set_current_library("/");
-
-    let thread_pool = build_transcode_thread_pool(config);
-    let observer = build_processing_observer(
-        files_progress_bar_ref.clone(),
-        Box::new(set_current_file.clone())
-    );
-
-    // Iterate over libraries and process each album.
-    for (library, album_packets) in filtered_library_packets {
-        set_current_library(&library.name);
-
-        albums_progress_bar.reset();
-        albums_progress_bar.set_length(album_packets.len() as u64);
-        albums_progress_bar.set_position(0);
-
-        for mut album_packet in album_packets {
-            set_current_album(&album_packet.album_info.album_title);
-
-            if verbose_enabled() {
-                let fresh_meta = album_packet.get_fresh_meta(config)?;
-                albums_progress_bar.println(
-                    format!(
-                        "  [DEBUG] AlbumWorkPacket album: {:?}, files in meta: {:?}",
-                        album_packet.album_info,
-                        fresh_meta.files,
-                    ),
-                );
-            }
-
-            let file_packets = album_packet.get_work_packets(config)?;
-
-            {
-                let fpb_locked = files_progress_bar_ref.lock().unwrap();
-                fpb_locked.reset();
-                fpb_locked.set_length(file_packets.len() as u64);
-                fpb_locked.set_position(0);
-            }
-
-            let successful = process_file_packets_in_threadpool(
-                config,
-                &thread_pool,
-                file_packets,
-                &observer,
-            );
-            if !successful {
-                return Err(Error::new(ErrorKind::Other, "One or more transcoding threads errored."))
-            }
-
-            album_packet.save_fresh_meta(config, true)?;
-            albums_progress_bar.inc(1);
-        }
-
-        library_progress_bar.inc(1);
-    }
-
-    files_progress_bar_ref.lock().unwrap().finish();
-    albums_progress_bar.finish();
-    library_progress_bar.finish();
-
-    let processing_time_delta = processing_begin_time.elapsed();
-    println!(
-        "Transcoding completed in {:.1?}.",
-        processing_time_delta,
-    );
-
-    Ok(())
 }
 
+/*
 /// This function lists all the allbums in the selected library that need to be transcoded
 /// and performs the actual transcode using ffmpeg (for audio files) and simple file copy (for data files).
 pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Result<(), Error> {
@@ -658,9 +554,9 @@ pub fn cmd_transcode_library(library_directory: &PathBuf, config: &Config) -> Re
     );
 
     Ok(())
-     */
 }
 
+     */
 /*
 /// This function transcodes a single album using ffmpeg (for audio files) and simple file copy (for data files).
 pub fn cmd_transcode_album(album_directory: &Path, config: &Config) -> Result<(), Error> {

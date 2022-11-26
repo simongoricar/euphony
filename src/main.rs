@@ -14,7 +14,6 @@ mod filesystem;
 mod commands;
 mod cached;
 mod globals;
-mod observer;
 mod console;
 
 
@@ -26,25 +25,27 @@ enum CLICommand {
         about = "Transcode all registered libraries into the aggregated (transcoded) library."
     )]
     TranscodeAll,
+    
+    // TODO Reimplement with the new terminal backend.
+    // #[command(
+    //     name = "transcode-library",
+    //     about = "Transcode only the specified library into the aggregated (transcoded) library. \
+    //              Requires a single positional parameter: the library name (by full name), \
+    //              as configured in the configuration file."
+    // )]
+    // TranscodeLibrary(TranscodeLibraryArgs),
+    //
+    // #[command(
+    //     name = "transcode-album",
+    //     about = "Transcode only the specified album into the aggregated (transcoded) library. \
+    //              The current directory is used by default, but you may pass a different one \
+    //              using \"--dir <path>\"."
+    // )]
+    // TranscodeAlbum(TranscodeAlbumArgs),
 
     #[command(
-        name = "transcode-library",
-        about = "Transcode only the specified library into the aggregated (transcoded) library. \
-                 Requires a single positional parameter: the library name (by full name), \
-                 as configured in the configuration file."
-    )]
-    TranscodeLibrary(TranscodeLibraryArgs),
-
-    #[command(
-        name = "transcode-album",
-        about = "Transcode only the specified album into the aggregated (transcoded) library. \
-                 The current directory is used by default, but you may pass a different one \
-                 using \"--dir <path>\"."
-    )]
-    TranscodeAlbum(TranscodeAlbumArgs),
-
-    #[command(
-        name = "validate-all",
+        name = "validate",
+        visible_aliases = ["validate-all"],
         about = "Validate all the available (sub)libraries for inconsistencies, such as \
                  forbidden files, any inter-library collisions that would cause problems \
                  when aggregating (transcoding), etc."
@@ -171,17 +172,48 @@ fn process_cli_command(
                 Err(1)
             }
         }
+    } else if args.command == CLICommand::ValidateAll {
+        let mut bare_terminal = BareConsoleBackend::new();
+    
+        bare_terminal.setup()
+            .expect("Could not set up bare console backend.");
+        commands::cmd_validate_all(config, &mut bare_terminal);
+        bare_terminal.destroy()
+            .expect("Could not destroy bare console backend.");
+    
+        Ok(())
+        
+    } else if let CLICommand::ValidateLibrary(validation_args) = args.command {
+        let mut bare_terminal = BareConsoleBackend::new();
+    
+        bare_terminal.setup()
+            .expect("Could not set up bare console backend.");
+        commands::cmd_validate_library(config, validation_args.library_name, &mut bare_terminal);
+        bare_terminal.destroy()
+            .expect("Could not destroy bare console backend.");
+    
+        Ok(())
+        
     } else if args.command == CLICommand::ShowConfig {
         let mut bare_terminal = BareConsoleBackend::new();
         
         bare_terminal.setup()
             .expect("Could not set up bare console backend.");
-        
         commands::cmd_show_config(config, &mut bare_terminal);
-        
         bare_terminal.destroy()
             .expect("Could not destroy bare console backend.");
         
+        Ok(())
+        
+    } else if args.command == CLICommand::ListLibraries {
+        let mut bare_terminal = BareConsoleBackend::new();
+    
+        bare_terminal.setup()
+            .expect("Could not set up bare console backend.");
+        commands::cmd_list_libraries(config, &mut bare_terminal);
+        bare_terminal.destroy()
+            .expect("Could not destroy bare console backend.");
+    
         Ok(())
         
     } else {

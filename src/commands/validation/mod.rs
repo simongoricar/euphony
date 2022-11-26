@@ -172,7 +172,7 @@ fn validate_library(
         }
     }
 
-    if invalid_file_messages.len() == 0 {
+    if invalid_file_messages.is_empty() {
         Ok(LibraryValidationResult::Valid)
     } else {
         Ok(LibraryValidationResult::Invalid {
@@ -194,7 +194,7 @@ pub fn cmd_validate_all<T: TerminalBackend + LogBackend>(
     let mut has_collisions = false;
 
     // 1/2: Check for unexpected files.
-    for (_, library) in &config.libraries {
+    for library in config.libraries.values() {
         terminal.log_newline();
         terminal.log_println(format!(
             "Library: {}", library.name,

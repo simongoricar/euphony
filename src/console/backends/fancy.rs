@@ -221,13 +221,6 @@ impl TerminalBackend for TUITerminalBackend {
             .into_diagnostic()?;
         terminal.clear()
             .into_diagnostic()?;
-    
-        // terminal.backend_mut()
-        //     .execute(EnterAlternateScreen)
-        //     .into_diagnostic()?;
-        // terminal.backend_mut()
-        //     .execute(EnableMouseCapture)
-        //     .into_diagnostic()?;
         
         // We create a simple one-way channel that we can now use to signal to the render thread
         // to stop rendering and exit.
@@ -307,15 +300,6 @@ impl TerminalBackend for TUITerminalBackend {
             .expect("has_been_set_up is true, but no render thread?!");
         render_thread.join()
             .expect("Render thread panicked!")?;
-    
-        // let mut terminal = self.terminal.lock().unwrap();
-        //
-        // terminal.backend_mut()
-        //     .execute(DisableMouseCapture)
-        //     .into_diagnostic()?;
-        // terminal.backend_mut()
-        //     .execute(LeaveAlternateScreen)
-        //     .into_diagnostic()?;
         
         disable_raw_mode()
             .into_diagnostic()?;
@@ -343,7 +327,7 @@ impl LogBackend for TUITerminalBackend {
                 .expect("Could not get terminal width.")
                 .width as usize;
     
-            for line in content.to_string().split("\n") {
+            for line in content.to_string().split('\n') {
                 if line.len() > terminal_width {
                     // Will require a manual line break (possibly multiple).
             
