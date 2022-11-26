@@ -13,139 +13,14 @@ use crate::commands::transcode::packets::album::AlbumWorkPacket;
 use crate::commands::transcode::packets::file::{FilePacketType, FileWorkPacket};
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
 use crate::configuration::Config;
-use crate::console::{LogBackend, QueueItemID, TerminalBackend, TranscodeBackend};
+use crate::console::{LogBackend, TerminalBackend, TranscodeBackend};
+use crate::console::backends::{QueueItemID, QueueType};
 use crate::globals::verbose_enabled;
 
 mod metadata;
 mod directories;
 mod packets;
 mod overrides;
-
-/*
-const DEFAULT_PROGRESS_BAR_TICK_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Builds a ProgressStyle that contains the requested header at the beginning of the line.
-fn build_progress_bar_style_with_header<S: AsRef<str>>(header_str: S) -> ProgressStyle {
-    ProgressStyle::with_template(
-        &format!(
-            "{}{}",
-            header_str.as_ref(),
-            "{msg:^42!} [{elapsed_precise} | {pos:>3}/{len:3}] [{bar:45.cyan/blue}]"
-        ),
-    )
-        .unwrap()
-        .progress_chars("#>-")
-}
-
-fn truncate_string_with_ending<S: AsRef<str>>(
-    text: S,
-    max_width: usize,
-    overflow_string: Option<S>,
-) -> String {
-    const OVERFLOW_DEFAULT_ENDING: &str = "..";
-
-    let overflow_string = match overflow_string {
-        Some(overflow_string) => overflow_string.as_ref().to_string(),
-        None => OVERFLOW_DEFAULT_ENDING.to_string(),
-    };
-
-    let text = text.as_ref();
-    let total_width = measure_text_width(text);
-
-    if total_width > max_width {
-        let mut truncated_text = text.to_string();
-        truncated_text.truncate(max_width - overflow_string.len());
-        truncated_text.push_str(&overflow_string);
-
-        truncated_text
-    } else {
-        text.to_string()
-    }
-}
-
-/// A HOF (Higher-order-function) that takes a ProgressBar reference and a text Style and
-/// *returns* a function that will then always take a single parameter: the text to set on the progress bar.
-fn build_styled_progress_bar_message_fn(
-    progress_bar: &ProgressBar,
-    text_style: Style,
-    max_text_width: usize,
-) -> impl Fn(&str) + Send + Clone {
-    let progress_bar = progress_bar.clone();
-
-    move |text: &str| {
-        let text = truncate_string_with_ending(text, max_text_width, None);
-        progress_bar.set_message(
-            format!(
-                "{}",
-                text_style.apply_to(text),
-            ),
-        );
-    }
-}
-
-/// This is a higher-order-function. It is similar to `build_styled_progress_bar_message_fn`,
-/// but instead builds and return a function that will take two parameters:
-/// the text to set, and the progress bar to set it to.
-/// Importantly, the second parameter should be behind a MutexGuard reference
-/// (meaning that we have it locked at call time).
-fn build_styled_progress_bar_message_fn_dynamic_locked_bar(
-    text_style: Style,
-    max_text_width: usize,
-) -> impl Fn(&str, &MutexGuard<ProgressBar>) + Send + Clone {
-    move |text: &str, progress_bar: &MutexGuard<ProgressBar>| {
-        let text = truncate_string_with_ending(text, max_text_width, None);
-        progress_bar.set_message(
-            format!(
-                "{}",
-                text_style.apply_to(text),
-            ),
-        );
-    }
-}
-
-fn build_processing_observer(
-    progress_bar: Arc<Mutex<ProgressBar>>,
-    progress_bar_set_text_fn: Box<dyn Fn(&str, &MutexGuard<ProgressBar>) + Send + Sync>,
-) -> ProcessingObserver {
-    ProcessingObserver::new(Box::new(move |event| {
-        let counter_pbr_lock = progress_bar.lock().unwrap();
-        if counter_pbr_lock.is_finished() {
-            eprintln!("Warning: observer triggered after progress bar has finished. Ignoring event.");
-            return;
-        }
-
-        if event.is_final {
-            counter_pbr_lock.inc(1);
-            (*progress_bar_set_text_fn)(
-                &event.file_work_packet.get_file_name()
-                    .unwrap(),
-                &counter_pbr_lock,
-            );
-        }
-
-        if verbose_enabled() && event.verbose_info.is_some() {
-            counter_pbr_lock.println(
-                format!(
-                    "  [DEBUG] {}",
-                    event.verbose_info.unwrap()
-                ),
-            );
-        }
-
-        if event.error.is_some() {
-            if event.is_final {
-                counter_pbr_lock.println(
-                    format!("  [Error] {}", event.error.unwrap()),
-                );
-            } else {
-                counter_pbr_lock.println(
-                    format!("  [Error (will retry)] {}", event.error.unwrap()),
-                );
-            }
-        }
-    }))
-}
- */
 
 enum WorkerMessage {
     StartingWithFile {
@@ -232,9 +107,12 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
     // that will be transcoded or copied). This skips libraries and their albums that have already
     // been transcoded (and haven't changed).
     type AlbumsWorkload = Vec<(AlbumWorkPacket, Vec<FileWorkPacket>)>;
-    type FullWorkload = Vec<(LibraryWorkPacket, AlbumsWorkload)>;
+    type LibrariesWorkload = Vec<(LibraryWorkPacket, AlbumsWorkload)>;
     
-    let mut full_workload: FullWorkload = Vec::new();
+    type AlbumsQueuedWorkload = Vec<(AlbumWorkPacket, QueueItemID, Vec<FileWorkPacket>)>;
+    type LibrariesQueuedWorkload = Vec<(LibraryWorkPacket, QueueItemID, AlbumsQueuedWorkload)>;
+    
+    let mut full_workload: LibrariesWorkload = Vec::new();
     
     for mut library in all_libraries {
         let mut albums_to_process = library
@@ -285,23 +163,67 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
         terminal.log_newline();
     }
     
+    terminal.queue_begin();
     terminal.progress_begin();
     
     let mut thread_pool = build_transcode_thread_pool(config);
     let mut files_finished_so_far: usize = 0;
     
-    for (library, albums) in full_workload {
+    terminal.progress_set_current(files_finished_so_far)?;
+    terminal.progress_set_total(total_files_to_process)?;
+    
+    // Enqueue all libraries and albums, returning an expanded vector containing their `QueueItemID`s.
+    let queued_workload: LibrariesQueuedWorkload = full_workload
+        .into_iter()
+        .map(
+            |(library, albums)| {
+                let library_description = format!(
+                    "{} ({} album{})",
+                    library.name,
+                    albums.len(),
+                    if albums.len() > 1 { "s" } else { "" }
+                );
+                let library_queue_item = terminal.queue_item_add(library_description, QueueType::Library)?;
+                
+                let queued_albums: AlbumsQueuedWorkload = albums
+                    .into_iter()
+                    .map(|(album, files)| {
+                        let album_description = format!(
+                            "[{}] {} - {}",
+                            files.len(),
+                            album.album_info.artist_name,
+                            album.album_info.album_title,
+                        );
+                        let album_queue_item = terminal.queue_item_add(album_description, QueueType::Album)?;
+    
+                        Ok((album, album_queue_item, files))
+                    })
+                    .collect::<Result<AlbumsQueuedWorkload>>()?;
+    
+                Ok((library, library_queue_item, queued_albums))
+            }
+        )
+        .collect::<Result<LibrariesQueuedWorkload>>()?;
+    
+    // Finally, iterate over the entire queued workload,
+    // transcoding each file in each album and updating the terminal backend on the way.
+    for (library, library_queue_item, albums) in queued_workload {
+        terminal.queue_item_start(library_queue_item)?;
         terminal.log_println(format!(
-            "Transcoding library: {}",
+            "Transcoding contents of library: {}",
             library.name
         ));
         
-        for (mut album, files) in albums {
-            terminal.queue_begin();
+        for (mut album, album_queue_id, files) in albums {
+            terminal.queue_item_start(album_queue_id)?;
+            terminal.log_println(format!(
+                "Transcoding album: {} - {}",
+                album.album_info.artist_name,
+                album.album_info.artist_name,
+            ));
             
             if verbose_enabled() {
                 let fresh_metadata = album.get_fresh_meta(config)?;
-    
                 terminal.log_println(format!(
                     "[VERBOSE] AlbumWorkPacket album: {:?}; files in meta: {:?}",
                     album.album_info,
@@ -315,7 +237,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                 .into_iter()
                 .map(|file| {
                     let item_description = format!(
-                        "[{:>5}] {}",
+                        "[{}] {}",
                         match file.file_type {
                             FilePacketType::AudioFile => "audio",
                             FilePacketType::DataFile => "data",
@@ -325,7 +247,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
     
                     // If adding the item to the queue was successful, this maps the original `FileWorkPacket`
                     // to a tuple of `(FileWorkPacket, QueueItemID)`, otherwise returns an `Err` with the original error.
-                    match terminal.queue_item_add(item_description) {
+                    match terminal.queue_item_add(item_description, QueueType::File) {
                         Ok(queue_item_id) => Ok((file, queue_item_id)),
                         Err(error) => Err(error),
                     }
@@ -361,9 +283,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                             
                             // Update progress bar with new percentage.
                             files_finished_so_far += 1;
-                            
-                            let progress_percent = files_finished_so_far as f32 / total_files_to_process as f32 * 100.0;
-                            terminal.progress_set_percent(progress_percent as u16)
+                            terminal.progress_set_current(files_finished_so_far)?;
                         },
                     },
                     Err(error) => {
@@ -388,11 +308,12 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
             // they are not needlessly transcoded again next time.
             album.save_fresh_meta(config, true)?;
             
-            terminal.queue_end();
+            terminal.queue_item_finish(album_queue_id, true)?;
+            terminal.queue_clear(QueueType::File)?;
         }
+        
+        terminal.queue_item_finish(library_queue_item, true)?;
     }
-    
-    terminal.progress_end();
     
     let processing_time_delta = processing_begin_time.elapsed().as_secs_f64();
     terminal.log_println(format!(
