@@ -1,5 +1,6 @@
 use std::env::args;
 use std::path::{Path, PathBuf};
+
 use crate::filesystem;
 
 /// Inspect the first command line argument to extract the directory the program resides in.

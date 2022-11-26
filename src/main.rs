@@ -3,10 +3,10 @@ use std::process::exit;
 use clap::{Args, Parser, Subcommand};
 use crossterm::style::Stylize;
 use miette::Result;
-use crate::configuration::Config;
-use crate::console::backends::{BareConsoleBackend, TUITerminalBackend};
-use crate::console::{LogBackend, TerminalBackend};
 
+use crate::configuration::Config;
+use crate::console::{LogBackend, TerminalBackend};
+use crate::console::backends::{BareConsoleBackend, TUITerminalBackend};
 use crate::globals::VERBOSE;
 
 mod configuration;

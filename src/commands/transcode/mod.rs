@@ -2,8 +2,8 @@ use std::sync::mpsc;
 use std::sync::mpsc::{RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
-use crossterm::style::Stylize;
 
+use crossterm::style::Stylize;
 use miette::Result;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
@@ -261,19 +261,19 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
         }
     }
     
+    // Number of files that need to be processed (copied or transcoded).
+    let total_files_to_process = full_workload
+        .iter_mut()
+        .flat_map(|(_, albums)| albums)
+        .map(|(_, files)| files.len())
+        .sum::<usize>();
+    
     // Skip processing if there are no changes,
     // otherwise show a short summary of changes and start transcoding.
     if full_workload.is_empty() {
         terminal.log_println("Transcodes are already up to date.".green().bold());
         return Ok(());
     } else {
-        // Number of files that need to be processed (copied or transcoded).
-        let total_files_to_process = full_workload
-            .iter_mut()
-            .flat_map(|(_, albums)| albums)
-            .map(|(_, files)| files.len())
-            .sum::<usize>();
-        
         terminal.log_println(
             format!(
                 "Detected {} changed files, transcoding.",
@@ -285,9 +285,10 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
         terminal.log_newline();
     }
     
-    let mut thread_pool = build_transcode_thread_pool(config);
-    
     terminal.progress_begin();
+    
+    let mut thread_pool = build_transcode_thread_pool(config);
+    let mut files_finished_so_far: usize = 0;
     
     for (library, albums) in full_workload {
         terminal.log_println(format!(
@@ -357,6 +358,12 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                         },
                         WorkerMessage::FinishedWithFile { queue_item, was_ok } => {
                             terminal.queue_item_finish(queue_item, was_ok)?;
+                            
+                            // Update progress bar with new percentage.
+                            files_finished_so_far += 1;
+                            
+                            let progress_percent = files_finished_so_far as f32 / total_files_to_process as f32 * 100.0;
+                            terminal.progress_set_percent(progress_percent as u16)
                         },
                     },
                     Err(error) => {

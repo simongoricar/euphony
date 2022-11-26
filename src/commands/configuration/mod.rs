@@ -1,3 +1,3 @@
-mod commands;
+pub use commands::{cmd_list_libraries, cmd_show_config};
 
-pub use commands::{cmd_show_config, cmd_list_libraries};
+mod commands;

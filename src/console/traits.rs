@@ -1,5 +1,7 @@
 use std::fmt::Display;
+
 use miette::Result;
+
 use crate::console::QueueItemID;
 
 pub trait TerminalBackend {

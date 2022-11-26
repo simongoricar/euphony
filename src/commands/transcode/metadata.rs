@@ -6,14 +6,14 @@ use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use serde::{Deserialize, Serialize};
 use miette::{Context, IntoDiagnostic, miette, Result};
+use serde::{Deserialize, Serialize};
 
-use crate::filesystem;
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::commands::transcode::overrides::AlbumOverride;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
 use crate::configuration::Config;
+use crate::filesystem;
 
 // This is the euphony-wide default album scanning depth.
 const DEFAULT_MAX_DEPTH: u16 = 0;

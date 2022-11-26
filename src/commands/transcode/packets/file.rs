@@ -5,9 +5,9 @@ use std::process::Command;
 
 use miette::{miette, Result};
 
-use crate::filesystem;
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::configuration::Config;
+use crate::filesystem;
 use crate::globals::verbose_enabled;
 
 #[derive(Eq, PartialEq, Clone)]

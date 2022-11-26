@@ -3,7 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use crate::configuration::{AfterLoadInitable, AfterLoadWithEssentialsInitable, get_default_configuration_file_path, get_running_executable_directory};
+
+use crate::configuration::{
+    AfterLoadInitable,
+    AfterLoadWithEssentialsInitable,
+    get_default_configuration_file_path,
+    get_running_executable_directory,
+};
 
 /// This struct contains the entire `euphony` configuration,
 /// from tool paths to libraries and so forth.

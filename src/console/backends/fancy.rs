@@ -6,15 +6,17 @@ use std::sync::mpsc::{Sender, TryRecvError};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
 use crossterm::ExecutableCommand;
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use tui::backend::CrosstermBackend;
-use tui::{Frame, Terminal};
 use miette::{IntoDiagnostic, miette, Result, WrapErr};
+use tui::{Frame, Terminal};
+use tui::backend::CrosstermBackend;
 use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::style::{Color, Style};
 use tui::widgets::{Block, Borders, Gauge, List, ListItem};
+
 use crate::console::{LogBackend, QueueItem, QueueItemID};
 use crate::console::traits::{TerminalBackend, TranscodeBackend};
 
@@ -98,16 +100,26 @@ impl TUITerminalBackend {
     
     fn perform_render(state: MutexGuard<TUITerminalBackendState>, frame: &mut Frame<CrosstermBackend<Stdout>>) {
         // Render entire terminal UI based on the current state.
+        
+        // Dynamically constrain the layout, hiding some UI elements when they are disabled.
+        let layout_constraints: Vec<Constraint> = vec![
+            if state.queue_items.is_some() {
+                Constraint::Percentage(50)
+            } else {
+                Constraint::Length(0)
+            },
+            if state.progress_percent.is_some() {
+                Constraint::Length(3)
+            } else {
+                Constraint::Length(0)
+            },
+            Constraint::Min(8),
+        ];
+        
         let multi_block_layout = Layout::default()
             .direction(Direction::Vertical)
             .margin(0)
-            .constraints(
-                [
-                    Constraint::Percentage(50),
-                    Constraint::Min(3),
-                    Constraint::Percentage(40),
-                ].as_ref()
-            )
+            .constraints(layout_constraints.as_ref())
             .split(frame.size());
         
         let area_queue = multi_block_layout[0];
@@ -118,7 +130,8 @@ impl TUITerminalBackend {
         // (`queue_begin_processing`, `progress_begin`, ...).
         // If it is currently disabled a simple placeholder `tui::widgets::Block` is shown in most cases.
         
-        // TODO Figure out why queue items are duplicated.
+        // TODO Implement multiple queues - two vertically on the left side
+        //      (libraries and albums underneath), one on the right (file queue for current album).
         
         // 1. Queue
         if let Some(queue_items) = &state.queue_items {

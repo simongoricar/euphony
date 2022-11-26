@@ -1,7 +1,8 @@
 use std::fs;
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
-use miette::{Result, miette, IntoDiagnostic, Context};
+
+use miette::{Context, IntoDiagnostic, miette, Result};
 
 /// Given a path, scan its contents and return
 /// a Result: when Ok it is a tuple of two Vec<DirEntry> elements,

@@ -1,5 +1,5 @@
+pub use bare::BareConsoleBackend;
+pub use fancy::TUITerminalBackend;
+
 mod fancy;
 mod bare;
-
-pub use fancy::TUITerminalBackend;
-pub use bare::BareConsoleBackend;

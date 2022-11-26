@@ -5,7 +5,6 @@ use miette::{miette, Result};
 
 use crate::configuration::Config;
 
-
 pub fn directory_is_library(config: &Config, directory_path: &Path) -> bool {
     for library in config.libraries.values() {
         if Path::new(&library.path).eq(directory_path) {

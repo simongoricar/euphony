@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
+
 use miette::{Context, IntoDiagnostic, miette, Result};
+use serde::{Deserialize, Serialize};
 
 // This file is not required to exist in each album directory, but the user may create it
 // to influence the transcoding configuration.

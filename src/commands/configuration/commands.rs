@@ -1,7 +1,7 @@
 use crossterm::style::Stylize;
+
 use crate::configuration::Config;
 use crate::console::{LogBackend, TerminalBackend};
-
 
 pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
     config: &Config,

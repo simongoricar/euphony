@@ -2,9 +2,9 @@ use std::path::Path;
 
 use miette::{miette, Result};
 
-use crate::filesystem;
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
 use crate::configuration::Config;
+use crate::filesystem;
 
 #[derive(Clone)]
 pub struct LibraryWorkPacket {
