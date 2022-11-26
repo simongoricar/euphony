@@ -1,8 +1,10 @@
 use std::fmt::{Debug, Formatter};
-use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
-use crate::Config;
+use miette::{miette, Result};
+
+use crate::configuration::Config;
+
 
 pub fn directory_is_library(config: &Config, directory_path: &Path) -> bool {
     for (_, library) in &config.libraries {
@@ -43,37 +45,36 @@ impl AlbumDirectoryInfo {
     /// - the base library path,
     /// - the artist name and
     /// - the album title.
-    pub fn new(album_directory_path: &Path, config: &Config) -> Result<AlbumDirectoryInfo, Error> {
+    pub fn new(album_directory_path: &Path, config: &Config) -> Result<AlbumDirectoryInfo> {
         if !directory_is_album(config, album_directory_path) {
-            return Err(
-                Error::new(ErrorKind::Other, "Target is not album directory.")
-            );
+            return Err(miette!("Target is not album directory."));
         }
 
         let album_title = album_directory_path.file_name()
-            .expect("Could not get album directory name!");
+            .ok_or_else(|| miette!("Could not get album directory name!"))?;
 
         let artist_directory = album_directory_path.parent()
-            .expect("Could not get path parent!");
+            .ok_or_else(|| miette!("Could not get path parent!"))?;
         let artist_name = artist_directory
             .file_name()
-            .expect("Could not get artist directory name!");
+            .ok_or_else(|| miette!("Could not get artist directory name!"))?;
 
         let base_library_path = artist_directory.parent()
-            .expect("Could not get path parent!");
-        let base_library_path_string = base_library_path.to_str()
-            .expect("Could not convert path to str.")
+            .ok_or_else(|| miette!("Could not get path parent!"))?;
+        let base_library_path_string = base_library_path
+            .to_str()
+            .ok_or_else(|| miette!("Could not convert path to str: invalid utf-8."))?
             .to_string();
 
         Ok(AlbumDirectoryInfo {
             library_path: base_library_path_string,
             artist_name: artist_name
                 .to_str()
-                .expect("Could not convert artist directory name to string!")
+                .ok_or_else(|| miette!("Could not convert artist directory name to string!"))?
                 .to_string(),
             album_title: album_title
                 .to_str()
-                .expect("Could not convert album directory name to string!")
+                .ok_or_else(|| miette!("Could not convert album directory name to string!"))?
                 .to_string()
         })
     }

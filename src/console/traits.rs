@@ -1,17 +1,6 @@
 use std::fmt::Display;
-use std::ops::Deref;
 use miette::Result;
-
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub struct QueueItemID(pub u32);
-
-impl Deref for QueueItemID {
-    type Target = u32;
-    
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+use crate::console::QueueItemID;
 
 pub trait TerminalBackend {
     fn setup(&mut self) -> Result<()>;

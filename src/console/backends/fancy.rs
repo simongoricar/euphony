@@ -6,42 +6,22 @@ use std::sync::mpsc::{Sender, TryRecvError};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::ExecutableCommand;
 use crossterm::style::Print;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use tui::backend::CrosstermBackend;
 use tui::{Frame, Terminal};
 use miette::{IntoDiagnostic, miette, Result, WrapErr};
 use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::style::{Color, Style};
 use tui::widgets::{Block, Borders, Gauge, List, ListItem};
-use crate::console_backends::LogBackend;
-use crate::console_backends::traits::{QueueItemID, TerminalBackend, TranscodeBackend};
+use crate::console::{LogBackend, QueueItem, QueueItemID};
+use crate::console::traits::{TerminalBackend, TranscodeBackend};
 
 const LOG_JOURNAL_MAX_LINES: usize = 20;
 const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.1;
 
-#[derive(Clone, Eq, PartialEq)]
-pub struct QueueItem {
-    pub content: String,
-    pub id: QueueItemID,
-    pub is_active: bool,
-    pub is_ok: bool,
-}
 
-impl QueueItem {
-    pub fn new<S: Into<String>>(content: S) -> Self {
-        let random_id = QueueItemID(rand::random::<u32>());
-        
-        Self {
-            content: content.into(),
-            id: random_id,
-            is_active: false,
-            is_ok: true,
-        }
-    }
-}
 
 
 struct TUITerminalBackendState {
@@ -77,11 +57,12 @@ pub struct TUITerminalBackend {
     /// When `has_been_set_up` is true, `render_thread` contains a handle to the render thread.
     render_thread: Option<JoinHandle<Result<()>>>,
     
-    /// When `has_been_set_up` is true, `render_thread_channel` contains a sender with which to signal
-    /// to the render thread that it should stop.
+    /// When `has_been_set_up` is true, `render_thread_channel` contains a sender with which to
+    /// signal to the render thread that it should stop.
     render_thread_channel: Option<Sender<()>>,
     
-    /// Houses non-terminal-organisation related data - this is precisely the data needed for a render pass.
+    /// Houses non-terminal-organisation related data - this is precisely
+    /// the data required for a render pass.
     state: Arc<Mutex<TUITerminalBackendState>>,
 }
 

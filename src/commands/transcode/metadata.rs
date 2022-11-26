@@ -1,17 +1,19 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::fs;
-use std::io::{Error, ErrorKind, Write};
+use std::io::Write;
 use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
+use miette::{Context, IntoDiagnostic, miette, Result};
 
-use crate::{Config, filesystem};
+use crate::filesystem;
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::commands::transcode::overrides::AlbumOverride;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
+use crate::configuration::Config;
 
 // This is the euphony-wide default album scanning depth.
 const DEFAULT_MAX_DEPTH: u16 = 0;
@@ -52,14 +54,19 @@ pub struct AlbumMetadata {
 
 impl AlbumMetadata {
     /// Given a directory path, load its .album.euphony file, if it exists, into a LibraryMeta struct.
-    pub fn load(directory_path: &Path) -> Result<Option<AlbumMetadata>, Error> {
+    pub fn load(directory_path: &Path) -> Result<Option<AlbumMetadata>> {
         let file_path = get_album_metadata_filepath(directory_path);
         if !file_path.is_file() {
             return Ok(None);
         }
 
-        let library_meta_string = fs::read_to_string(file_path)?;
-        let library_meta: AlbumMetadata = serde_json::from_str(&library_meta_string)?;
+        let library_meta_string = fs::read_to_string(file_path)
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("Could not read file into string."))?;
+        
+        let library_meta: AlbumMetadata = serde_json::from_str(&library_meta_string)
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("Could not deserialize from json."))?;
 
         Ok(Some(library_meta))
     }
@@ -69,7 +76,7 @@ impl AlbumMetadata {
     pub fn generate(
         directory_path: &Path,
         extensions: &Vec<String>,
-    ) -> Result<AlbumMetadata, Error> {
+    ) -> Result<AlbumMetadata> {
         let overrides = AlbumOverride::load(directory_path)?;
 
         let maximum_tree_depth = match &overrides {
@@ -99,24 +106,30 @@ impl AlbumMetadata {
         let mut file_hashmap: HashMap<String, AlbumMetadataFile> = HashMap::new();
 
         for file in files {
-            let file_metadata = file.metadata()?;
+            let file_metadata = file.metadata()
+                .into_diagnostic()
+                .wrap_err_with(|| miette!("Could not retrieve file metadata."))?;
 
             // Calculate size in bytes
             let file_size_bytes = file_metadata.len();
 
             // Get file creation and modification time
-            let file_created_at_duration = match file_metadata.created()?
+            let file_created_at_duration = match file_metadata.created()
+                .into_diagnostic()
+                .wrap_err_with(|| miette!("Could not get file creation time."))?
                 .duration_since(UNIX_EPOCH) {
                     Ok(duration) => duration,
                     Err(_) => {
-                        return Err(Error::new(ErrorKind::Other, "Could not get file creation time."));
+                        return Err(miette!("Could not get file creation time."));
                     }
             };
-            let file_modified_at_duration = match file_metadata.modified()?
+            let file_modified_at_duration = match file_metadata.modified()
+                .into_diagnostic()
+                .wrap_err_with(|| miette!("Could not get file modification time."))?
                 .duration_since(UNIX_EPOCH) {
                     Ok(duration) => duration,
                     Err(_) => {
-                        return Err(Error::new(ErrorKind::Other, "Could not get file modification time."));
+                        return Err(miette!("Could not get file modification time."));
                     }
             };
 
@@ -130,7 +143,7 @@ impl AlbumMetadata {
             let file_path_relative_to_meta_file = match pathdiff::diff_paths(file_path, directory_path) {
                 Some(relative_path) => relative_path,
                 None => {
-                    return Err(Error::new(ErrorKind::Other, "Could not generate relative path."));
+                    return Err(miette!("Could not generate relative path."));
                 }
             };
             let file_path_relative_to_meta_file = match file_path_relative_to_meta_file.to_str() {
@@ -138,7 +151,7 @@ impl AlbumMetadata {
                     String::from(str)
                 },
                 None => {
-                    return Err(Error::new(ErrorKind::Other, "Could not get string from relative path."));
+                    return Err(miette!("Could not get string from relative path."));
                 }
             };
 
@@ -146,8 +159,9 @@ impl AlbumMetadata {
         }
 
         Ok(AlbumMetadata {
-            base_directory: directory_path.to_str()
-                .expect("Could not get library directory.")
+            base_directory: directory_path
+                .to_str()
+                .ok_or_else(|| miette!("Could not get library directory."))?
                 .to_string(),
             files: file_hashmap,
             overrides,
@@ -156,21 +170,23 @@ impl AlbumMetadata {
 
     /// Given a directory, save the LibraryMeta struct in question into the .album.euphony file
     /// as a JSON document.
-    pub fn save(&self, directory_path: &Path, allow_overwrite: bool) -> Result<(), Error> {
+    pub fn save(&self, directory_path: &Path, allow_overwrite: bool) -> Result<()> {
         let file_path = get_album_metadata_filepath(directory_path);
         if file_path.exists() && !allow_overwrite {
-            return Err(
-                Error::new(
-                    ErrorKind::AlreadyExists,
-                    "File already exists.",
-                )
-            );
+            return Err(miette!("File already exists."));
         }
 
-        let serialized_meta = serde_json::to_string(self)?;
+        let serialized_meta = serde_json::to_string(self)
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("Could not serialize json to string."))?;
 
-        let mut file = fs::File::create(file_path)?;
-        file.write_all(serialized_meta.as_bytes())?;
+        let mut file = fs::File::create(file_path)
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("Could not create file."))?;
+        
+        file.write_all(serialized_meta.as_bytes())
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("Could not write to file."))?;
 
         Ok(())
     }
@@ -230,7 +246,7 @@ impl AlbumMetadata {
         current_meta_state: &AlbumMetadata,
         album_info: &AlbumDirectoryInfo,
         config: &Config,
-    ) -> Result<FileChanges, Error> {
+    ) -> Result<FileChanges> {
         // TODO Test this code.
         let mut files_missing_in_target: Vec<String> = Vec::new();
 

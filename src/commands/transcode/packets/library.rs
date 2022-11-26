@@ -1,8 +1,10 @@
-use std::io::{Error, ErrorKind};
 use std::path::Path;
 
-use crate::{Config, filesystem};
+use miette::{miette, Result};
+
+use crate::filesystem;
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
+use crate::configuration::Config;
 
 #[derive(Clone)]
 pub struct LibraryWorkPacket {
@@ -15,26 +17,16 @@ impl LibraryWorkPacket {
         library_key: &str,
         library_path: P,
         config: &Config,
-    ) -> Result<LibraryWorkPacket, Error> {
+    ) -> Result<LibraryWorkPacket> {
         let library_path = library_path.as_ref();
         
         // Make sure this is a valid library path.
         if !config.is_library(library_path) {
-            return Err(
-                Error::new(
-                    ErrorKind::Other,
-                    "Invalid library path: not registered in configuration."
-                )
-            );
+            return Err(miette!("Invalid library path: not registered in configuration."));
         }
 
         let library = config.libraries.get(library_key)
-            .ok_or(
-                Error::new(
-                    ErrorKind::Other,
-                    format!("No such library: {}", library_key),
-                )
-            )?;
+            .ok_or_else(|| miette!("No such library: {}", library_key))?;
 
         let mut album_packets: Vec<AlbumWorkPacket> = Vec::new();
 
@@ -50,15 +42,7 @@ impl LibraryWorkPacket {
             let (_, album_directories) = match filesystem::list_dir_entry_contents(&artist_directory) {
                 Ok(data) => data,
                 Err(error) => {
-                    return Err(
-                        Error::new(
-                            ErrorKind::Other,
-                            format!(
-                                "Error while listing artist albums: {}",
-                                error,
-                            ),
-                        )
-                    )
+                    return Err(miette!("Error while listing artist albums: {}", error));
                 },
             };
 
@@ -78,7 +62,7 @@ impl LibraryWorkPacket {
         })
     }
 
-    pub fn get_albums_in_need_of_processing(&mut self, config: &Config) -> Result<Vec<AlbumWorkPacket>, Error> {
+    pub fn get_albums_in_need_of_processing(&mut self, config: &Config) -> Result<Vec<AlbumWorkPacket>> {
         let mut filtered_album_packets: Vec<AlbumWorkPacket> = Vec::new();
         for album_packet in &mut self.album_packets {
             if album_packet.needs_processing(config)? {

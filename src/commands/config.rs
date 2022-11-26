@@ -1,6 +1,6 @@
 use crossterm::style::Stylize;
-use crate::console_backends::{LogBackend, TerminalBackend};
-use super::super::Config;
+use crate::configuration::Config;
+use crate::console::{LogBackend, TerminalBackend};
 
 
 pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
@@ -9,7 +9,9 @@ pub fn cmd_show_config<T: TerminalBackend + LogBackend>(
 ) {
     terminal.log_println("⚙ Configuration ⚙");
 
-    let configuration_file_path_str = config.configuration_file_path.to_string_lossy();
+    let configuration_file_path_str = config.configuration_file_path
+        .to_string_lossy();
+    
     terminal.log_println(format!(
         "(using {})",
         configuration_file_path_str

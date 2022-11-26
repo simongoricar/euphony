@@ -1,10 +1,11 @@
 use std::fs::DirEntry;
-use std::io::{Error, ErrorKind};
 use std::path::Path;
+
 use crossterm::style::Stylize;
+use miette::{Context, IntoDiagnostic, miette, Result};
 
 use crate::commands::validation::collisions::CollisionAudit;
-use crate::console_backends::{LogBackend, TerminalBackend};
+use crate::console::{LogBackend, TerminalBackend};
 
 use super::super::configuration::{Config, ConfigLibrary};
 use super::super::filesystem as mfs;
@@ -22,7 +23,7 @@ fn validate_library(
     config: &Config,
     library: &ConfigLibrary,
     collision_auditor: &mut CollisionAudit,
-) -> Result<LibraryValidationResult, Error> {
+) -> Result<LibraryValidationResult> {
     let other_allowed_extensions = &config.validation.allowed_other_files_by_extension;
     let other_allowed_filenames = &config.validation.allowed_other_files_by_name;
     let audio_allowed_extension = &library.allowed_audio_files_by_extension;
@@ -47,19 +48,23 @@ fn validate_library(
 
     // This closure will attempt to match the given list of file entries with
     // allowed_other_files_by_extension and allowed_other_files_by_name.
-    let check_nonalbum_files_for_unexpected = |entry_list: &Vec<DirEntry>, location_hint: &str| -> Result<Vec<String>, Error> {
+    let check_nonalbum_files_for_unexpected = |entry_list: &Vec<DirEntry>, location_hint: &str| -> Result<Vec<String>> {
         let mut own_unexpected_file_messages: Vec<String> = Vec::new();
 
         for file_entry in entry_list {
-            let file_type = file_entry.file_type()?;
+            let file_type = file_entry.file_type()
+                .into_diagnostic()
+                .wrap_err_with(|| miette!("Could not get file type."))?;
+            
             if !file_type.is_file() {
-                return Err(Error::new(ErrorKind::Other, "Not a file!"));
+                return Err(miette!("Not a file!"));
             }
 
             let file_path = file_entry.path();
             let file_name = file_path.file_name()
-                .ok_or(Error::new(ErrorKind::Other, "File has no name!"))?
-                .to_string_lossy()
+                .ok_or_else(|| miette!("File has no name!"))?
+                .to_str()
+                .ok_or_else(|| miette!("Could not convert file name to string: invalid utf-8."))?
                 .to_string();
 
             if other_allowed_filenames.contains(&file_name) {

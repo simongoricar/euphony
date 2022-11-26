@@ -4,7 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use crossterm::style::Stylize;
 
-use miette::{IntoDiagnostic, Result};
+use miette::Result;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use directories as dirs;
@@ -13,7 +13,7 @@ use crate::commands::transcode::packets::album::AlbumWorkPacket;
 use crate::commands::transcode::packets::file::{FilePacketType, FileWorkPacket};
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
 use crate::configuration::Config;
-use crate::console_backends::{LogBackend, QueueItemID, TerminalBackend, TranscodeBackend};
+use crate::console::{LogBackend, QueueItemID, TerminalBackend, TranscodeBackend};
 use crate::globals::verbose_enabled;
 
 mod metadata;
@@ -219,7 +219,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                 name,
                 &library.path,
                 config,
-            ).into_diagnostic()
+            )
         )
         .collect::<Result<Vec<LibraryWorkPacket>>>()?;
 
@@ -229,8 +229,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
         // Not all albums need to be processed each time - this generates only the list
         // of albums that need are either mising or have changed according to the .album.euphony file.
         let mut albums_to_process = library_packet
-            .get_albums_in_need_of_processing(config)
-            .into_diagnostic()?;
+            .get_albums_in_need_of_processing(config)?;
         
         // For convenience (and because why not), we sort the album list for each library alphabetically.
         albums_to_process.sort_unstable_by(
@@ -282,8 +281,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
             terminal.progress_begin();
             
             if verbose_enabled() {
-                let fresh_metadata = album_packet.get_fresh_meta(config)
-                    .into_diagnostic()?;
+                let fresh_metadata = album_packet.get_fresh_meta(config)?;
                 
                 terminal.log_println(format!(
                     "[VERBOSE] AlbumWorkPacket album: {:?}; files in meta: {:?}",
@@ -295,8 +293,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
             // TODO Verbose logging per-file.
             
             let file_packets = album_packet
-                .get_work_packets(config)
-                .into_diagnostic()?;
+                .get_work_packets(config)?;
     
             // Fill up the terminal queue with items.
             let queued_files = file_packets
@@ -371,8 +368,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
             
             // Update the metadata in .album.euphony file, saving details that will ensure
             // they are not needlessly transcoded again next time.
-            album_packet.save_fresh_meta(config, true)
-                .into_diagnostic()?;
+            album_packet.save_fresh_meta(config, true)?;
             
             terminal.queue_end();
             terminal.progress_end();

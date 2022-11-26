@@ -1,11 +1,12 @@
-use std::io::Error;
 use std::path::{Path, PathBuf};
+
+use miette::Result;
 
 use crate::cached::CachedValue;
 use crate::commands::transcode::directories::AlbumDirectoryInfo;
 use crate::commands::transcode::metadata::AlbumMetadata;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
-use crate::Config;
+use crate::configuration::Config;
 
 /// Represents a grouping of file packets into a single album.
 /// Using this struct we can generate a list of file work packets in the album.
@@ -23,7 +24,10 @@ pub struct AlbumWorkPacket {
 }
 
 impl AlbumWorkPacket {
-    pub fn from_album_path<P: AsRef<Path>>(album_directory_path: P, config: &Config) -> Result<AlbumWorkPacket, Error> {
+    pub fn from_album_path<P: AsRef<Path>>(
+        album_directory_path: P,
+        config: &Config,
+    ) -> Result<AlbumWorkPacket> {
         let directory_info = AlbumDirectoryInfo::new(album_directory_path.as_ref(), config)?;
         Ok(AlbumWorkPacket::from_album_info(directory_info))
     }
@@ -31,8 +35,8 @@ impl AlbumWorkPacket {
     pub fn from_album_info(album_directory_info: AlbumDirectoryInfo) -> AlbumWorkPacket {
         AlbumWorkPacket {
             album_info: album_directory_info,
-            cached_saved_meta: CachedValue::new_empty(),
-            cached_fresh_meta: CachedValue::new_empty(),
+            cached_saved_meta: CachedValue::new(),
+            cached_fresh_meta: CachedValue::new(),
         }
     }
 
@@ -44,7 +48,7 @@ impl AlbumWorkPacket {
         path
     }
 
-    pub fn get_saved_meta(&mut self) -> Result<Option<AlbumMetadata>, Error> {
+    pub fn get_saved_meta(&mut self) -> Result<Option<AlbumMetadata>> {
         if self.cached_saved_meta.is_cached() {
             return match self.cached_saved_meta.get() {
                 Some(meta) => Ok(Some(meta.clone())),
@@ -60,7 +64,7 @@ impl AlbumWorkPacket {
         Ok(saved_meta)
     }
 
-    pub fn get_fresh_meta(&mut self, config: &Config) -> Result<AlbumMetadata, Error> {
+    pub fn get_fresh_meta(&mut self, config: &Config) -> Result<AlbumMetadata> {
         if self.cached_fresh_meta.is_cached() {
             return Ok(self.cached_fresh_meta.get().clone());
         }
@@ -76,30 +80,30 @@ impl AlbumWorkPacket {
         Ok(fresh_meta)
     }
 
-    pub fn get_total_track_count(&mut self, config: &Config) -> Result<usize, Error> {
+    pub fn get_total_track_count(&mut self, config: &Config) -> Result<usize> {
         let fresh_meta = self.get_fresh_meta(config)?;
         Ok(fresh_meta.files.len())
     }
 
-    pub fn needs_processing(&mut self, config: &Config) -> Result<bool, Error> {
+    pub fn needs_processing(&mut self, config: &Config) -> Result<bool> {
         let saved_meta = self.get_saved_meta()?;
-        if saved_meta.is_none() {
-            Ok(true)
-        } else {
-            let saved_meta = saved_meta.unwrap();
+        
+        if let Some(saved_meta) = saved_meta {
             let fresh_meta = self.get_fresh_meta(config)?;
-
+    
             let meta_diff = saved_meta.diff_or_missing(
                 &fresh_meta,
                 &self.album_info,
                 config,
             )?;
-
+    
             Ok(meta_diff.has_any_changes())
+        } else {
+            Ok(true)
         }
     }
 
-    pub fn get_work_packets(&mut self, config: &Config) -> Result<Vec<FileWorkPacket>, Error> {
+    pub fn get_work_packets(&mut self, config: &Config) -> Result<Vec<FileWorkPacket>> {
         let needs_processing = self.needs_processing(config)?;
         if !needs_processing {
             return Ok(Vec::new());
@@ -186,7 +190,7 @@ impl AlbumWorkPacket {
         Ok(file_packets)
     }
 
-    pub fn save_fresh_meta(&mut self, config: &Config, allow_overwrite: bool) -> Result<(), Error> {
+    pub fn save_fresh_meta(&mut self, config: &Config, allow_overwrite: bool) -> Result<()> {
         let fresh_meta = self.get_fresh_meta(config)?;
         fresh_meta.save(&self.get_album_directory_path(), allow_overwrite)?;
 

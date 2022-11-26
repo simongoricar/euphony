@@ -4,8 +4,11 @@ use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::{Config, filesystem};
+use miette::{miette, Result};
+
+use crate::filesystem;
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
+use crate::configuration::Config;
 use crate::globals::verbose_enabled;
 
 #[derive(Eq, PartialEq, Clone)]
@@ -105,17 +108,12 @@ impl FileWorkPacket {
         source_album_info: &AlbumDirectoryInfo,
         config: &Config,
         action: FilePacketAction,
-    ) -> Result<FileWorkPacket, Error> {
+    ) -> Result<FileWorkPacket> {
         let source_file_path = source_album_info
             .build_full_file_path(file_name);
 
         let source_file_type = FilePacketType::from_path(&source_file_path, config)
-            .ok_or(
-                Error::new(
-                    ErrorKind::Other,
-                    "Invalid source file extension: doesn't match any tracked extension."
-                )
-            )?;
+            .ok_or_else(|| miette!("Invalid source file extension: doesn't match any tracked extension."))?;
 
         let target_file_extension = match source_file_type {
             FilePacketType::AudioFile => String::from("mp3"),
@@ -138,8 +136,7 @@ impl FileWorkPacket {
     pub fn get_file_name(&self) -> Result<String, Error> {
         Ok(self.source_file_path.file_name()
             .ok_or_else(|| Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
-            .to_str()
-            .ok_or_else(|| Error::new(ErrorKind::Other, "Could not extract file name from source path."))?
+            .to_string_lossy()
             .to_string())
     }
 

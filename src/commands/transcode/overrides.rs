@@ -1,7 +1,7 @@
 use std::fs;
-use std::io::Error;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use miette::{Context, IntoDiagnostic, miette, Result};
 
 // This file is not required to exist in each album directory, but the user may create it
 // to influence the transcoding configuration.
@@ -36,15 +36,19 @@ impl AlbumOverride {
     }
 
     /// Given a directory path, load its .album.euphony file, if it exists, into a LibraryMeta struct.
-    pub fn load<P: AsRef<Path>>(directory_path: P) -> Result<Option<AlbumOverride>, Error> {
+    pub fn load<P: AsRef<Path>>(directory_path: P) -> Result<Option<AlbumOverride>> {
         if !Self::exists(directory_path.as_ref()) {
             return Ok(None)
         }
 
         let file_path = get_album_override_filepath(directory_path.as_ref());
 
-        let album_override_string = fs::read_to_string(file_path)?;
-        let album_override: AlbumOverride = toml::from_str(&album_override_string)?;
+        let album_override_string = fs::read_to_string(file_path)
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("Could not read file into string."))?;
+        let album_override: AlbumOverride = toml::from_str(&album_override_string)
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("Could not load album override file into structured toml."))?;
 
         Ok(Some(album_override))
     }
