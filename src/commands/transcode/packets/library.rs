@@ -57,7 +57,7 @@ impl LibraryWorkPacket {
         }
 
         Ok(LibraryWorkPacket {
-            name: library_key.to_string(),
+            name: library.name.clone(),
             album_packets,
         })
     }

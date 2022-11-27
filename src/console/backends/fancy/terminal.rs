@@ -15,7 +15,7 @@ use miette::{IntoDiagnostic, miette, Result, WrapErr};
 use tui::{Frame, Terminal};
 use tui::backend::{Backend, CrosstermBackend};
 use tui::layout::{Alignment, Constraint, Direction, Layout};
-use tui::style::{Color, Style};
+use tui::style::{Color, Modifier, Style};
 use tui::text::Span;
 use tui::widgets::{Block, Borders, Gauge, List, ListItem};
 
@@ -202,7 +202,9 @@ impl TUITerminalBackend {
                         .title(
                             Span::styled(
                                 "Libraries",
-                                Style::default().fg(Color::Indexed(104)) //  MediumPurple (#8787d7)
+                                Style::default()
+                                    .fg(Color::Indexed(104)) //  MediumPurple (#8787d7)
+                                    .add_modifier(Modifier::BOLD)
                             )
                         )
                         .borders(Borders::ALL)
@@ -225,7 +227,9 @@ impl TUITerminalBackend {
                         .title(
                             Span::styled(
                                 "Albums",
-                                Style::default().fg(Color::Indexed(117)) // SkyBlue1 (#87d7ff)
+                                Style::default()
+                                    .fg(Color::Indexed(117)) // SkyBlue1 (#87d7ff)
+                                    .add_modifier(Modifier::BOLD)
                             )
                         )
                         .borders(Borders::ALL)
@@ -248,7 +252,9 @@ impl TUITerminalBackend {
                         .title(
                             Span::styled(
                                 "Files",
-                                Style::default().fg(Color::Indexed(139)) // Grey63 (#af87af)
+                                Style::default()
+                                    .fg(Color::Indexed(139)) // Grey63 (#af87af)
+                                    .add_modifier(Modifier::BOLD)
                             )
                         )
                         .borders(Borders::ALL)
@@ -284,7 +290,13 @@ impl TUITerminalBackend {
             
         } else {
             let empty_progress_bar = Block::default()
-                .title("Progress (inactive)")
+                .title(
+                    Span::styled(
+                        "Progress (inactive)",
+                        Style::default()
+                            .add_modifier(Modifier::ITALIC)
+                    )
+                )
                 .borders(Borders::ALL)
                 .title_alignment(Alignment::Left);
             
@@ -293,6 +305,7 @@ impl TUITerminalBackend {
         
         
         // 3. Logs
+        // TODO Figure out why this doesn't always update in time.
         let log_lines_visible_count = min(area_logs.height as usize, state.log_journal.len());
         
         let mut logs_list_items: Vec<ListItem> = Vec::with_capacity(log_lines_visible_count);
@@ -306,20 +319,16 @@ impl TUITerminalBackend {
             );
         }
         
-        // for log in state.log_journal.iter().rev().take(log_lines_visible_count).rev() {
-        //     logs_list_items.push(
-        //         ListItem::new(
-        //             log
-        //                 .into_text()
-        //                 .expect("Could not convert str into tui::Text.")
-        //         )
-        //     );
-        // }
-        
         let logs = List::new(logs_list_items)
             .block(
                 Block::default()
-                    .title("Logs")
+                    .title(
+                        Span::styled(
+                            "Logs",
+                            Style::default()
+                                .add_modifier(Modifier::ITALIC)
+                        )
+                    )
                     .borders(Borders::ALL)
                     .title_alignment(Alignment::Left)
             );
@@ -563,10 +572,6 @@ impl TranscodeBackend for TUITerminalBackend {
         
         if let Some(item) = target_item {
             item.is_active = true;
-    
-            if item.item_type == QueueType::Album {
-                item.set_prefix("☄ ");
-            }
             
             Ok(())
         } else {
@@ -589,14 +594,28 @@ impl TranscodeBackend for TUITerminalBackend {
                 is_ok: was_ok,
             });
             
-            if item.item_type == QueueType::Album {
-                item.set_prefix("☑ ");
-            }
-            
             Ok(())
         } else {
             Err(miette!("No such queue item."))
         }
+    }
+    
+    fn queue_item_modify<F: FnOnce(&mut QueueItem)>(
+        &mut self,
+        item_id: QueueItemID,
+        function: F,
+    ) -> Result<()> {
+        let mut state = self.lock_state();
+    
+        let queue = state.queue_state
+            .as_mut()
+            .ok_or_else(|| miette!("Queue is currently disabled, can't set item as active."))?;
+    
+        let queue_item = queue.find_item_by_id(item_id)
+            .ok_or_else(|| miette!("No such queue item."))?;
+        
+        function(queue_item);
+        Ok(())
     }
     
     fn queue_item_remove(&mut self, item_id: QueueItemID) -> Result<()> {

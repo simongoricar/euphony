@@ -1,8 +1,10 @@
 use std::ops::Deref;
 
 use miette::{miette, Result};
-use tui::style::Style;
+use tui::style::{Modifier, Style};
+use tui::text::Span;
 use tui::widgets::ListItem;
+use crate::console::backends::PixelSpinner;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum QueueType {
@@ -36,6 +38,8 @@ pub struct QueueItem {
     
     pub content: String,
     
+    pub suffix: Option<String>,
+    
     pub item_type: QueueType,
     
     pub id: QueueItemID,
@@ -43,24 +47,42 @@ pub struct QueueItem {
     pub is_active: bool,
     
     pub finished_state: Option<QueueItemFinishedState>,
+    
+    pub spinner: Option<PixelSpinner>,
+    
+    pub spaces_when_spinner_is_disabled: bool,
 }
 
 impl QueueItem {
-    pub fn new<S: Into<String>>(content: S, item_type: QueueType) -> Self {
+    pub fn new<S: Into<String>>(
+        content: S,
+        item_type: QueueType,
+    ) -> Self {
         let random_id = QueueItemID(rand::random::<u32>());
         
         Self {
             prefix: None,
             content: content.into(),
+            suffix: None,
             item_type,
             id: random_id,
             is_active: false,
             finished_state: None,
+            spinner: None,
+            spaces_when_spinner_is_disabled: true,
         }
     }
     
     pub fn set_finished_state(&mut self, finished_state: QueueItemFinishedState) {
         self.finished_state = Some(finished_state);
+    }
+    
+    pub fn enable_spinner(&mut self) {
+        self.spinner = Some(PixelSpinner::new(None));
+    }
+    
+    pub fn disable_spinner(&mut self) {
+        self.spinner = None;
     }
     
     pub fn set_prefix<S: Into<String>>(&mut self, prefix: S) {
@@ -69,6 +91,14 @@ impl QueueItem {
     
     pub fn clear_prefix(&mut self) {
         self.prefix = None;
+    }
+    
+    pub fn set_suffix<S: Into<String>>(&mut self, suffix: S) {
+        self.suffix = Some(suffix.into());
+    }
+    
+    pub fn clear_suffix(&mut self) {
+        self.suffix = None;
     }
 }
 
@@ -91,7 +121,7 @@ pub fn generate_dynamic_list_from_queue_items(
     let total_queue_size = full_queue.len();
     let mut dynamic_list: Vec<ListItem> = Vec::with_capacity(max_lines);
     
-    let leading_items_completed_count = full_queue
+    let mut leading_items_completed_count = full_queue
         .iter()
         .take_while(|item| item.finished_state.is_some())
         .count();
@@ -116,11 +146,21 @@ pub fn generate_dynamic_list_from_queue_items(
     {
         dynamic_list.push(
             ListItem::new(
-                format!("... ({} completed) ...", leading_items_completed_count)
+                Span::styled(
+                    format!("  ... ({} completed) ...", leading_items_completed_count),
+                    Style::default().add_modifier(Modifier::ITALIC)
+                )
             )
                 .style(list_style_rules.leading_completed_items_style)
         );
         current_queue_offset += leading_items_completed_count;
+        lines_used += 1;
+    }
+    
+    // Preparation for trailing "... (23 remaining) ..." line.
+    // This trailing message is shown only if there are more items that are hidden.
+    let add_trailing = total_queue_size - current_queue_offset + 1 > max_lines - lines_used;
+    if add_trailing {
         lines_used += 1;
     }
     
@@ -145,13 +185,26 @@ pub fn generate_dynamic_list_from_queue_items(
         
         dynamic_list.push(
             ListItem::new(format!(
-                "{}{}",
+                "{}{}{}{}",
+                if let Some(spinner) = &next_item.spinner {
+                    format!(" {} ", spinner.get_current_phase())
+                } else {
+                    match next_item.spaces_when_spinner_is_disabled {
+                        true => "   ".into(),
+                        false => "".into()
+                    }
+                },
                 if let Some(prefix) = &next_item.prefix {
                     prefix
                 } else {
                     ""
                 },
-                next_item.content
+                next_item.content,
+                if let Some(suffix) = &next_item.suffix {
+                    suffix
+                } else {
+                    ""
+                }
             ))
                 .style(item_style)
         );
@@ -160,19 +213,19 @@ pub fn generate_dynamic_list_from_queue_items(
         lines_used += 1;
     }
     
-    // TODO Fix ... (65 remaining) ... not showing up!
-    
     // If there are still (overflowing) trailing pending tasks, we show them in the last line
     // as "... (54 remaining) ...".
-    if trailing_items_pending_count > 0
-        && current_queue_offset < total_queue_size
-        && total_queue_size > max_lines
-    {
-        let hidden_pending_item_count = total_queue_size - current_queue_offset - 1;
+    if add_trailing {
+        let hidden_pending_item_count = total_queue_size - current_queue_offset + 2;
         
+        dynamic_list.pop();
+        dynamic_list.pop();
         dynamic_list.push(
             ListItem::new(
-                format!("... ({} remaining) ...", hidden_pending_item_count)
+                Span::styled(
+                    format!("  ... ({} remaining) ...", hidden_pending_item_count),
+                    Style::default().add_modifier(Modifier::ITALIC)
+                )
             )
                 .style(list_style_rules.trailing_hidden_pending_items_style)
         );

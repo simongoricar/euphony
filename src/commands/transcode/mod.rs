@@ -160,11 +160,12 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                     .bold()
             )
         );
-        terminal.log_newline();
     }
     
     terminal.queue_begin();
     terminal.progress_begin();
+    
+    // TODO Add keybinds to control the program (q for exit, etc.).
     
     let mut thread_pool = build_transcode_thread_pool(config);
     let mut files_finished_so_far: usize = 0;
@@ -183,7 +184,13 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                     albums.len(),
                     if albums.len() > 1 { "s" } else { "" }
                 );
+                
                 let library_queue_item = terminal.queue_item_add(library_description, QueueType::Library)?;
+                
+                terminal.queue_item_modify(
+                    library_queue_item,
+                    |item| item.spaces_when_spinner_is_disabled = false
+                )?;
                 
                 let queued_albums: AlbumsQueuedWorkload = albums
                     .into_iter()
@@ -195,7 +202,7 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                             album.album_info.album_title,
                         );
                         let album_queue_item = terminal.queue_item_add(album_description, QueueType::Album)?;
-    
+                        
                         Ok((album, album_queue_item, files))
                     })
                     .collect::<Result<AlbumsQueuedWorkload>>()?;
@@ -209,17 +216,35 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
     // transcoding each file in each album and updating the terminal backend on the way.
     for (library, library_queue_item, albums) in queued_workload {
         terminal.queue_item_start(library_queue_item)?;
+        terminal.queue_item_modify(
+            library_queue_item,
+            |item| item.set_suffix(" [active]")
+        )?;
+        
         terminal.log_println(format!(
-            "Transcoding contents of library: {}",
-            library.name
+            "Transcoding contents of library: {} ({} albums)",
+            library.name.clone().bold(),
+            albums.len(),
         ));
         
         for (mut album, album_queue_id, files) in albums {
             terminal.queue_item_start(album_queue_id)?;
+            terminal.queue_item_modify(
+                album_queue_id,
+                |item| {
+                    item.clear_prefix();
+                    item.enable_spinner();
+                }
+            )?;
+            
             terminal.log_println(format!(
-                "Transcoding album: {} - {}",
-                album.album_info.artist_name,
-                album.album_info.artist_name,
+                "|-> Transcoding album: {} ({} files)",
+                format!(
+                    "{} - {}",
+                    album.album_info.artist_name,
+                    album.album_info.artist_name,
+                ).italic(),
+                files.len(),
             ));
             
             if verbose_enabled() {
@@ -277,9 +302,20 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
                     Ok(message) => match message {
                         WorkerMessage::StartingWithFile { queue_item } => {
                             terminal.queue_item_start(queue_item)?;
+                            terminal.queue_item_modify(
+                                queue_item,
+                                |item| {
+                                    item.clear_prefix();
+                                    item.enable_spinner();
+                                }
+                            )?;
                         },
                         WorkerMessage::FinishedWithFile { queue_item, was_ok } => {
                             terminal.queue_item_finish(queue_item, was_ok)?;
+                            terminal.queue_item_modify(
+                                queue_item,
+                                |item| item.disable_spinner()
+                            )?;
                             
                             // Update progress bar with new percentage.
                             files_finished_so_far += 1;
@@ -309,16 +345,29 @@ pub fn cmd_transcode_all<T: TerminalBackend + LogBackend + TranscodeBackend>(
             album.save_fresh_meta(config, true)?;
             
             terminal.queue_item_finish(album_queue_id, true)?;
+            terminal.queue_item_modify(
+                album_queue_id,
+                |item| {
+                    item.spaces_when_spinner_is_disabled = false;
+                    item.disable_spinner();
+                    item.set_prefix(" ☑ ");
+                }
+            )?;
+            
             terminal.queue_clear(QueueType::File)?;
         }
         
         terminal.queue_item_finish(library_queue_item, true)?;
+        terminal.queue_item_modify(
+            library_queue_item,
+            |item| item.clear_suffix()
+        )?;
     }
     
     let processing_time_delta = processing_begin_time.elapsed().as_secs_f64();
     terminal.log_println(format!(
-        "Transcoding completed in {:.1}",
-        processing_time_delta,
+        "Transcoding completed in {:.2} seconds.",
+        format!("{:.2}", processing_time_delta).italic(),
     ));
     
     Ok(())

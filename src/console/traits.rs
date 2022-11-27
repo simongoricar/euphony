@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use miette::Result;
 
-use crate::console::backends::{QueueItemID, QueueType};
+use crate::console::backends::{QueueItem, QueueItemID, QueueType};
 
 pub trait TerminalBackend {
     /// Initialize the terminal backend.
@@ -35,6 +35,14 @@ pub trait TranscodeBackend {
     
     /// Mark the item in queue as "finished", with additional result context provided by `was_ok`.
     fn queue_item_finish(&mut self, item_id: QueueItemID, was_ok: bool) -> Result<()>;
+    
+    /// Fetch a mutable reference to the given queue item, allowing you to modify its contents.
+    /// This is done by providing a function that will take the mutable reference and modify it.
+    fn queue_item_modify<F: FnOnce(&mut QueueItem)>(
+        &mut self,
+        item_id: QueueItemID,
+        function: F,
+    ) -> Result<()>;
     
     /// Remove the item from the queue.
     fn queue_item_remove(&mut self, item_id: QueueItemID) -> Result<()>;
