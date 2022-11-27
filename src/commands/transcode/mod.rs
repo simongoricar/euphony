@@ -16,7 +16,7 @@ use crate::commands::transcode::packets::library::LibraryWorkPacket;
 use crate::configuration::Config;
 use crate::console::TranscodeLogTerminalBackend;
 use crate::console::backends::shared::{QueueItemID, QueueType, SpinnerStyle};
-use crate::console::utilities::term_println_tlt;
+use crate::console::utilities::term_println_tltb;
 use crate::globals::verbose_enabled;
 
 mod metadata;
@@ -82,8 +82,8 @@ pub fn cmd_transcode_all(
     config: &Config,
     terminal: &mut dyn TranscodeLogTerminalBackend
 ) -> Result<()> {
-    term_println_tlt(terminal, "Mode: transcode all libraries.".cyan().bold());
-    term_println_tlt(terminal, "Scanning all libraries for changes...");
+    term_println_tltb(terminal, "Mode: transcode all libraries.".cyan().bold());
+    term_println_tltb(terminal, "Scanning all libraries for changes...");
     
     let processing_begin_time = Instant::now();
     
@@ -150,10 +150,10 @@ pub fn cmd_transcode_all(
     // Skip processing if there are no changes,
     // otherwise show a short summary of changes and start transcoding.
     if full_workload.is_empty() {
-        term_println_tlt(terminal, "Transcodes are already up to date.".green().bold());
+        term_println_tltb(terminal, "Transcodes are already up to date.".green().bold());
         return Ok(());
     } else {
-        term_println_tlt(
+        term_println_tltb(
             terminal,
             format!(
                 "Detected {} changed files, transcoding.",
@@ -225,7 +225,7 @@ pub fn cmd_transcode_all(
             Box::new(|item| item.set_suffix(" [active]"))
         )?;
     
-        term_println_tlt(
+        term_println_tltb(
             terminal,
             format!(
                 "Transcoding contents of library: {} ({} albums)",
@@ -246,7 +246,7 @@ pub fn cmd_transcode_all(
                 })
             )?;
     
-            term_println_tlt(
+            term_println_tltb(
                 terminal,
                 format!(
                     "|-> Transcoding album: {} ({} files)",
@@ -261,7 +261,7 @@ pub fn cmd_transcode_all(
             
             if verbose_enabled() {
                 let fresh_metadata = album.get_fresh_meta(config)?;
-                term_println_tlt(
+                term_println_tltb(
                     terminal,
                     format!(
                         "[VERBOSE] AlbumWorkPacket album: {:?}; files in meta: {:?}",
@@ -272,7 +272,7 @@ pub fn cmd_transcode_all(
             }
             
             if verbose_enabled() {
-                term_println_tlt(
+                term_println_tltb(
                     terminal,
                     format!("File work packets (before queueing): {:?}", files),
                 );
@@ -302,7 +302,7 @@ pub fn cmd_transcode_all(
                 .collect::<Result<Vec<(FileWorkPacket, QueueItemID)>>>()?;
             
             if verbose_enabled() {
-                term_println_tlt(
+                term_println_tltb(
                     terminal,
                     format!("File work packets (after queueing): {:?}", queued_files),
                 );
@@ -347,7 +347,7 @@ pub fn cmd_transcode_all(
                             )?;
                             
                             if verbose_enabled() {
-                                term_println_tlt(
+                                term_println_tltb(
                                     terminal,
                                     format!("[VERBOSE] File finished, result: {:?}", processing_result),
                                 );
@@ -394,7 +394,7 @@ pub fn cmd_transcode_all(
             let time_album_elapsed = time_album_start
                 .elapsed()
                 .as_secs_f64();
-            term_println_tlt(
+            term_println_tltb(
                 terminal,
                 format!(
                     "|-> Album {} transcoded in {:.2} seconds.",
@@ -417,7 +417,7 @@ pub fn cmd_transcode_all(
         let time_library_elapsed = time_library_start
             .elapsed()
             .as_secs_f64();
-        term_println_tlt(
+        term_println_tltb(
             terminal,
             format!(
                 "|-> Library {} transcoded in {:.2} seconds.",
@@ -428,7 +428,7 @@ pub fn cmd_transcode_all(
     }
     
     let processing_time_delta = processing_begin_time.elapsed().as_secs_f64();
-    term_println_tlt(
+    term_println_tltb(
         terminal,
         format!(
             "Full library transcoding completed in {:.2} seconds.",

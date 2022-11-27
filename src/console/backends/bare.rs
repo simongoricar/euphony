@@ -32,11 +32,11 @@ impl TerminalBackend for BareConsoleBackend {
 }
 
 impl LogBackend for BareConsoleBackend {
-    fn log_newline(&mut self) {
+    fn log_newline(&self) {
         println!();
     }
     
-    fn log_println(&mut self, content: Box<dyn Display>) {
+    fn log_println(&self, content: Box<dyn Display>) {
         println!("{}", content)
     }
 }

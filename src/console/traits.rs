@@ -14,10 +14,10 @@ pub trait TerminalBackend {
 
 pub trait LogBackend {
     /// Print a new empty line into the log.
-    fn log_newline(&mut self);
+    fn log_newline(&self);
     
     /// Print a string into the log, followed by a new line.
-    fn log_println(&mut self, content: Box<dyn Display>);
+    fn log_println(&self, content: Box<dyn Display>);
 }
 
 pub trait TranscodeBackend {

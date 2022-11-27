@@ -6,8 +6,8 @@ use crate::console::{LogTerminalBackend, TranscodeLogTerminalBackend};
 /// Due to rust's trait upcasting being unstable, this version of the
 /// method operates on `TranscodeLogTerminalBackend`s.
 #[inline]
-pub fn term_println_tlt<T: Display>(
-    terminal: &mut dyn TranscodeLogTerminalBackend,
+pub fn term_println_tltb<T: Display>(
+    terminal: &dyn TranscodeLogTerminalBackend,
     content: T,
 ) {
     let content = Box::new(content.to_string());
@@ -19,8 +19,8 @@ pub fn term_println_tlt<T: Display>(
 /// Due to rust's trait upcasting being unstable, this version of the
 /// method operates on `LogTerminalBackend`s.
 #[inline]
-pub fn term_println_lt<T: Display>(
-    terminal: &mut dyn LogTerminalBackend,
+pub fn term_println_ltb<T: Display>(
+    terminal: &dyn LogTerminalBackend,
     content: T,
 ) {
     let content = Box::new(content.to_string());

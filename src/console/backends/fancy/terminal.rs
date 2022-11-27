@@ -73,7 +73,7 @@ impl TUITerminalBackend {
     
     /// If the current log journal exceeds the set limit of lines, this method drops the oldest
     /// logs in order to shrink the log back down.
-    fn trim_log_journal(&mut self) {
+    fn trim_log_journal(&self) {
         let mut state = self.lock_state();
         
         let current_log_count = state.log_journal.len();
@@ -484,7 +484,7 @@ impl TerminalBackend for TUITerminalBackend {
 }
 
 impl LogBackend for TUITerminalBackend {
-    fn log_newline(&mut self) {
+    fn log_newline(&self) {
         {
             let mut state = self.lock_state();
             state.log_journal.push_back("\n".to_string());
@@ -493,7 +493,7 @@ impl LogBackend for TUITerminalBackend {
         self.trim_log_journal();
     }
     
-    fn log_println(&mut self, content: Box<dyn Display>) {
+    fn log_println(&self, content: Box<dyn Display>) {
         {
             let terminal = self.terminal.lock().unwrap();
             let mut state = self.lock_state();

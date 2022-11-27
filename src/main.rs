@@ -8,7 +8,7 @@ use miette::Result;
 use crate::configuration::Config;
 use crate::console::{TerminalBackend, TranscodeLogTerminalBackend};
 use crate::console::backends::{BareConsoleBackend, TUITerminalBackend};
-use crate::console::utilities::term_println_tlt;
+use crate::console::utilities::term_println_tltb;
 use crate::globals::VERBOSE;
 
 mod configuration;
@@ -28,22 +28,7 @@ enum CLICommand {
     )]
     TranscodeAll(TranscodeAllArgs),
     
-    // TODO Reimplement with the new terminal backend.
-    // #[command(
-    //     name = "transcode-library",
-    //     about = "Transcode only the specified library into the aggregated (transcoded) library. \
-    //              Requires a single positional parameter: the library name (by full name), \
-    //              as configured in the configuration file."
-    // )]
-    // TranscodeLibrary(TranscodeLibraryArgs),
-    //
-    // #[command(
-    //     name = "transcode-album",
-    //     about = "Transcode only the specified album into the aggregated (transcoded) library. \
-    //              The current directory is used by default, but you may pass a different one \
-    //              using \"--dir <path>\"."
-    // )]
-    // TranscodeAlbum(TranscodeAlbumArgs),
+    // TODO Reimplement transcode-library and transcode-album with the new terminal backend.
 
     #[command(
         name = "validate",
@@ -79,27 +64,10 @@ struct TranscodeAllArgs {
         long = "bare-terminal",
         help = "Whether to disable any fancy terminal UI and simply print into the console. \
                 Keep in mind that this is a really bare version without any progress bars, but \
-                can be useful for debugging or in cases where you simply don't want \
-                a constantly-updating terminal UI."
+                can be useful for debugging or for cases where you simply don't want \
+                a constantly-updating terminal UI (e.g. for saving logs)."
     )]
     bare_terminal: bool,
-}
-
-#[derive(Args, Eq, PartialEq)]
-struct TranscodeAlbumArgs {
-    #[arg(
-        long = "dir",
-        help = "Directory to process, defaults to current directory."
-    )]
-    directory: Option<String>,
-}
-
-#[derive(Args, Eq, PartialEq)]
-struct TranscodeLibraryArgs {
-    #[arg(
-        help = "Library to process (by full name)."
-    )]
-    library_name: String,
 }
 
 #[derive(Args, Eq, PartialEq)]
@@ -175,7 +143,7 @@ fn process_cli_command(
         match commands::cmd_transcode_all(config, terminal.deref_mut()) {
             Ok(_) => {
                 terminal.log_newline();
-                term_println_tlt(terminal.deref_mut(), "Transcoding finished.".green().italic());
+                term_println_tltb(terminal.deref_mut(), "Transcoding finished.".green().italic());
     
                 terminal
                     .destroy()
@@ -185,7 +153,7 @@ fn process_cli_command(
             },
             Err(error) => {
                 terminal.log_newline();
-                term_println_tlt(
+                term_println_tltb(
                     terminal.deref_mut(),
                     format!(
                         "{} {}",
