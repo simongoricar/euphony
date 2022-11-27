@@ -86,7 +86,7 @@ impl AlbumWorkPacket {
         if let Some(saved_meta) = saved_meta {
             let fresh_meta = self.get_fresh_meta(config)?;
     
-            let meta_diff = saved_meta.diff_or_missing(
+            let meta_diff = saved_meta.diff_with_fresh_or_missing_from_target_dir(
                 &fresh_meta,
                 &self.album_info,
                 config,
@@ -109,15 +109,18 @@ impl AlbumWorkPacket {
         let fresh_meta = self.get_fresh_meta(config)?;
 
         let mut file_packets: Vec<FileWorkPacket> = Vec::new();
-
+        
         if saved_meta.is_some() {
-            let diff = saved_meta.unwrap().diff_or_missing(
+            let diff = saved_meta.unwrap().diff_with_fresh_or_missing_from_target_dir(
                 &fresh_meta,
                 &self.album_info,
                 config,
             )?;
 
-            for new_file_name in diff.files_new {
+            for new_file_name in diff.files_new
+                .iter()
+                .chain(diff.files_untranscoded.iter())
+            {
                 file_packets.push(
                     FileWorkPacket::new(
                         Path::new(&new_file_name),

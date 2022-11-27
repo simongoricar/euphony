@@ -43,7 +43,7 @@ fn f64_approximate_eq(first: f64, second: f64, max_distance: f64) -> bool {
 
 /// Represents a single album and its associated tracked files.
 /// This is the structure that is generated/loaded from/saved into .album.euphony files.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AlbumMetadata {
     pub files: HashMap<String, AlbumMetadataFile>,
     pub overrides: Option<AlbumOverride>,
@@ -193,7 +193,7 @@ impl AlbumMetadata {
 
     /// Given another instance of the LibraryMeta struct (expected to be the fresh one),
     /// compare them and generate a list of new, changed and removed files between the snapshots.
-    pub fn diff(&self, current_meta_state: &AlbumMetadata) -> FileChanges {
+    pub fn diff_with_fresh_metadata(&self, current_meta_state: &AlbumMetadata) -> FileChanges {
         let saved_file_paths: HashSet<&String> = self.files.keys().collect();
         let current_file_paths: HashSet<&String> = current_meta_state.files.keys().collect();
 
@@ -232,22 +232,29 @@ impl AlbumMetadata {
         }
 
         FileChanges {
+            files_untranscoded: Vec::new(),
             files_removed,
             files_new,
             files_changed
         }
     }
 
-    /// Improved version of the diff algorithm, which first does a diff and then adds any
-    /// files that are not present in the aggregated library (otherwise we can remove files
-    /// from the aggregated library, but no changes will be detected on a library transcode).
-    pub fn diff_or_missing(
+    /// Improved version of the diff algorithm, which first does a diff with the fresh metadata
+    /// and then adds any files that are not present in the aggregated library
+    /// (otherwise we can remove files from the aggregated library,
+    /// but no changes will be detected on a library transcode).
+    pub fn diff_with_fresh_or_missing_from_target_dir(
         &self,
         current_meta_state: &AlbumMetadata,
         album_info: &AlbumDirectoryInfo,
         config: &Config,
     ) -> Result<FileChanges> {
-        // TODO Test this code.
+        let mut diff = self.diff_with_fresh_metadata(current_meta_state);
+        
+        // Generate a list of files that are in the source directory,
+        // but are *not* in the target directory. These files will be marked as "new",
+        // with the special precaution that they will be removed from `files_changed` if they are
+        // in that list to prevent duplicate entries.
         let mut files_missing_in_target: Vec<String> = Vec::new();
 
         for file_name in self.files.keys() {
@@ -265,8 +272,11 @@ impl AlbumMetadata {
             }
         }
 
-        let mut diff = self.diff(current_meta_state);
-        diff.files_new.extend(files_missing_in_target);
+        diff.files_untranscoded = files_missing_in_target;
+        
+        // TODO Improve this diffing mechanism as this kind of iteration is not the most performant.
+        diff.files_new.retain(|file| !diff.files_untranscoded.contains(file));
+        diff.files_changed.retain(|file| !diff.files_untranscoded.contains(file));
 
         Ok(diff)
     }
@@ -289,7 +299,7 @@ impl AlbumMetadataFile {
             return false;
         }
 
-        static DEFAULT_MAX_DISTANCE: f64 = 0.01;
+        static DEFAULT_MAX_DISTANCE: f64 = 0.1;
 
         if !f64_approximate_eq(self.time_created, other_meta.time_created, DEFAULT_MAX_DISTANCE) {
             return false;
@@ -304,16 +314,25 @@ impl AlbumMetadataFile {
 }
 
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct FileChanges {
+    /// Files that haven't been transcoded yet at all (missing from target directory).
+    pub files_untranscoded: Vec<String>,
+    
+    /// Files that have been added since the last transcode (if any).
     pub files_new: Vec<String>,
+    
+    /// Files that have been changed since the last transcode (if any).
     pub files_changed: Vec<String>,
+    
+    /// Files that have been removed from the source directory since the last transcode.
     pub files_removed: Vec<String>,
 }
 
 impl FileChanges {
     pub fn has_any_changes(&self) -> bool {
-        !self.files_new.is_empty()
+        !self.files_untranscoded.is_empty()
+            || !self.files_new.is_empty()
             || !self.files_changed.is_empty()
             || !self.files_removed.is_empty()
     }

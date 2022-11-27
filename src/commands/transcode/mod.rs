@@ -1,3 +1,4 @@
+use std::process::exit;
 use std::sync::mpsc;
 use std::sync::mpsc::{RecvTimeoutError, Sender};
 use std::thread;
@@ -10,7 +11,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use directories as dirs;
 
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
-use crate::commands::transcode::packets::file::{FilePacketType, FileWorkPacket};
+use crate::commands::transcode::packets::file::{FilePacketType, FileProcessingResult, FileWorkPacket};
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
 use crate::configuration::Config;
 use crate::console::TranscodeLogTerminalBackend;
@@ -29,7 +30,7 @@ enum WorkerMessage {
     },
     FinishedWithFile {
         queue_item: QueueItemID,
-        was_ok: bool,
+        processing_result: FileProcessingResult,
     },
 }
 
@@ -63,11 +64,10 @@ fn process_album(
                 // TODO Retries.
                 
                 let work_result = file.process(config);
-                let was_ok = work_result.is_ok();
     
                 update_sender_thread_clone.send(WorkerMessage::FinishedWithFile {
                     queue_item: *queue_item,
-                    was_ok,
+                    processing_result: work_result,
                 }).expect("Could not send message from worker to main thread.");
             });
         }
@@ -271,6 +271,13 @@ pub fn cmd_transcode_all(
                 );
             }
             
+            if verbose_enabled() {
+                term_println_tlt(
+                    terminal,
+                    format!("File work packets (before queueing): {:?}", files),
+                );
+            }
+            
             // Enter all album files into queue, generating a list of files and their associated queue IDs.
             // TODO A percentage of storage saved after each file finishes would be cool.
             let queued_files = files
@@ -293,6 +300,13 @@ pub fn cmd_transcode_all(
                     }
                 })
                 .collect::<Result<Vec<(FileWorkPacket, QueueItemID)>>>()?;
+            
+            if verbose_enabled() {
+                term_println_tlt(
+                    terminal,
+                    format!("File work packets (after queueing): {:?}", queued_files),
+                );
+            }
             
             let (tx, rx) = mpsc::channel::<WorkerMessage>();
             
@@ -325,12 +339,19 @@ pub fn cmd_transcode_all(
                                 })
                             )?;
                         },
-                        WorkerMessage::FinishedWithFile { queue_item, was_ok } => {
-                            terminal.queue_item_finish(queue_item, was_ok)?;
+                        WorkerMessage::FinishedWithFile { queue_item, processing_result } => {
+                            terminal.queue_item_finish(queue_item, processing_result.is_ok())?;
                             terminal.queue_item_modify(
                                 queue_item,
                                 Box::new(|item| item.disable_spinner())
                             )?;
+                            
+                            if verbose_enabled() {
+                                term_println_tlt(
+                                    terminal,
+                                    format!("[VERBOSE] File finished, result: {:?}", processing_result),
+                                );
+                            }
                             
                             // Update progress bar with new percentage.
                             files_finished_so_far += 1;

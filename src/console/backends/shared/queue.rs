@@ -15,7 +15,7 @@ pub enum QueueType {
 }
 
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct QueueItemID(pub u32);
 
 impl Deref for QueueItemID {

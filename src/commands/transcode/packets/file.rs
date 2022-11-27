@@ -46,7 +46,7 @@ pub enum FilePacketAction {
     RemoveAtTarget,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FileProcessingResult {
     /// Whether this instance is the last emmited one for the given FileWorkPacket.
     /// (there are cases with verbose errors where we emit *all* the intermediate errors, meanining
