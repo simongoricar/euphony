@@ -96,7 +96,7 @@ impl AlbumMetadata {
         };
 
         // Enumerate files (including subdirectories up to a limit).
-        let files = filesystem::list_directory_files_recusrively_filtered(
+        let files = filesystem::recursively_list_directory_files_filtered(
             directory_path,
             maximum_tree_depth,
             extensions,

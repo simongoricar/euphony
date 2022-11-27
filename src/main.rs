@@ -111,6 +111,8 @@ struct CLIArgs {
     command: CLICommand,
 }
 
+/// Load and return the configuration, given the command line arguments
+/// (-c/--config can override configuration filepath).
 fn get_configuration(args: &CLIArgs) -> Config {
     if args.config.is_some() {
         Config::load_from_path(args.config.clone().unwrap())
@@ -119,6 +121,8 @@ fn get_configuration(args: &CLIArgs) -> Config {
     }
 }
 
+/// Initializes and returns a boxed terminal backend.
+/// If `use_bare` is true, this will return `BareConsoleBackend`, otherwise `TUITerminalBackend`.
 fn get_terminal_backend(
     use_bare: bool
 ) -> Box<dyn TranscodeLogTerminalBackend> {
@@ -129,17 +133,19 @@ fn get_terminal_backend(
     }
 }
 
+/// Initializes the required terminal backend and executes the given CLI subcommand.
 fn process_cli_command(
     args: CLIArgs,
     config: &Config,
 ) -> std::result::Result<(), i32> {
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
+        // `transcode`/`transcode-all` has two available terminal backends:
+        // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
+        // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
         let mut terminal = get_terminal_backend(transcode_args.bare_terminal);
-    
         terminal.setup()
             .expect("Could not set up tui terminal backend.");
         
-        // TODO Investigate duplicate items in some file queues.
         match commands::cmd_transcode_all(config, terminal.deref_mut()) {
             Ok(_) => {
                 terminal.log_newline();
@@ -214,11 +220,12 @@ fn process_cli_command(
         Ok(())
         
     } else {
-        // TODO Other commands.
-        todo!("Unimplemented!");
+        panic!("Unrecognized command!");
     }
 }
 
+/// Entry function for `euphony`. Parses CLI arguments,
+/// loads the configuration file and starts executing the given subcommand.
 fn main() -> Result<()> {
     let args: CLIArgs = CLIArgs::parse();
     VERBOSE.set(args.verbose);
@@ -233,175 +240,4 @@ fn main() -> Result<()> {
             exit(exit_code)
         }
     };
-    
-    /*
-    if args.command == CLICommand::TranscodeAll {
-        match commands::cmd_transcode_all(&configuration, &mut terminal_backend) {
-            Ok(_) => {
-                console.newline()?;
-                console.println_styled("Transcoding completed.".green().italic())?;
-                
-                Ok(())
-                
-                // console::new_line();
-                // console::horizontal_line_with_text(
-                //     format!(
-                //         "{}",
-                //         style("Full aggregation complete.")
-                //             .green()
-                //             .italic()
-                //             .bold()
-                //     ),
-                //     None, None,
-                // );
-            },
-            Err(error) => {
-                console.newline()?;
-                console.println_styled("Errored while transcoding:".red().bold())?;
-                console.println(error)?;
-                
-                // console::new_line();
-                // console::horizontal_line_with_text(
-                //     format!(
-                //         "{}",
-                //         style("Errors in full aggregation!")
-                //             .red()
-                //             .italic()
-                //             .bold()
-                //     ),
-                //     None, None,
-                // );
-                // console::centered_print(
-                //     format!(
-                //         "{}",
-                //         style(error)
-                //             .red()
-                //     ),
-                //     None,
-                // );
-                
-                Ok(())
-            }
-        }
-
-    } else if let CLICommand::TranscodeAlbum(ta_args) = &args.command {
-        let selected_directory = match &ta_args.directory {
-            Some(dir) => path::PathBuf::from(dir),
-            None => {
-                env::current_dir()
-                    .expect("Could not get current directory!")
-            }
-        };
-
-        match commands::cmd_transcode_album(&selected_directory, &get_configuration(&args)) {
-            Ok(_) => {
-                // console::new_line();
-                // console::horizontal_line_with_text(
-                //     format!(
-                //         "{}",
-                //         style("Album aggregation complete.")
-                //             .green()
-                //             .italic()
-                //             .bold()
-                //     ),
-                //     None, None,
-                // );
-                
-                Ok(())
-            },
-            Err(error) => {
-                // console::new_line();
-                // console::horizontal_line_with_text(
-                //     format!(
-                //         "{}",
-                //         style("Errors in album aggregation!")
-                //             .red()
-                //             .italic()
-                //             .bold()
-                //     ),
-                //     None, None,
-                // );
-                // console::centered_print(
-                //     format!(
-                //         "{}",
-                //         style(error)
-                //             .red()
-                //     ),
-                //     None,
-                // );
-
-                exit(1);
-            }
-        }
-
-    } else if let CLICommand::TranscodeLibrary(tl_args) = &args.command {
-        let config = get_configuration(&args);
-
-        let selected_library = match config.get_library_by_full_name(&tl_args.library_name) {
-            Some(library) => library,
-            None => {
-                // eprintln!(
-                //     "{} {}",
-                //     style("No such library:")
-                //         .red(),
-                //     tl_args.library_name,
-                // );
-                exit(1);
-            }
-        };
-
-        let selected_library_path = PathBuf::from(&selected_library.path);
-
-        match commands::cmd_transcode_library(&selected_library_path, &config) {
-            Ok(_) => {
-                // console::new_line();
-                // console::horizontal_line_with_text(
-                //     format!(
-                //         "{}",
-                //         style("Library aggregation complete.")
-                //             .green()
-                //             .italic()
-                //             .bold()
-                //     ),
-                //     None, None,
-                // );
-                
-                Ok(())
-            },
-            Err(error) => {
-                // eprintln!(
-                //     "{} {}",
-                //     style("Error while transcoding library:")
-                //         .red(),
-                //     error,
-                // );
-                exit(1);
-            }
-        }
-
-    } else if args.command == CLICommand::ValidateAll {
-        match commands::cmd_validate_all(&get_configuration(&args)) {
-            true => exit(0),
-            false => exit(1),
-        }
-
-    } else if let CLICommand::ValidateLibrary(vl_args) = &args.command {
-        match commands::cmd_validate_library(&get_configuration(&args), &vl_args.library_name) {
-            true => exit(0),
-            false => exit(1),
-        };
-
-    } else if args.command == CLICommand::ShowConfig {
-        commands::cmd_show_config(&get_configuration(&args));
-        Ok(())
-
-    } else if args.command == CLICommand::ListLibraries {
-        commands::cmd_list_libraries(&get_configuration(&args));
-        Ok(())
-
-    } else {
-        panic!("Unexpected/unimplemented command!");
-    }
-    
-     */
 }
