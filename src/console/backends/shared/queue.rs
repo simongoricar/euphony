@@ -1,12 +1,13 @@
 use std::ops::Deref;
+use std::time::Duration;
 
 use miette::{miette, Result};
 use tui::style::{Modifier, Style};
 use tui::text::Span;
 use tui::widgets::ListItem;
-use crate::console::backends::PixelSpinner;
+use crate::console::backends::shared::{AnimatedSpinner, SpinnerStyle};
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum QueueType {
     Library,
     Album,
@@ -48,7 +49,7 @@ pub struct QueueItem {
     
     pub finished_state: Option<QueueItemFinishedState>,
     
-    pub spinner: Option<PixelSpinner>,
+    pub spinner: Option<AnimatedSpinner>,
     
     pub spaces_when_spinner_is_disabled: bool,
 }
@@ -77,8 +78,8 @@ impl QueueItem {
         self.finished_state = Some(finished_state);
     }
     
-    pub fn enable_spinner(&mut self) {
-        self.spinner = Some(PixelSpinner::new(None));
+    pub fn enable_spinner(&mut self, style: SpinnerStyle, speed: Option<Duration>) {
+        self.spinner = Some(AnimatedSpinner::new(style, speed));
     }
     
     pub fn disable_spinner(&mut self) {
@@ -121,15 +122,9 @@ pub fn generate_dynamic_list_from_queue_items(
     let total_queue_size = full_queue.len();
     let mut dynamic_list: Vec<ListItem> = Vec::with_capacity(max_lines);
     
-    let mut leading_items_completed_count = full_queue
+    let leading_items_completed_count = full_queue
         .iter()
         .take_while(|item| item.finished_state.is_some())
-        .count();
-    
-    let trailing_items_pending_count = full_queue
-        .iter()
-        .rev()
-        .take_while(|item| !item.is_active && item.finished_state.is_none())
         .count();
     
     // Generate dynamic list.

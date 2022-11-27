@@ -1,3 +1,4 @@
+use std::ops::DerefMut;
 use std::process::exit;
 
 use clap::{Args, Parser, Subcommand};
@@ -5,8 +6,9 @@ use crossterm::style::Stylize;
 use miette::Result;
 
 use crate::configuration::Config;
-use crate::console::{LogBackend, TerminalBackend};
+use crate::console::{TerminalBackend, TranscodeLogTerminalBackend};
 use crate::console::backends::{BareConsoleBackend, TUITerminalBackend};
+use crate::console::utilities::term_println_tlt;
 use crate::globals::VERBOSE;
 
 mod configuration;
@@ -24,7 +26,7 @@ enum CLICommand {
         visible_aliases = ["transcode-all"],
         about = "Transcode all registered libraries into the aggregated (transcoded) library."
     )]
-    TranscodeAll,
+    TranscodeAll(TranscodeAllArgs),
     
     // TODO Reimplement with the new terminal backend.
     // #[command(
@@ -71,7 +73,19 @@ enum CLICommand {
     ListLibraries,
 }
 
-#[derive(Args, PartialEq, Eq)]
+#[derive(Args, Eq, PartialEq)]
+struct TranscodeAllArgs {
+    #[arg(
+        long = "bare-terminal",
+        help = "Whether to disable any fancy terminal UI and simply print into the console. \
+                Keep in mind that this is a really bare version without any progress bars, but \
+                can be useful for debugging or in cases where you simply don't want \
+                a constantly-updating terminal UI."
+    )]
+    bare_terminal: bool,
+}
+
+#[derive(Args, Eq, PartialEq)]
 struct TranscodeAlbumArgs {
     #[arg(
         long = "dir",
@@ -80,7 +94,7 @@ struct TranscodeAlbumArgs {
     directory: Option<String>,
 }
 
-#[derive(Args, PartialEq, Eq)]
+#[derive(Args, Eq, PartialEq)]
 struct TranscodeLibraryArgs {
     #[arg(
         help = "Library to process (by full name)."
@@ -88,7 +102,7 @@ struct TranscodeLibraryArgs {
     library_name: String,
 }
 
-#[derive(Args, PartialEq, Eq)]
+#[derive(Args, Eq, PartialEq)]
 struct ValidateLibraryArgs {
     #[arg(
         help = "Library to process (by full name)."
@@ -137,36 +151,51 @@ fn get_configuration(args: &CLIArgs) -> Config {
     }
 }
 
+fn get_terminal_backend(
+    use_bare: bool
+) -> Box<dyn TranscodeLogTerminalBackend> {
+    if use_bare {
+        Box::new(BareConsoleBackend::new())
+    } else {
+        Box::new(TUITerminalBackend::new().expect("Could not create TUI terminal backend."))
+    }
+}
+
 fn process_cli_command(
     args: CLIArgs,
     config: &Config,
 ) -> std::result::Result<(), i32> {
-    if args.command == CLICommand::TranscodeAll {
-        let mut tui_terminal = TUITerminalBackend::new()
-            .expect("Could not create tui terminal backend.");
-        
-        tui_terminal.setup()
+    if let CLICommand::TranscodeAll(transcode_args) = args.command {
+        let mut terminal = get_terminal_backend(transcode_args.bare_terminal);
+    
+        terminal.setup()
             .expect("Could not set up tui terminal backend.");
         
-        match commands::cmd_transcode_all(config, &mut tui_terminal) {
+        // TODO Investigate duplicate items in some file queues.
+        match commands::cmd_transcode_all(config, terminal.deref_mut()) {
             Ok(_) => {
-                tui_terminal.log_newline();
-                tui_terminal.log_println("Transcoding finished.".green().italic());
-                
-                tui_terminal.destroy()
+                terminal.log_newline();
+                term_println_tlt(terminal.deref_mut(), "Transcoding finished.".green().italic());
+    
+                terminal
+                    .destroy()
                     .expect("Could not destroy tui terminal backend.");
                 
                 Ok(())
             },
             Err(error) => {
-                tui_terminal.log_newline();
-                tui_terminal.log_println(format!(
-                    "{} {}",
-                    "Errored while transcoding:".red(),
-                    error,
-                ));
+                terminal.log_newline();
+                term_println_tlt(
+                    terminal.deref_mut(),
+                    format!(
+                        "{} {}",
+                        "Errored while transcoding:".red(),
+                        error,
+                    )
+                );
     
-                tui_terminal.destroy()
+                terminal
+                    .destroy()
                     .expect("Could not destroy tui terminal backend.");
                 
                 Err(1)

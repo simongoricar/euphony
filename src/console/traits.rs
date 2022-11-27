@@ -2,14 +2,14 @@ use std::fmt::Display;
 
 use miette::Result;
 
-use crate::console::backends::{QueueItem, QueueItemID, QueueType};
+use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType};
 
 pub trait TerminalBackend {
     /// Initialize the terminal backend.
     fn setup(&mut self) -> Result<()>;
     
     /// Clean up the terminal backend.
-    fn destroy(self) -> Result<()>;
+    fn destroy(&mut self) -> Result<()>;
 }
 
 pub trait LogBackend {
@@ -17,7 +17,7 @@ pub trait LogBackend {
     fn log_newline(&mut self);
     
     /// Print a string into the log, followed by a new line.
-    fn log_println<T: Display>(&mut self, content: T);
+    fn log_println(&mut self, content: Box<dyn Display>);
 }
 
 pub trait TranscodeBackend {
@@ -28,7 +28,7 @@ pub trait TranscodeBackend {
     fn queue_end(&mut self);
     
     /// Add an item to the queue.
-    fn queue_item_add<T: Display>(&mut self, item: T, item_type: QueueType) -> Result<QueueItemID>;
+    fn queue_item_add(&mut self, item: String, item_type: QueueType) -> Result<QueueItemID>;
     
     /// Mark the item in queue as "in-progress".
     fn queue_item_start(&mut self, item_id: QueueItemID) -> Result<()>;
@@ -38,10 +38,10 @@ pub trait TranscodeBackend {
     
     /// Fetch a mutable reference to the given queue item, allowing you to modify its contents.
     /// This is done by providing a function that will take the mutable reference and modify it.
-    fn queue_item_modify<F: FnOnce(&mut QueueItem)>(
+    fn queue_item_modify(
         &mut self,
         item_id: QueueItemID,
-        function: F,
+        function: Box<dyn FnOnce(&mut QueueItem)>,
     ) -> Result<()>;
     
     /// Remove the item from the queue.
@@ -50,9 +50,19 @@ pub trait TranscodeBackend {
     /// Clear the entire queue (of the given type).
     fn queue_clear(&mut self, queue_type: QueueType) -> Result<()>;
     
-    
+    /// Enable the progress bar. This must be called before any other progress bar-related methods.
     fn progress_begin(&mut self);
+    
+    /// Disable the progress bar.
     fn progress_end(&mut self);
+    
+    /// Set the total number of tasks to show in the progress bar.
     fn progress_set_total(&mut self, total: usize) -> Result<()>;
+    
+    /// Set the currently completed number of tasks to show in the progress bar (should be less or equal to total).
     fn progress_set_current(&mut self, finished: usize) -> Result<()>;
 }
+
+
+pub trait LogTerminalBackend: TerminalBackend + LogBackend {}
+pub trait TranscodeLogTerminalBackend: TerminalBackend + LogBackend + TranscodeBackend {}

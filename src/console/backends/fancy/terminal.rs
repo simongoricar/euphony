@@ -6,8 +6,8 @@ use std::sync::mpsc::{Sender, TryRecvError};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use ansi_to_tui::IntoText;
 
+use ansi_to_tui::IntoText;
 use crossterm::ExecutableCommand;
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -19,12 +19,10 @@ use tui::style::{Color, Modifier, Style};
 use tui::text::Span;
 use tui::widgets::{Block, Borders, Gauge, List, ListItem};
 
-use crate::console::backends::{QueueItem, QueueItemID, QueueType};
-use crate::console::backends::fancy::{ProgressState, QueueState};
-use crate::console::backends::fancy::queue::{generate_dynamic_list_from_queue_items, ListItemStyleRules, QueueItemFinishedState};
 use crate::console::backends::fancy::state::TerminalUIState;
-use crate::console::LogBackend;
-use crate::console::traits::{TerminalBackend, TranscodeBackend};
+use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType, generate_dynamic_list_from_queue_items, ListItemStyleRules, QueueItemFinishedState, QueueState, ProgressState};
+use crate::console::{LogBackend, LogTerminalBackend};
+use crate::console::traits::{TerminalBackend, TranscodeBackend, TranscodeLogTerminalBackend};
 
 const LOG_JOURNAL_MAX_LINES: usize = 20;
 const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
@@ -162,30 +160,30 @@ impl TUITerminalBackend {
         
         // 1. Queue (three queues)
         
-        // Constant styles that are applied when generating dynamic lists for each queue.
+        // Styles that are applied when generating dynamic lists for each queue.
         let queue_libraries_styles = ListItemStyleRules {
             item_pending_style: Style::default().fg(Color::DarkGray),
-            item_in_progress_style: Style::default().fg(Color::LightBlue),
-            item_finished_ok_style: Style::default().fg(Color::Indexed(65)), // DarkSeaGreen4 (#5f875f)
-            item_finished_not_ok_style: Style::default().fg(Color::Indexed(65)), // DarkSeaGreen4 (#5f875f)
-            leading_completed_items_style: Style::default().fg(Color::DarkGray),
-            trailing_hidden_pending_items_style: Style::default().fg(Color::DarkGray),
+            item_in_progress_style: Style::default().fg(Color::Indexed(176)), // Plum3 (#d787d7)
+            item_finished_ok_style: Style::default().fg(Color::Indexed(119)), // LightGreen (#87ff5f)
+            item_finished_not_ok_style: Style::default().fg(Color::Indexed(119)), // LightGreen (#87ff5f
+            leading_completed_items_style: Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+            trailing_hidden_pending_items_style: Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
         };
         let queue_albums_styles = ListItemStyleRules {
             item_pending_style: Style::default().fg(Color::DarkGray),
             item_in_progress_style: Style::default().fg(Color::LightBlue),
             item_finished_ok_style: Style::default().fg(Color::Indexed(65)), // DarkSeaGreen4 (#5f875f)
             item_finished_not_ok_style: Style::default().fg(Color::Indexed(65)), // DarkSeaGreen4 (#5f875f)
-            leading_completed_items_style: Style::default().fg(Color::DarkGray),
-            trailing_hidden_pending_items_style: Style::default().fg(Color::DarkGray),
+            leading_completed_items_style: Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+            trailing_hidden_pending_items_style: Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
         };
         let queue_files_styles = ListItemStyleRules {
             item_pending_style: Style::default().fg(Color::DarkGray),
             item_in_progress_style: Style::default().fg(Color::LightYellow),
             item_finished_ok_style: Style::default().fg(Color::Green),
             item_finished_not_ok_style: Style::default().fg(Color::Indexed(172)), // Orange3 (#d78700)
-            leading_completed_items_style: Style::default().fg(Color::DarkGray),
-            trailing_hidden_pending_items_style: Style::default().fg(Color::DarkGray),
+            leading_completed_items_style: Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+            trailing_hidden_pending_items_style: Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
         };
         
         if let Some(queue) = &state.queue_state {
@@ -440,18 +438,20 @@ impl TerminalBackend for TUITerminalBackend {
         Ok(())
     }
     
-    fn destroy(self) -> Result<()> {
+    fn destroy(&mut self) -> Result<()> {
         if !self.has_been_set_up {
             return Ok(());
         }
         
         let render_thread_stop_sender = self.render_thread_channel
+            .as_mut()
             .expect("has_been_set_up is true, but no render thread Sender?!");
         render_thread_stop_sender.send(())
             .into_diagnostic()
             .wrap_err("Could not send stop signal to render thread.")?;
         
         let render_thread = self.render_thread
+            .take()
             .expect("has_been_set_up is true, but no render thread?!");
         render_thread.join()
             .expect("Render thread panicked!")?;
@@ -493,7 +493,7 @@ impl LogBackend for TUITerminalBackend {
         self.trim_log_journal();
     }
     
-    fn log_println<T: Display>(&mut self, content: T) {
+    fn log_println(&mut self, content: Box<dyn Display>) {
         {
             let terminal = self.terminal.lock().unwrap();
             let mut state = self.lock_state();
@@ -538,9 +538,9 @@ impl TranscodeBackend for TUITerminalBackend {
         state.queue_state = None;
     }
     
-    fn queue_item_add<T: Display>(
+    fn queue_item_add(
         &mut self,
-        item: T,
+        item: String,
         item_type: QueueType,
     ) -> Result<QueueItemID> {
         let mut state = self.lock_state();
@@ -549,7 +549,7 @@ impl TranscodeBackend for TUITerminalBackend {
             .as_mut()
             .ok_or_else(|| miette!("Queue is currently disabled, can't add item."))?;
         
-        let queue_item = QueueItem::new(item.to_string(), item_type);
+        let queue_item = QueueItem::new(item, item_type);
         let queue_item_id = queue_item.id;
         
         match item_type {
@@ -600,11 +600,12 @@ impl TranscodeBackend for TUITerminalBackend {
         }
     }
     
-    fn queue_item_modify<F: FnOnce(&mut QueueItem)>(
+    fn queue_item_modify(
         &mut self,
         item_id: QueueItemID,
-        function: F,
-    ) -> Result<()> {
+        function: Box<dyn FnOnce(&mut QueueItem)>,
+    ) -> Result<()> where Self: Sized
+    {
         let mut state = self.lock_state();
     
         let queue = state.queue_state
@@ -671,3 +672,6 @@ impl TranscodeBackend for TUITerminalBackend {
         Ok(())
     }
 }
+
+impl LogTerminalBackend for TUITerminalBackend {}
+impl TranscodeLogTerminalBackend for TUITerminalBackend {}

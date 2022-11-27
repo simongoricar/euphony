@@ -5,7 +5,8 @@ use crossterm::style::Stylize;
 use miette::{Context, IntoDiagnostic, miette, Result};
 
 use crate::commands::validation::collisions::CollisionAudit;
-use crate::console::{LogBackend, TerminalBackend};
+use crate::console::LogTerminalBackend;
+use crate::console::utilities::term_println_lt;
 
 use super::super::configuration::{Config, ConfigLibrary};
 use super::super::filesystem as mfs;
@@ -181,12 +182,12 @@ fn validate_library(
     }
 }
 
-pub fn cmd_validate_all<T: TerminalBackend + LogBackend>(
+pub fn cmd_validate_all(
     config: &Config,
-    terminal: &mut T,
+    terminal: &mut dyn LogTerminalBackend,
 ) -> bool {
-    terminal.log_println("Validating all libraries.");
-    terminal.log_println("-- Step 1: file types --");
+    term_println_lt(terminal, "Validating all libraries.");
+    term_println_lt(terminal, "-- Step 1: file types --");
 
     let mut collision_auditor = CollisionAudit::new();
 
@@ -196,34 +197,39 @@ pub fn cmd_validate_all<T: TerminalBackend + LogBackend>(
     // 1/2: Check for unexpected files.
     for library in config.libraries.values() {
         terminal.log_newline();
-        terminal.log_println(format!(
-            "Library: {}", library.name,
-        ));
+        term_println_lt(
+            terminal,
+            format!("Library: {}", library.name)
+        );
 
         let validation = match validate_library(config, library, &mut collision_auditor) {
             Ok(validation) => validation,
             Err(error) => {
-                terminal.log_println(format!(
-                    "❗ {} {}",
-                    "Errored while validating: ".red(),
-                    error,
-                ));
+                term_println_lt(
+                    terminal,
+                    format!(
+                        "❗ {} {}",
+                        "Errored while validating: ".red(),
+                        error,
+                    )
+                );
                 continue;
             }
         };
 
         match validation {
             LibraryValidationResult::Valid => {
-                terminal.log_println("☑ Library valid!".green().bold());
+                term_println_lt(terminal, "☑ Library valid!".green().bold());
             },
             LibraryValidationResult::Invalid { invalid_file_messages } => {
                 has_unexpected_files = true;
-                
-                terminal.log_println("❌ Invalid entries!".red().bold());
+    
+                term_println_lt(terminal, "❌ Invalid entries!".red().bold());
                 for (index, err) in invalid_file_messages.iter().enumerate() {
-                    terminal.log_println(format!(
-                        "  {}. {}", index + 1, err,
-                    ));
+                    term_println_lt(
+                        terminal,
+                        format!("  {}. {}", index + 1, err)
+                    );
                 }
             }
         }
@@ -232,67 +238,79 @@ pub fn cmd_validate_all<T: TerminalBackend + LogBackend>(
     }
 
     terminal.log_newline();
-    terminal.log_println("-- Step 2: album collisions between libraries --");
+    term_println_lt(terminal, "-- Step 2: album collisions between libraries --");
     terminal.log_newline();
 
     if collision_auditor.has_collisions() {
         has_collisions = true;
-        
-        terminal.log_println("❌ Found collisions!".red().bold());
+    
+        term_println_lt(terminal, "❌ Found collisions!".red().bold());
 
         for collision in collision_auditor.collisions {
-            terminal.log_println(format!(
-                "Libraries: {} and {}: {} {}.",
-                collision.colliding_libraries_by_name.0,
-                collision.colliding_libraries_by_name.1,
-                format!("{} - {}", collision.artist_name, collision.album_title)
-                    .yellow()
-                    .bold()
-                    .underlined(),
-                "collides".red().bold(),
-            ));
+            term_println_lt(
+                terminal,
+                format!(
+                    "Libraries: {} and {}: {} {}.",
+                    collision.colliding_libraries_by_name.0,
+                    collision.colliding_libraries_by_name.1,
+                    format!("{} - {}", collision.artist_name, collision.album_title)
+                        .yellow()
+                        .bold()
+                        .underlined(),
+                    "collides".red().bold(),
+                )
+            );
         }
 
     } else {
-        terminal.log_println("☑ No collisions.".green().bold());
+        term_println_lt(terminal, "☑ No collisions.".green().bold());
     }
 
     terminal.log_newline();
     has_unexpected_files || has_collisions
 }
 
-pub fn cmd_validate_library<S: AsRef<str>, T: TerminalBackend + LogBackend>(
+pub fn cmd_validate_library<S: AsRef<str>>(
     config: &Config,
     library_name: S,
-    terminal: &mut T,
+    terminal: &mut dyn LogTerminalBackend,
 ) -> bool {
     let library = match config.get_library_by_full_name(library_name.as_ref()) {
         Some(library) => library,
         None => {
-            terminal.log_println(format!(
-                "{} {}",
-                "No such library:".red(),
-                library_name.as_ref().bold()
-            ));
+            term_println_lt(
+                terminal,
+                format!(
+                    "{} {}",
+                    "No such library:".red(),
+                    library_name.as_ref().bold()
+                )
+            );
             return false;
         }
     };
     
-    terminal.log_println(format!(
-        "Validating library: {}.",
-        library.name.clone().yellow(),
-    ));
+    term_println_lt(
+        terminal,
+        format!(
+            "Validating library: {}.",
+            library.name.clone().yellow(),
+        )
+    );
     terminal.log_newline();
 
     let mut unused_collision_auditor = CollisionAudit::new();
     let library_validation = match validate_library(config, library, &mut unused_collision_auditor) {
         Ok(validation) => validation,
         Err(error) => {
-            terminal.log_println(format!(
-                "{} {}",
-                "❗ Errored while validating:".red().bold(),
-                error.to_string().red(),
-            ));
+            term_println_lt(
+                terminal,
+                format!(
+                    "{} {}",
+                    "❗ Errored while validating:".red().bold(),
+                    error.to_string().red(),
+                )
+            );
             
             return false;
         }
@@ -300,17 +318,18 @@ pub fn cmd_validate_library<S: AsRef<str>, T: TerminalBackend + LogBackend>(
 
     match library_validation {
         LibraryValidationResult::Valid => {
-            terminal.log_println("☑ Library valid.".green().bold());
+            term_println_lt(terminal, "☑ Library valid.".green().bold());
             terminal.log_newline();
 
             true
         },
         LibraryValidationResult::Invalid { invalid_file_messages } => {
-            terminal.log_println("❌ Invalid entries!".red().bold());
+            term_println_lt(terminal, "❌ Invalid entries!".red().bold());
             for (index, err) in invalid_file_messages.iter().enumerate() {
-                terminal.log_println(format!(
-                    "  {}. {}", index + 1, err,
-                ));
+                term_println_lt(
+                    terminal,
+                    format!("  {}. {}", index + 1, err)
+                );
             }
             terminal.log_newline();
             
