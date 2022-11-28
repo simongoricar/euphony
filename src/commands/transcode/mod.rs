@@ -1,4 +1,3 @@
-use std::process::exit;
 use std::sync::mpsc;
 use std::sync::mpsc::{RecvTimeoutError, Sender};
 use std::thread;
