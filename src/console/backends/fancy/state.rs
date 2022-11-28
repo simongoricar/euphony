@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 use crate::console::backends::shared::{ProgressState, QueueState};
 
-
+/// Container of entire fancy terminal UI state, and precisely the state required
+/// for a render pass.
 pub struct TerminalUIState {
     /// Items in library/album/file queue, if any (`None` if disabled).
     pub queue_state: Option<QueueState>,

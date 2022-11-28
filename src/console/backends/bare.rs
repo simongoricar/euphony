@@ -62,11 +62,7 @@ impl TranscodeBackend for BareConsoleBackend {
                 item_type, queue_item.content,
             );
             
-            match item_type {
-                QueueType::Library => queue.library_items.push(queue_item),
-                QueueType::Album => queue.album_items.push(queue_item),
-                QueueType::File => queue.file_items.push(queue_item),
-            }
+            queue.add_item(queue_item);
     
             Ok(queue_item_id)
         } else {
