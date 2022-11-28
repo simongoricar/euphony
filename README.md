@@ -4,46 +4,48 @@
 </div>
 
 # Philosophy
-> Over the years I've been collecting an offline music library that has been growing in size, but simulteneously getting harder to maintain.
-> Considering you're here you might've encountered the same :). Before I describe the workings of euphony
-> I'll just quickly outline why I'm doing this and how I've decided to approach the problem.
+> Over the years I've been collecting an offline music library that has been growing in size, but simultaneously getting harder to maintain.
+> Considering you're here you might've encountered the same :). Before I describe the inner workings of euphony here's a quick outline of why and how.
 >
-> In my case, portable file organisation became a problem relatively quickly: let's say most of your music library is lossless, but some of it is lossy,
-> so you either have it all in one big folder (e.g. organized by artist, then by album), or separated into a lossless and a lossy library
-> (or possibly even more if you're doing some involved sorting).
+> In my case, portable file organisation became a problem relatively quickly: let's say most of your music library is lossless, though some of it is lossy.
+> In the above case, you either:
+> -> have it both lossless or lossy in the same folder (e.g. organized by artist, then by album), or,
+> -> separate lossless and lossy folders (each one again organized by artist, then by album or similarly) or possibly even something more complicated.
 >
-> Now, if you only listen on one device, none of those approaches are likely to be a problem, but for multi-device users,
-> this quickly becomes a storage and deduplication nightmare.
-> Ideally, you'd want a way to maintain two separate copies of the entire library:
-> - one with all the **original files intact** (be it lossless or lossy) and
-> - a separate (aggregated, if you will) copy that contains all the files transcoded down to a more manageable size.
+> If you only listen on one device, none of those approaches are likely to pose a huge problem. However, for multi-device users,
+> this quickly becomes both a storage and a deduplication nightmare.
+> Ideally, you'd want to maintain the original library as they were (be it one or more folders like described above), 
+> but still have a separate (*aggregated*, if you will) version of the entire original library that contains all the files from all the
+> sublibraries transcoded down to a more manageable size, ready for on-the-go listening.
 >
 > **`euphony` was written to solve this problem efficiently.**
 
-Euphony's philosophy is that you should split your library into smaller chunks: one directory for lossless, one for lossy audio, one for a specific
-collection, etc. (as many as you need). It does not force you to have multiple libraries, it works just as well with one library. However, 
-as described in the preamble, this philosophy also acknowledges that you might want to take the library with you on the 
-go, something that is hard to do when a part of your library contains possibly huge lossless files.
+Euphony's philosophy acknowledges that you might have split your library into smaller chunks: one directory for lossless, one for lossy audio, one for a specific
+collection, etc. It does not force you to have multiple "sub"-libraries, it works just as well with a single one. 
+However, as described in the preamble, this philosophy also acknowledges that you might want to take the library with you on the go, 
+something that is hard to do when a part of your library contains possibly huge lossless files. Again, the obvious solution is to transcode
+your library down to something like MP3 V0 and copy that version of the library to your portable devices.
 
-Here's how euphony opts to solve this:
-- *you register a list of sub-libraries* that contain the same basic folder structure (one directory per artist containing one directory per album),
-- you may opt to *validate the library for any collisions* (see the `validate-all` command) so you don't store two copies of the same album in two separate sublibraries,
-- when you wish to assemble your entire library into a smaller transcoded copy, you run one of the `transcode-*` commands, 
-  which takes all of your registered sub-libraries that contain original files and transcodes everything into MP3 V0 and puts the resulting files into the transcoded 
-  library - this is the library that you probably want to take with you "on the go".
+Here's how euphony automates this transcoding process:
+- *you register a list of "sub"-libraries* that contain the same basic folder structure (one directory per artist containing one directory per album),
+- you may opt to *validate the library for any collisions* first (see the `validate` command) so you don't accidentally store two copies of the same album in two separate sub-libraries,
+- when you wish to assemble your entire music library into a smaller single-folder transcoded copy, you run the `transcode` command, 
+  which takes all of your sub-libraries with original files and transcodes everything into MP3 V0 (by default), putting the resulting files into the transcoded 
+  library - this is the library that you take with you on the go.
 
 As mentioned, audio files are transcoded into MP3 V0 in the process. I've chosen MP3 V0 for now due to a 
-good tradeoff between space on disk and quality (V0 is pretty much transparent anyway and should be more than enough for on-the-go listening, and you *still* have original files).
-For transcoding efficiency euphony also stores minimal metadata about each album's contents in a file called `.album.euphony`. 
-This is done to know which files haven't changed and can be skipped the next time you request transcoding of your library. 
-Implementation details are available below in `4.2`.
+good tradeoff between space on disk and quality (V0 is pretty much transparent anyway and should be more than enough for on-the-go listening, and you *still* have the original files).
+For transcoding efficiency euphony also stores minimal metadata about each album's contents in a file called `.album.euphony` (stored inside each source album's folder).
+This is done to understand which files have and haven't changed, so we can skip most of the library the next time you request transcoding of your library after having added a single new album. 
+Implementation details of this detection are available below.
 
-**More importantly, euphony *does not* organise your (original) audio files** - for this job [MusicBrainz Picard](https://picard.musicbrainz.org/) 
-is a full-featured tagger (just a recommendation); it is several magnitudes better than this project could ever achieve. 
+### Note
+**Importantly, euphony *does not* organise your (original) audio files** - for this job [MusicBrainz Picard](https://picard.musicbrainz.org/) 
+is a good full-featured tagger (just a recommendation); it is several magnitudes better and more flexible than this project could ever achieve had it opted to include that functionality. 
 You may even opt to use [Beets](https://beets.readthedocs.io/en/stable/) for most tasks regarding source library organisation.
 
-**Regardless, `euphony`'s place in my (and maybe yours) music library toolset is well-defined: 
-a CLI for validating your library and managing transcodes for on-the-go listening quickly and efficiently.**  
+**Regardless, `euphony`'s place in my (and maybe your) music library toolset is well-defined: 
+a CLI for *validating* your library and *managing transcodes* for on-the-go listening quickly and efficiently.**  
 
 ---
 
@@ -56,23 +58,24 @@ a CLI for validating your library and managing transcodes for on-the-go listenin
 
 ## 1. Library structure
 Having the library structure be configurable would get incredibly complex very quickly, so `euphony` expects the user
-to have the following exact structure in each registered library:
+to have the following exact structure in each sub-library:
 
 ```markdown
   <library directory>
   |-- <artist directory>
   |   |-- <album directory>
-  |   |   |-- <... audio files (whichever types you allow inside each library's configuration)>
+  |   |   |-- <... audio files, any extensions that you allow (see per-library configuration)>
   |   |   |-- <... optionally, cover art>
   |   |   |-- <... optionally, some album-related README, logs, etc.>
-  |   |   |-- <... optionally, other directories that don't really matter for this purpose (they are ignored)>
+  |   |   |-- <... optionally, other subdirectories that don't really matter for this purpose (they are ignored by default)>
   |   |   |   [the second two are examples, euphony will allow whatever you set in the validation configuration]
   |   |-- <... possibly some artist-related README, etc. (whatever you allow in the validation configuration table)>
   | [other artist directories ...]
   | [other files (again, whichever types/names you allow in the validation configuration) ...]
 ```
 
-Any other structure will almost certainly fail with `euphony`.
+Any other library structure will almost certainly fail with `euphony`.
+
 
 ## 2. Installation
 Prerequisites for installation:
@@ -80,26 +83,27 @@ Prerequisites for installation:
 - a [copy of ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
 
 Clone (or download) the repository to your local machine, then move into the directory of the project and do the following:
-- on Windows, run the `./install-euphony.ps1` PowerShell script to compile the project and copy the required files into the `bin` directory,
+- on Windows, run the convenient `./install-euphony.ps1` PowerShell script to compile the project and copy the required files into the `bin` directory,
 - otherwise, run `cargo build --release` to compile the project, after which you'll have to get the binary 
   from `./target/release/euphony.exe` and copy it (and the configuration file) to a place of your choosing.
+
 
 ## 3. Preparation
 Before running the binary you've built in the previous step, make sure you have the `configuration.TEMPLATE.toml` handy.
 If you used the `install-euphony.ps1` script, it will already be prepared in the `bin` directory. 
 If you're on a different platform, copy one from the `data` directory.
 
-The `configuration.toml` file must be in `./data/configuration.toml` (relative to the binary) or explicitly stated with the `--config` option.
+The `configuration.toml` file must be in `./data/configuration.toml` (relative to the binary) or wherever you want if you explicitly use the `--config` option to set the path.
 The PowerShell install script places this automatically (you just need to rename and fill out the file), other platforms will require a manual copy.
 
-Make sure the file name is `configuration.toml`, *carefully read* the explanations inside and fill out the contents.
+Make sure the file name is named `configuration.toml`, *carefully read* the explanations inside and fill out the contents.
 If you're unfamiliar with the format, it's [TOML](https://toml.io/en/), chosen for its readability and ease of editing.
-It is mostly about specifying where ffmpeg is, which files to track, where your libraries reside and what files you want to allow or forbid inside.
+It is mostly about specifying where ffmpeg is, which files to track, where your libraries reside and what files you want to allow or forbid inside them.
 
 > As an example, let's say I have two separate libraries: a lossy and a lossless one. The lossless one has its 
 > `allowed_audio_files_by_extension` value set to `["flac"]`, as I don't want any other file types inside. The lossy one instead
 > has the value `["mp3"]`, because MP3 is my format of choice for lossy audio for now. If I were to place a non-FLAC file inside the
-> lossless library, euphony would flag it for me when I tried to run `euphony validate-all`.
+> lossless library, euphony would flag it for me as an error when I ran `euphony validate`.
 
 Next, **extract the portable copy of ffmpeg** that was mentioned above. Again, unless you know how this works,
 it should be just next to the binary in a folder called `tools`. Adapt the `tools.ffmpeg.binary` configuration value in the 
@@ -110,7 +114,7 @@ Change any other configuration values you haven't yet, then save. **You're ready
 ### 3.1. Advanced usage: `.album.override.euphony` per-album files
 > This is an advanced feature.
 
-You may create an `.album.override.euphony` file in the root directory of each album (same directory as the `.album.euphony` file).
+You may create an `.album.override.euphony` file in the root of each source album directory (same directory as the `.album.euphony` file).
 This file is optional. Its purpose is to influence the scanning and transcoding process for the relevant album. In order to be
 easily readable and editable by humans, the chosen format for this file is [TOML](https://toml.io/en/) (same as configuration files).
 
@@ -122,7 +126,7 @@ Available configuration values will likely expand in the future, but for now, th
 # How deep the transcoding scan should look.
 # 0 means only the album directory and no subdirectories (most common, this is also the default without this file).
 # 1 means only one directory level deeper, and so on.
-depth = 1
+depth = 0
 ```
 
 In case this description falls behind, an up-to-date documented version of the `.album.override.euphony` file is available
@@ -135,64 +139,64 @@ disc in a separate directory, like so:
 <album directory>
  |- cover.jpg
  |-- Disc 1
- |   |- <a lot of audio files>
+ |   |- <... a lot of audio files ...>
  |-- Disc 2
+ |   |- <... a lot of audio files ...>
  |-- Disc 3
+ |   |- <... a lot of audio files ...>
  |-- Disc 4
+ |   |- <... a lot of audio files ...>
  |-- <...>
 ```
 
-In this case you may create an `.album.override.euphony` file in the album directory and set the `depth` setting to 1.
-This will make euphony scan one directory deeper, catching your per-disc audio files.
+In this case you may create an `.album.override.euphony` file inside the album directory and set the `depth` setting to `1`.
+This will make euphony scan one directory deeper, catching and transcoding your per-disc audio files.
 
 
 ## 4. Usage
 Run `euphony` with the `--help` option to get all available commands and their short explanations:
-```html
-euphony 1.0.0
-Simon G. <simon.peter.goricar@gmail.com>
-Euphony is an opinionated music library transcode manager that allows the user to retain high quality audio files in multiple separate libraries while also enabling the listener to transcode their library with ease into a smaller
-format (MP3 V0) to take with them on the go. For more info, see the README file in the repository.
+```
+Euphony is an opinionated music library transcode manager that allows the user to retain high quality audio files in multiple separate libraries while also enabling the listener to transcode their library wi
+th ease into a smaller format (MP3 V0) to take with them on the go. For more info, see the README file in the repository.
 
-USAGE:
-    euphony.exe [OPTIONS] <SUBCOMMAND>
+Usage: euphony.exe [OPTIONS] <COMMAND>
 
-OPTIONS:
-    -c, --config <CONFIG>
-        Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might not always be the most convinient location.
-
-    -h, --help
-        Print help information
-
-    -V, --version
-        Print version information
-
-SUBCOMMANDS:
-    help
-        Print this message or the help of the given subcommand(s)
-    list-libraries
-        List all the registered libraries.
-    show-config
-        Loads, validates and prints the current configuration from `./data/configuration.toml`.
-    transcode-album
-        Transcode only the specified album into the aggregated (transcoded) library. The current directory is used by default, but you may pass a different one using "--dir <path>".
-    transcode-all
-        Transcode all registered libraries into the aggregated (transcoded) library.
-    transcode-library
-        Transcode only the specified library into the aggregated (transcoded) library. Requires a single positional parameter: the library name (by full name), as configured in the configuration file.
-    validate-all
-        Validate all the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems when aggregating (transcoding), etc.
+  Commands:
+    transcode
+      Transcode all registered libraries into the aggregated (transcoded) library. [aliases: transcode-all]
+    validate
+      Validate all the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems when aggregating (transcoding), etc. 
+      [aliases: validate-all]
     validate-library
-        Validate a specific library for inconsistencies, such as forbidden files.
+      Validate a specific library for inconsistencies, such as forbidden files.
+    show-config
+      Loads, validates and prints the current configuration from `./data/configuration.toml`.
+    list-libraries
+      List all the registered libraries.
+    help
+      Print this message or the help of the given subcommand(s)
+
+  Options:
+    -c, --config <CONFIG>
+      Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might not always be the most convenient location.
+  
+    -v, --verbose
+      Increase the verbosity of output.
+  
+    -h, --help
+      Print help information (use `-h` for a summary)
+  
+    -V, --version
+      Print version information
 ```
 
 For more info about each individual command, run `euphony <command-name> --help`.
 
 ### 4.1 About transcoding ("aggregation")
-Using any of the `transcode-*` command will attempt to transcode (sometimes called aggregate) the selected part of the music library 
+Using the `transcode` command will attempt to transcode (also called aggregate) the entire music library 
 into a single folder called the aggregated library path (see `aggregated_library.path` in the configuration file).
 This is the directory that will contain all the transcodes, or to put it differently, this is the portable smaller library. 
-The files are all MP3 V0 (though customizing should be reasonably easy through the configuration file, see `tools.ffmpeg.to_mp3_v0_args`), reasoning explained above.
+The files will be MP3 V0 by default (changing this should be reasonably easy - see `tools.ffmpeg.to_mp3_v0_args` in the configuration file).
 
 
 #### 4.2 `.album.euphony` implementation details
@@ -221,8 +225,8 @@ The contents of the file a JSON document, similar to this one:
 
 Fields:
 - `size_bytes` is the size of the entire file in bytes,
-- `time_modified` is the file modification time (as reported by OS),
-- `time_created` is the file creation time (as reported by OS).
+- `time_modified` is the file modification time (as reported by OS, compared to one decimal of precision),
+- `time_created` is the file creation time (as reported by OS, compared to one decimal of precision).
 
-If any of these attributes don't match for a certain file, we can be pretty much certain the file has changed.
+If any of these attributes don't match for a given file, we can be pretty much certain the file has changed.
 The opposite is not entirely true, but enough for most purposes.

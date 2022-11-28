@@ -227,6 +227,7 @@ fn process_cli_command(
 /// Entry function for `euphony`. Parses CLI arguments,
 /// loads the configuration file and starts executing the given subcommand.
 fn main() -> Result<()> {
+    // TODO .album.euphony should have a version lock inside it
     let args: CLIArgs = CLIArgs::parse();
     VERBOSE.set(args.verbose);
     
