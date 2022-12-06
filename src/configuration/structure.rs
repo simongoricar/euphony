@@ -236,7 +236,7 @@ impl AfterLoadWithEssentialsInitable for ConfigLibrary {
 pub struct ConfigAggregated {
     pub path: String,
     
-    pub transcode_threads: u16,
+    pub transcode_threads: usize,
     
     pub max_processing_retries: u16,
     

@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use crossbeam::channel::Receiver;
 
 use miette::Result;
 
@@ -63,6 +64,15 @@ pub trait TranscodeBackend {
     fn progress_set_current(&mut self, finished: usize) -> Result<()>;
 }
 
+#[derive(Copy, Clone)]
+pub enum UserControlMessage {
+    Exit,
+}
 
-pub trait LogTerminalBackend: TerminalBackend + LogBackend {}
-pub trait TranscodeLogTerminalBackend: TerminalBackend + LogBackend + TranscodeBackend {}
+pub trait UserControllableBackend {
+    fn get_user_control_receiver(&mut self) -> Result<Receiver<UserControlMessage>>;
+}
+
+
+pub trait SimpleTerminalBackend: TerminalBackend + LogBackend {}
+pub trait AdvancedTerminalBackend: TerminalBackend + LogBackend + TranscodeBackend + UserControllableBackend {}

@@ -2,8 +2,9 @@ pub use traits::{
     LogBackend,
     TerminalBackend,
     TranscodeBackend,
-    TranscodeLogTerminalBackend,
-    LogTerminalBackend,
+    AdvancedTerminalBackend,
+    SimpleTerminalBackend,
+    UserControlMessage,
 };
 
 mod traits;

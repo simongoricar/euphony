@@ -6,7 +6,7 @@ use crossterm::style::Stylize;
 use miette::Result;
 
 use crate::configuration::Config;
-use crate::console::{TerminalBackend, TranscodeLogTerminalBackend};
+use crate::console::{TerminalBackend, AdvancedTerminalBackend};
 use crate::console::backends::{BareConsoleBackend, TUITerminalBackend};
 use crate::console::utilities::term_println_tltb;
 use crate::globals::VERBOSE;
@@ -125,7 +125,7 @@ fn get_configuration(args: &CLIArgs) -> Config {
 /// If `use_bare` is true, this will return `BareConsoleBackend`, otherwise `TUITerminalBackend`.
 fn get_terminal_backend(
     use_bare: bool
-) -> Box<dyn TranscodeLogTerminalBackend> {
+) -> Box<dyn AdvancedTerminalBackend> {
     if use_bare {
         Box::new(BareConsoleBackend::new())
     } else {
@@ -161,11 +161,7 @@ fn process_cli_command(
                 terminal.log_newline();
                 term_println_tltb(
                     terminal.deref_mut(),
-                    format!(
-                        "{} {}",
-                        "Errored while transcoding:".red(),
-                        error,
-                    )
+                    error.to_string().red(),
                 );
     
                 terminal

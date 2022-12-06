@@ -1,13 +1,13 @@
 use crossterm::style::Stylize;
 
 use crate::configuration::Config;
-use crate::console::LogTerminalBackend;
+use crate::console::SimpleTerminalBackend;
 use crate::console::utilities::term_println_ltb;
 
 /// Generic abstraction over `LogBackend::log_println` for printing headers.
 #[inline]
 fn terminal_print_group_header<S: AsRef<str>>(
-    terminal: &dyn LogTerminalBackend,
+    terminal: &dyn SimpleTerminalBackend,
     header: S,
 ) {
     const PAD_TO_WIDTH: usize = 10;
@@ -29,7 +29,7 @@ fn terminal_print_group_header<S: AsRef<str>>(
 
 pub fn cmd_show_config(
     config: &Config,
-    terminal: &mut dyn LogTerminalBackend,
+    terminal: &mut dyn SimpleTerminalBackend,
 ) {
     // Binds a few short functions to the current terminal,
     // allowing for a zero- or single-argument calls that print the header, a simple log line, etc.
@@ -151,7 +151,7 @@ pub fn cmd_show_config(
 
 pub fn cmd_list_libraries(
     config: &Config,
-    terminal: &mut dyn LogTerminalBackend,
+    terminal: &mut dyn SimpleTerminalBackend,
 ) {
     // Binds a few short functions to the current terminal,
     // allowing for a zero- or single-argument calls that print the header, a simple log line, etc.

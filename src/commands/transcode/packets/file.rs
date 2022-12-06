@@ -1,7 +1,9 @@
 use std::fmt::{Debug, Display, Formatter};
-use std::fs;
+use std::{fs, thread};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use miette::{miette, Result};
 
@@ -9,6 +11,8 @@ use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::configuration::Config;
 use crate::filesystem;
 use crate::globals::verbose_enabled;
+
+const PROCESSING_THREAD_CANCELLATION_TICK_SLEEP_TIME: Duration = Duration::from_millis(50);
 
 #[derive(Eq, PartialEq, Clone)]
 pub enum FilePacketType {
@@ -138,12 +142,16 @@ impl FileWorkPacket {
     }
 
     /// Run the processing for this file packet. This involves either:
-    /// - transcoding if it's an audio file,
+    /// - transcoding if it's an audio file
     /// - or a simple file copy if it is a data file.
-    pub fn process(&self, config: &Config) -> FileProcessingResult {
+    pub fn process(
+        &self,
+        config: &Config,
+        cancellation_flag: &AtomicBool,
+    ) -> FileProcessingResult {
         match self.action {
             FilePacketAction::Process => match self.file_type {
-                FilePacketType::AudioFile => self.transcode_into_mp3_v0(config),
+                FilePacketType::AudioFile => self.transcode_into_mp3_v0(config, cancellation_flag),
                 FilePacketType::DataFile => self.copy_data_file(),
             },
             FilePacketAction::RemoveAtTarget => self.remove_processed_file(true),
@@ -152,7 +160,11 @@ impl FileWorkPacket {
 
     /// Transcode the current FileWorkPacket from the source file
     /// into a MP3 V0 file in the target path. Expects the work packet to be an audio file.
-    fn transcode_into_mp3_v0(&self, config: &Config) -> FileProcessingResult {
+    fn transcode_into_mp3_v0(
+        &self,
+        config: &Config,
+        cancellation_flag: &AtomicBool,
+    ) -> FileProcessingResult {
         // Make sure we're actually a tracked audio file.
         if self.file_type != FilePacketType::AudioFile {
             return FileProcessingResult::new_errored(
@@ -168,7 +180,7 @@ impl FileWorkPacket {
             None => {
                 return FileProcessingResult::new_errored(
                     self.clone(),
-                    "No target directory.",
+                    "File target path had no parent directory?!",
                     verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
                 );
             }
@@ -217,6 +229,102 @@ impl FileWorkPacket {
             .collect();
 
         // Run the actual transcode using ffmpeg.
+        let mut ffmpeg_child = match Command::new(&config.tools.ffmpeg.binary)
+            .args(ffmpeg_arguments)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                return FileProcessingResult::new_errored(
+                    self.clone(),
+                    "Could not spawn ffmpeg to transcode audio.",
+                    verbose_enabled().then_some(format!("Couldn't spawn ffmpeg: {}", error))
+                );
+            }
+        };
+        
+        while ffmpeg_child.try_wait().expect("Could not wait for ffmpeg child.").is_none() {
+            // Keep checking whether the user requested cancellation.
+            let flag_value = cancellation_flag.load(Ordering::Relaxed);
+            if flag_value {
+                // Cancellation requested, kill ffmpeg and exit.
+                ffmpeg_child.kill().expect("Could not kill ffmpeg process.");
+                break;
+            }
+            
+            thread::sleep(PROCESSING_THREAD_CANCELLATION_TICK_SLEEP_TIME);
+        }
+        
+        let final_flag_value = cancellation_flag.load(Ordering::Relaxed);
+        if final_flag_value {
+            // Cancellation occured.
+            FileProcessingResult::new_errored(
+                self.clone(),
+                "User cancelled task.",
+                verbose_enabled().then_some("User cancelled task.")
+            )
+            
+        } else {
+            // No cancellation occured.
+            let final_output = ffmpeg_child.wait_with_output()
+                .expect("Could not wait for ffmpeg to finish");
+            
+            if let Some(error_code) = final_output.status.code() {
+                if error_code == 0 {
+                    FileProcessingResult::new_ok(
+                        self.clone(),
+                        verbose_enabled().then_some(format!("ffmpeg exited (0). {:?}", self)),
+                    )
+                } else {
+                    let ffmpeg_stdout = match String::from_utf8(final_output.stdout) {
+                        Ok(stdout) => stdout,
+                        Err(error) => {
+                            return FileProcessingResult::new_errored(
+                                self.clone(),
+                                format!("Couldn't get ffmpeg stdout! {}", error),
+                                verbose_enabled()
+                                    .then_some(format!("from_utf8(ffmpeg.stdout) failed! {:?}", self)),
+                            );
+                        }
+                    };
+        
+                    let ffmpeg_stderr = match String::from_utf8(final_output.stderr) {
+                        Ok(stderr) => stderr,
+                        Err(error) => {
+                            return FileProcessingResult::new_errored(
+                                self.clone(),
+                                format!("Couldn't get ffmpeg stderr! {}", error),
+                                verbose_enabled()
+                                    .then_some(format!("from_utf8(ffmpeg.stderr) failed! {:?}", self))
+                            );
+                        }
+                    };
+        
+                    FileProcessingResult::new_errored(
+                        self.clone(),
+                        format!("Non-zero ffmpeg exit code: {}", error_code),
+                        verbose_enabled().then_some(
+                            format!(
+                                "ffmpeg exited ({}): {:?}\nffmpeg stdout: {}\nffmpeg stderr: {}",
+                                error_code,
+                                self,
+                                ffmpeg_stdout,
+                                ffmpeg_stderr,
+                            )
+                        ),
+                    )
+                }
+            } else {
+                FileProcessingResult::new_errored(
+                    self.clone(),
+                    "Could not get ffmpeg exit code!",
+                    verbose_enabled().then_some(format!("Couldn't get ffmpeg exit code. {:?}", self))
+                )
+            }
+        }
+        
+        /*
         let ffmpeg_command = match Command::new(&config.tools.ffmpeg.binary)
             .args(ffmpeg_arguments)
             .output() {
@@ -285,6 +393,8 @@ impl FileWorkPacket {
                 )
             }
         }
+        
+         */
     }
 
     /// Perform a simple file copy from the source path to the target path.

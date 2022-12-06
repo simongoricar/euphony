@@ -5,7 +5,7 @@ use crossterm::style::Stylize;
 use miette::{Context, IntoDiagnostic, miette, Result};
 
 use crate::commands::validation::collisions::CollisionAudit;
-use crate::console::LogTerminalBackend;
+use crate::console::SimpleTerminalBackend;
 use crate::console::utilities::term_println_ltb;
 
 use super::super::configuration::{Config, ConfigLibrary};
@@ -184,7 +184,7 @@ fn validate_library(
 
 pub fn cmd_validate_all(
     config: &Config,
-    terminal: &mut dyn LogTerminalBackend,
+    terminal: &mut dyn SimpleTerminalBackend,
 ) -> bool {
     term_println_ltb(terminal, "Validating all libraries.");
     term_println_ltb(terminal, "-- Step 1: file types --");
@@ -273,7 +273,7 @@ pub fn cmd_validate_all(
 pub fn cmd_validate_library<S: AsRef<str>>(
     config: &Config,
     library_name: S,
-    terminal: &mut dyn LogTerminalBackend,
+    terminal: &mut dyn SimpleTerminalBackend,
 ) -> bool {
     let library = match config.get_library_by_full_name(library_name.as_ref()) {
         Some(library) => library,

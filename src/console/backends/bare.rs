@@ -1,10 +1,11 @@
 use std::fmt::Display;
+use crossbeam::channel::{never, Receiver};
 
 use miette::{miette, Result};
 
-use crate::console::{LogBackend, LogTerminalBackend, TerminalBackend, TranscodeBackend};
+use crate::console::{LogBackend, SimpleTerminalBackend, TerminalBackend, TranscodeBackend, UserControlMessage};
 use crate::console::backends::shared::{ProgressState, QueueItem, QueueItemFinishedState, QueueItemID, QueueState, QueueType};
-use crate::console::traits::TranscodeLogTerminalBackend;
+use crate::console::traits::{AdvancedTerminalBackend, UserControllableBackend};
 
 pub struct BareConsoleBackend {
     queue: Option<QueueState>,
@@ -210,5 +211,11 @@ impl TranscodeBackend for BareConsoleBackend {
     }
 }
 
-impl LogTerminalBackend for BareConsoleBackend {}
-impl TranscodeLogTerminalBackend for BareConsoleBackend {}
+impl UserControllableBackend for BareConsoleBackend {
+    fn get_user_control_receiver(&mut self) -> Result<Receiver<UserControlMessage>> {
+        Ok(never::<UserControlMessage>())
+    }
+}
+
+impl SimpleTerminalBackend for BareConsoleBackend {}
+impl AdvancedTerminalBackend for BareConsoleBackend {}

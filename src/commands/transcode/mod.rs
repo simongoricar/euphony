@@ -1,19 +1,20 @@
-use std::sync::mpsc;
-use std::sync::mpsc::{RecvTimeoutError, Sender};
+use std::sync::{Arc, mpsc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crossterm::style::Stylize;
-use miette::Result;
-use rayon::{ThreadPool, ThreadPoolBuilder};
+use miette::{IntoDiagnostic, miette, Result};
 
 use directories as dirs;
 
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
 use crate::commands::transcode::packets::file::{FilePacketType, FileProcessingResult, FileWorkPacket};
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
+use crate::commands::transcode::threadpool::CancellableThreadPool;
 use crate::configuration::Config;
-use crate::console::TranscodeLogTerminalBackend;
+use crate::console::{AdvancedTerminalBackend, UserControlMessage};
 use crate::console::backends::shared::{QueueItemID, QueueType, SpinnerStyle};
 use crate::console::utilities::term_println_tltb;
 use crate::globals::verbose_enabled;
@@ -22,7 +23,9 @@ mod metadata;
 mod directories;
 mod packets;
 mod overrides;
+mod threadpool;
 
+/// A file progress message worker threads send to the main thread.
 enum WorkerMessage {
     StartingWithFile {
         queue_item: QueueItemID,
@@ -33,44 +36,88 @@ enum WorkerMessage {
     },
 }
 
-/// Builds a ThreadPool using the `transcode_threads` configuration value.
-pub fn build_transcode_thread_pool(config: &Config) -> ThreadPool {
-    ThreadPoolBuilder::new()
-        .num_threads(config.aggregated_library.transcode_threads as usize)
-        .build()
-        .unwrap()
+enum MainThreadMessage {
+    StopProcessing,
 }
 
+/// Given an array of tuples containing file packets and their queue IDs,
+/// execute each task inside the given thread pool, sending progress messages through the `Sender`.
 fn process_album(
     album_file_packets: &Vec<(FileWorkPacket, QueueItemID)>,
     config: &Config,
-    thread_pool: &ThreadPool,
     update_sender: Sender<WorkerMessage>,
-) {
+    main_thread_message_receiver: Receiver<MainThreadMessage>,
+) -> Result<()> {
     if album_file_packets.is_empty() {
-        return;
+        return Ok(());
     }
     
-    thread_pool.scope_fifo(move |s| {
-        for (file, queue_item) in album_file_packets {
-            let update_sender_thread_clone = update_sender.clone();
+    let user_cancellation_flag = Arc::new(AtomicBool::new(false));
+    let mut thread_pool = CancellableThreadPool::new_with_user_flag(
+        config.aggregated_library.transcode_threads,
+        user_cancellation_flag.clone(),
+        true,
+    );
+    
+    for (file, queue_item) in album_file_packets {
+        let config_clone = config.clone();
+        let file_clone = file.clone();
+        let queue_item_clone = queue_item.clone();
+        let update_sender_clone = update_sender.clone();
+        
+        thread_pool.queue_task(move |cancellation_flag| {
+            update_sender_clone.send(
+                WorkerMessage::StartingWithFile {
+                    queue_item: queue_item_clone,
+                }
+            ).expect("Could not send message from worker to main thread.");
             
-            s.spawn_fifo(move |_| {
-                update_sender_thread_clone.send(WorkerMessage::StartingWithFile {
-                    queue_item: *queue_item,
-                }).expect("Could not send message from worker to main thread.");
+            let work_result = file_clone.process(
+                &config_clone,
+                cancellation_flag,
+            );
+            
+            let cancellation_value = cancellation_flag.load(Ordering::Relaxed);
+            if cancellation_value {
+                return;
+            }
     
-                // TODO Retries.
-                
-                let work_result = file.process(config);
-    
-                update_sender_thread_clone.send(WorkerMessage::FinishedWithFile {
-                    queue_item: *queue_item,
+            update_sender_clone.send(
+                WorkerMessage::FinishedWithFile {
+                    queue_item: queue_item_clone,
                     processing_result: work_result,
-                }).expect("Could not send message from worker to main thread.");
-            });
+                }
+            ).expect("Could not send message from worker to main thread.");
+        });
+    }
+    
+    
+    while thread_pool.has_pending_tasks() {
+        // Keep checking for user exit message (and set the cancellation flag when received).
+        let potential_main_thread_mesage = main_thread_message_receiver
+            .recv_timeout(Duration::from_millis(20));
+        match potential_main_thread_mesage {
+            Ok(message) => match message {
+                MainThreadMessage::StopProcessing => {
+                    user_cancellation_flag.store(true, Ordering::Relaxed);
+                    break;
+                }
+            }
+            Err(error) => match error {
+                RecvTimeoutError::Timeout => {
+                    // No action needed, there is simply no message at this time.
+                }
+                RecvTimeoutError::Disconnected => {
+                    panic!("Main thread sender disconnected unexpectedly!");
+                }
+            }
         }
-    });
+    }
+    
+    thread_pool.join()
+        .map_err(|_| miette!("One of the threads exited abnormally."))?;
+    
+    Ok(())
 }
 
 // TODO Consider reimplementing transcode for specific library and specific album, like in previous versions.
@@ -79,12 +126,14 @@ fn process_album(
 /// and performs the transcode using ffmpeg (for audio files) and simple file copy (for data files).
 pub fn cmd_transcode_all(
     config: &Config,
-    terminal: &mut dyn TranscodeLogTerminalBackend
+    terminal: &mut dyn AdvancedTerminalBackend
 ) -> Result<()> {
     term_println_tltb(terminal, "Mode: transcode all libraries.".cyan().bold());
     term_println_tltb(terminal, "Scanning all libraries for changes...");
     
     let processing_begin_time = Instant::now();
+    
+    let terminal_user_input = terminal.get_user_control_receiver()?;
     
     // Generate a list of `LibraryWorkPacket` for each library.
     let mut all_libraries: Vec<LibraryWorkPacket> = config.libraries
@@ -168,7 +217,6 @@ pub fn cmd_transcode_all(
     
     // TODO Add keybinds to control the program (q for exit, etc.).
     
-    let mut thread_pool = build_transcode_thread_pool(config);
     let mut files_finished_so_far: usize = 0;
     
     terminal.progress_set_current(files_finished_so_far)?;
@@ -307,26 +355,27 @@ pub fn cmd_transcode_all(
                 );
             }
             
-            let (tx, rx) = mpsc::channel::<WorkerMessage>();
+            let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
+            let (worker_ctrl_tx, worker_ctrl_rx) = mpsc::channel::<MainThreadMessage>();
             
             let config_thread_clone = config.clone();
             let processing_thread_handle = thread::spawn(move || {
                 process_album(
                     &queued_files,
                     &config_thread_clone,
-                    &thread_pool,
-                    tx,
-                );
-                
-                // Return the thread pool back into the main thread.
-                thread_pool
+                    worker_tx,
+                    worker_ctrl_rx,
+                )
             });
             
             // Wait for processing thread to complete. Meanwhile, keep receiving progress messages
             // from the processing thread and update the terminal backend accordingly.
+            let mut exit_requested: bool = false;
+            
             loop {
-                let message = rx.recv_timeout(Duration::from_millis(50));
-                match message {
+                // Periodically receive file progress from worker threads and update the terminal accordingly.
+                let worker_message = worker_rx.recv_timeout(Duration::from_millis(10));
+                match worker_message {
                     Ok(message) => match message {
                         WorkerMessage::StartingWithFile { queue_item } => {
                             terminal.queue_item_start(queue_item)?;
@@ -365,6 +414,24 @@ pub fn cmd_transcode_all(
                         }
                     }
                 }
+                
+                
+                // Periodically receive user control messages, such as the exit command.
+                let user_control_message = terminal_user_input.recv_timeout(Duration::from_millis(1));
+                if let Ok(message) = user_control_message {
+                    match message {
+                        UserControlMessage::Exit => {
+                            // DEBUGONLY
+                            terminal.log_println(Box::new("[DEBUG] User sent Exit message."));
+                            
+                            exit_requested = true;
+                            worker_ctrl_tx.send(MainThreadMessage::StopProcessing)
+                                .into_diagnostic()?;
+                            break;
+                        }
+                    }
+                };
+                
     
                 // Make sure the main processing thread is still alive.
                 if processing_thread_handle.is_finished() {
@@ -372,39 +439,56 @@ pub fn cmd_transcode_all(
                 }
             }
             
-            thread_pool = processing_thread_handle.join()
-                .expect("Could not join main processing thread.");
+            processing_thread_handle.join()
+                .expect("Processing thread panicked!");
+            
+            if exit_requested {
+                // Exited mid-processing at user request.
+                // TODO Implement deletion of partial transcodes.
+                term_println_tltb(
+                    terminal,
+                    "Stopped transcoding at user request!".red().bold(),
+                );
+                term_println_tltb(
+                    terminal,
+                    "NOTE: A half-transcoded album has potentially been left behind \
+                    - clean it up before running again."
+                );
+                
+                return Ok(());
+                
+            } else {
+                // Update the metadata in .album.euphony file, saving details that will ensure
+                // they are not needlessly transcoded again next time.
+                album.save_fresh_meta(config, true)?;
     
-            // Update the metadata in .album.euphony file, saving details that will ensure
-            // they are not needlessly transcoded again next time.
-            album.save_fresh_meta(config, true)?;
-            
-            terminal.queue_item_finish(album_queue_id, true)?;
-            terminal.queue_item_modify(
-                album_queue_id,
-                Box::new(|item| {
-                    item.spaces_when_spinner_is_disabled = false;
-                    item.disable_spinner();
-                    item.set_prefix(" ☑ ");
-                })
-            )?;
-            terminal.queue_clear(QueueType::File)?;
-            
-            let time_album_elapsed = time_album_start
-                .elapsed()
-                .as_secs_f64();
-            term_println_tltb(
-                terminal,
-                format!(
-                    "|-> Album {} transcoded in {:.2} seconds.",
+                terminal.queue_item_finish(album_queue_id, true)?;
+                terminal.queue_item_modify(
+                    album_queue_id,
+                    Box::new(|item| {
+                        item.spaces_when_spinner_is_disabled = false;
+                        item.disable_spinner();
+                        item.set_prefix(" ☑ ");
+                    })
+                )?;
+                terminal.queue_clear(QueueType::File)?;
+    
+                let time_album_elapsed = time_album_start
+                    .elapsed()
+                    .as_secs_f64();
+                term_println_tltb(
+                    terminal,
                     format!(
-                        "{} - {}",
-                        album.album_info.artist_name,
-                        album.album_info.album_title,
-                    ).underlined(),
-                    time_album_elapsed,
-                )
-            );
+                        "|-> Album {} transcoded in {:.2} seconds.",
+                        format!(
+                            "{} - {}",
+                            album.album_info.artist_name,
+                            album.album_info.album_title,
+                        ).underlined(),
+                        time_album_elapsed,
+                    )
+                );
+            }
         }
         
         terminal.queue_item_finish(library_queue_item, true)?;

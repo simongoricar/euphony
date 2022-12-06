@@ -1,13 +1,14 @@
 use std::cmp::min;
 use std::fmt::Display;
 use std::io::{Stdout, stdout};
-use std::sync::{Arc, mpsc, Mutex, MutexGuard};
-use std::sync::mpsc::{Sender, TryRecvError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use ansi_to_tui::IntoText;
+use crossbeam::channel::{Receiver, Sender, TryRecvError};
+use crossterm::event::{Event, KeyCode};
 use crossterm::ExecutableCommand;
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -21,8 +22,8 @@ use tui::widgets::{Block, Borders, Gauge, List, ListItem};
 
 use crate::console::backends::fancy::state::TerminalUIState;
 use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType, generate_dynamic_list_from_queue_items, ListItemStyleRules, QueueItemFinishedState, QueueState, ProgressState};
-use crate::console::{LogBackend, LogTerminalBackend};
-use crate::console::traits::{TerminalBackend, TranscodeBackend, TranscodeLogTerminalBackend};
+use crate::console::{LogBackend, SimpleTerminalBackend};
+use crate::console::traits::{TerminalBackend, TranscodeBackend, AdvancedTerminalBackend, UserControllableBackend, UserControlMessage};
 
 const LOG_JOURNAL_MAX_LINES: usize = 20;
 const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
@@ -47,6 +48,8 @@ pub struct TUITerminalBackend {
     /// signal to the render thread that it should stop.
     render_thread_channel: Option<Sender<()>>,
     
+    user_control_receiver: Option<Receiver<UserControlMessage>>,
+    
     /// Houses non-terminal-organisation related data - this is precisely
     /// the data required for a render pass.
     state: Arc<Mutex<TerminalUIState>>,
@@ -63,6 +66,7 @@ impl TUITerminalBackend {
             has_been_set_up: false,
             render_thread: None,
             render_thread_channel: None,
+            user_control_receiver: None,
             state: Arc::new(Mutex::new(TerminalUIState::new()))
         })
     }
@@ -303,7 +307,7 @@ impl TUITerminalBackend {
         
         
         // 3. Logs
-        // TODO Figure out why this doesn't always update in time.
+        // TODO Fix this generating 2 lines too many, resulting in improper display.
         let log_lines_visible_count = min(area_logs.height as usize, state.log_journal.len());
         
         let mut logs_list_items: Vec<ListItem> = Vec::with_capacity(log_lines_visible_count);
@@ -357,10 +361,14 @@ impl TerminalBackend for TUITerminalBackend {
         
         terminal.clear()
             .into_diagnostic()?;
+    
+        // We create a simple one-way channel that we will use to forward keyboard events.
+        let (user_control_tx, user_control_rx) = crossbeam::channel::unbounded::<UserControlMessage>();
+        self.user_control_receiver = Some(user_control_rx);
         
         // We create a simple one-way channel that we can now use to signal to the render thread
         // to stop rendering and exit.
-        let (tx, rx) = mpsc::channel::<()>();
+        let (stop_tx, stop_rx) = crossbeam::channel::unbounded::<()>();
         
         let terminal_render_thread_clone = self.terminal.clone();
         let state_render_thread_clone = self.state.clone();
@@ -368,10 +376,12 @@ impl TerminalBackend for TUITerminalBackend {
         let render_thread: JoinHandle<Result<()>> = thread::spawn(move || {
             // Continiously render terminal UI (until stop signal is received via channel).
             loop {
+                let time_tick_begin = Instant::now();
+                
                 // We might get a signal (via a multiproducer-singleconsumer channel) to stop rendering,
                 // which is why we check our Receiver every iteration. If there is a message, we stop rendering
                 // and exit the thread.
-                match rx.try_recv() {
+                match stop_rx.try_recv() {
                     Ok(_) => {
                         // Main thread signaled us to stop, exit by returning Ok(()).
                         break;
@@ -387,10 +397,23 @@ impl TerminalBackend for TUITerminalBackend {
                     }
                 }
                 
+                // TODO Continue work on this system: implement this in the transcoding and add tiny help menu into the UI.
+                // Check for any keyboard events and pass them forward through the user control Sender.
+                if crossterm::event::poll(Duration::from_secs(0)).into_diagnostic()? {
+                    // Keyboard event is available, check its content and potentially forward it in the form
+                    // of a `UserControlMessage`.
+                    if let Event::Key(key) = crossterm::event::read().into_diagnostic()? {
+                        if let KeyCode::Char(char) = key.code {
+                            if char == 'q' {
+                                user_control_tx.send(UserControlMessage::Exit)
+                                    .into_diagnostic()?;
+                            }
+                        }
+                    }
+                }
+
                 // Perform drawing and thread sleeping.
                 // (subtracts drawing time from tick rate to preserve a consistent update rate)
-                let time_pre_draw = Instant::now();
-                
                 {
                     let mut terminal = terminal_render_thread_clone.lock().unwrap();
                     let state = state_render_thread_clone.lock().unwrap();
@@ -403,11 +426,11 @@ impl TerminalBackend for TUITerminalBackend {
                         .into_diagnostic()?;
                 }
                 
-                let time_draw_delta = time_pre_draw.elapsed().as_secs_f64();
-                let adjusted_sleep_time = if time_draw_delta >= TERMINAL_REFRESH_RATE_SECONDS {
+                let used_tick_time_delta = time_tick_begin.elapsed().as_secs_f64();
+                let adjusted_sleep_time = if used_tick_time_delta >= TERMINAL_REFRESH_RATE_SECONDS {
                     0.0
                 } else {
-                    TERMINAL_REFRESH_RATE_SECONDS - time_draw_delta
+                    TERMINAL_REFRESH_RATE_SECONDS - used_tick_time_delta
                 };
                 
                 thread::sleep(Duration::from_secs_f64(adjusted_sleep_time));
@@ -432,7 +455,7 @@ impl TerminalBackend for TUITerminalBackend {
         });
         
         self.render_thread = Some(render_thread);
-        self.render_thread_channel = Some(tx);
+        self.render_thread_channel = Some(stop_tx);
         self.has_been_set_up = true;
         
         Ok(())
@@ -669,5 +692,18 @@ impl TranscodeBackend for TUITerminalBackend {
     }
 }
 
-impl LogTerminalBackend for TUITerminalBackend {}
-impl TranscodeLogTerminalBackend for TUITerminalBackend {}
+impl UserControllableBackend for TUITerminalBackend {
+    fn get_user_control_receiver(&mut self) -> Result<Receiver<UserControlMessage>> {
+        if !self.has_been_set_up {
+            return Err(miette!("setup has not been called yet, can't get user control receiver."));
+        }
+        
+        let receiver = self.user_control_receiver.take()
+            .expect("has_been_set_up is true, but user_control_receiver is None?!");
+        
+        Ok(receiver)
+    }
+}
+
+impl SimpleTerminalBackend for TUITerminalBackend {}
+impl AdvancedTerminalBackend for TUITerminalBackend {}
