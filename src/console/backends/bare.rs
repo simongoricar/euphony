@@ -1,16 +1,23 @@
 use std::fmt::Display;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
+use std::sync::Mutex;
 use crossbeam::channel::{never, Receiver};
 
-use miette::{miette, Result};
+use miette::{IntoDiagnostic, miette, Result};
+use strip_ansi_escapes::Writer;
 
 use crate::console::{LogBackend, SimpleTerminalBackend, TerminalBackend, TranscodeBackend, UserControlMessage};
 use crate::console::backends::shared::{ProgressState, QueueItem, QueueItemFinishedState, QueueItemID, QueueState, QueueType};
-use crate::console::traits::{AdvancedTerminalBackend, UserControllableBackend};
+use crate::console::traits::{AdvancedTerminalBackend, LogToFileBackend, UserControllableBackend};
 
 pub struct BareConsoleBackend {
     queue: Option<QueueState>,
     
     progress: Option<ProgressState>,
+    
+    log_file_output: Option<Mutex<BufWriter<Writer<File>>>>,
 }
 
 impl BareConsoleBackend {
@@ -18,6 +25,7 @@ impl BareConsoleBackend {
         Self {
             queue: None,
             progress: None,
+            log_file_output: None,
         }
     }
 }
@@ -28,6 +36,10 @@ impl TerminalBackend for BareConsoleBackend {
     }
     
     fn destroy(&mut self) -> Result<()> {
+        // If logging to file was enabled, we should disable it before this backend is dropped,
+        // otherwise we risk failing to flush to file.
+        self.disable_saving_logs_to_file()?;
+        
         Ok(())
     }
 }
@@ -35,10 +47,28 @@ impl TerminalBackend for BareConsoleBackend {
 impl LogBackend for BareConsoleBackend {
     fn log_newline(&self) {
         println!();
+    
+        if let Some(writer) = self.log_file_output.as_ref() {
+            let mut writer_locked = writer.lock()
+                .expect("writer lock has been poisoned!");
+        
+            writer_locked.write_all("\n".as_bytes())
+                .expect("Could not write to logfile.");
+        }
     }
     
     fn log_println(&self, content: Box<dyn Display>) {
-        println!("{}", content)
+        println!("{}", content);
+    
+        if let Some(writer) = self.log_file_output.as_ref() {
+            let mut writer_locked = writer.lock()
+                .expect("writer lock has been poisoned!");
+        
+            writer_locked.write_all(content.to_string().as_bytes())
+                .expect("Could not write to logfile.");
+            writer_locked.write_all("\n".as_bytes())
+                .expect("Could not write to logfile (newline).");
+        }
     }
 }
 
@@ -214,6 +244,33 @@ impl TranscodeBackend for BareConsoleBackend {
 impl UserControllableBackend for BareConsoleBackend {
     fn get_user_control_receiver(&mut self) -> Result<Receiver<UserControlMessage>> {
         Ok(never::<UserControlMessage>())
+    }
+}
+
+impl LogToFileBackend for BareConsoleBackend {
+    fn enable_saving_logs_to_file(&mut self, log_file_path: PathBuf) -> Result<()> {
+        let file = File::create(log_file_path)
+            .into_diagnostic()?;
+    
+        let ansi_escaped_file_writer = Writer::new(file);
+    
+        let buf_writer = BufWriter::with_capacity(1024, ansi_escaped_file_writer);
+        self.log_file_output = Some(Mutex::new(buf_writer));
+    
+        Ok(())
+    }
+    
+    fn disable_saving_logs_to_file(&mut self) -> Result<()> {
+        if let Some(buf_writer) = self.log_file_output.take() {
+            let mut buf_writer = buf_writer
+                .into_inner()
+                .into_diagnostic()?;
+        
+            buf_writer.flush()
+                .into_diagnostic()?;
+        }
+    
+        Ok(())
     }
 }
 

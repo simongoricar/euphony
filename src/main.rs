@@ -1,4 +1,5 @@
 use std::ops::DerefMut;
+use std::path::PathBuf;
 use std::process::exit;
 
 use clap::{Args, Parser, Subcommand};
@@ -68,6 +69,12 @@ struct TranscodeAllArgs {
                 a constantly-updating terminal UI (e.g. for saving logs)."
     )]
     bare_terminal: bool,
+    
+    #[arg(
+        long = "log-to-file",
+        help = "Path to the log file. If this is unset, no logs are saved."
+    )]
+    log_to_file: Option<String>,
 }
 
 #[derive(Args, Eq, PartialEq)]
@@ -145,6 +152,11 @@ fn process_cli_command(
         let mut terminal = get_terminal_backend(transcode_args.bare_terminal);
         terminal.setup()
             .expect("Could not set up tui terminal backend.");
+        
+        if let Some(log_file_path) = transcode_args.log_to_file {
+            terminal.enable_saving_logs_to_file(PathBuf::from(log_file_path))
+                .map_err(|_| 1)?;
+        }
         
         match commands::cmd_transcode_all(config, terminal.deref_mut()) {
             Ok(_) => {

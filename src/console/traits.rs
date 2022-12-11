@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::path::PathBuf;
 use crossbeam::channel::Receiver;
 
 use miette::Result;
@@ -73,6 +74,11 @@ pub trait UserControllableBackend {
     fn get_user_control_receiver(&mut self) -> Result<Receiver<UserControlMessage>>;
 }
 
+pub trait LogToFileBackend {
+    fn enable_saving_logs_to_file(&mut self, log_file_path: PathBuf) -> Result<()>;
+    fn disable_saving_logs_to_file(&mut self) -> Result<()>;
+}
+
 
 pub trait SimpleTerminalBackend: TerminalBackend + LogBackend {}
-pub trait AdvancedTerminalBackend: TerminalBackend + LogBackend + TranscodeBackend + UserControllableBackend {}
+pub trait AdvancedTerminalBackend: TerminalBackend + LogBackend + TranscodeBackend + UserControllableBackend + LogToFileBackend {}

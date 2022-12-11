@@ -1,6 +1,8 @@
 use std::cmp::min;
 use std::fmt::Display;
-use std::io::{Stdout, stdout};
+use std::fs::File;
+use std::io::{BufWriter, Stdout, stdout, Write};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::thread::JoinHandle;
@@ -13,17 +15,18 @@ use crossterm::ExecutableCommand;
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use miette::{IntoDiagnostic, miette, Result, WrapErr};
+use strip_ansi_escapes::Writer;
 use tui::{Frame, Terminal};
 use tui::backend::{Backend, CrosstermBackend};
 use tui::layout::{Alignment, Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
-use tui::text::Span;
-use tui::widgets::{Block, Borders, Gauge, List, ListItem};
+use tui::text::{Span, Spans};
+use tui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
 
 use crate::console::backends::fancy::state::TerminalUIState;
-use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType, generate_dynamic_list_from_queue_items, ListItemStyleRules, QueueItemFinishedState, QueueState, ProgressState};
+use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType, generate_dynamic_list_from_queue_items, ListItemStyleRules, QueueItemFinishedState, QueueState, ProgressState, QueueItemState};
 use crate::console::{LogBackend, SimpleTerminalBackend};
-use crate::console::traits::{TerminalBackend, TranscodeBackend, AdvancedTerminalBackend, UserControllableBackend, UserControlMessage};
+use crate::console::traits::{TerminalBackend, TranscodeBackend, AdvancedTerminalBackend, UserControllableBackend, UserControlMessage, LogToFileBackend};
 
 const LOG_JOURNAL_MAX_LINES: usize = 20;
 const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
@@ -32,6 +35,8 @@ const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
 pub struct TUITerminalBackend {
     /// `tui::Terminal`, which is how we interact with the terminal and build a terminal UI.
     terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
+    
+    log_file_output: Option<Mutex<BufWriter<Writer<File>>>>,
     
     /// An end cursor position we save in setup - this allows us to restore the
     /// ending cursor position when the backend is destroyed.
@@ -62,6 +67,7 @@ impl TUITerminalBackend {
         
         Ok(Self {
             terminal: Arc::new(Mutex::new(terminal)),
+            log_file_output: None,
             terminal_end_cursor_position: None,
             has_been_set_up: false,
             render_thread: None,
@@ -140,7 +146,7 @@ impl TUITerminalBackend {
             )
             .split(multi_block_layout[0]);
         
-        let queue_left_vertical_layout = Layout::default()
+        let left_vertical_layout = Layout::default()
             .direction(Direction::Vertical)
             .margin(0)
             .constraints(
@@ -151,8 +157,20 @@ impl TUITerminalBackend {
             )
             .split(queue_horizontal_layout[0]);
         
-        let area_queue_top_left = queue_left_vertical_layout[0];
-        let area_queue_bottom_left = queue_left_vertical_layout[1];
+        let top_left_horizontal_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .margin(0)
+            .constraints(
+                [
+                    Constraint::Percentage(60),
+                    Constraint::Min(10),
+                ].as_ref()
+            )
+            .split(left_vertical_layout[0]);
+        
+        let area_queue_top_left = top_left_horizontal_layout[0];
+        let area_help_top_left = top_left_horizontal_layout[1];
+        let area_queue_bottom_left = left_vertical_layout[1];
         let area_queue_right = queue_horizontal_layout[1];
         let area_progress_bar = multi_block_layout[1];
         let area_logs = multi_block_layout[2];
@@ -248,16 +266,47 @@ impl TUITerminalBackend {
                 area_queue_right.height as usize,
             ).expect("Could not generate dynamic list for file queue.");
             
+            // Count exact queue file states.
+            let mut pending_item_count: usize = 0;
+            let mut in_progress_item_count: usize = 0;
+            let mut finished_ok_item_count: usize = 0;
+            let mut finished_not_ok_item_count: usize = 0;
+            for item in queue.file_items.iter() {
+                match item.get_state() {
+                    QueueItemState::Pending => pending_item_count += 1,
+                    QueueItemState::InProgress => in_progress_item_count += 1,
+                    QueueItemState::Finished => match item.finished_state.as_ref().unwrap().is_ok {
+                        true => finished_ok_item_count += 1,
+                        false => finished_not_ok_item_count += 1,
+                    }
+                }
+            }
+            
+            let file_queue_description = format!(
+                "({} waiting, {} working, {} finished, {} failed)",
+                pending_item_count,
+                in_progress_item_count,
+                finished_ok_item_count,
+                finished_not_ok_item_count,
+            );
+            
             let file_queue = List::new(file_dynamic_queue_items)
                 .block(
                     Block::default()
                         .title(
-                            Span::styled(
-                                "Files",
-                                Style::default()
-                                    .fg(Color::Indexed(139)) // Grey63 (#af87af)
-                                    .add_modifier(Modifier::BOLD)
-                            )
+                            Spans(vec![
+                                Span::styled(
+                                    "Files ",
+                                    Style::default()
+                                        .fg(Color::Indexed(139)) // Grey63 (#af87af)
+                                        .add_modifier(Modifier::BOLD)
+                                ),
+                                Span::styled(
+                                    file_queue_description,
+                                    Style::default()
+                                        .fg(Color::Indexed(74))  // SkyBlue3 (#5fafd7)
+                                ),
+                            ]),
                         )
                         .borders(Borders::ALL)
                         .title_alignment(Alignment::Left)
@@ -308,7 +357,7 @@ impl TUITerminalBackend {
         
         // 3. Logs
         // TODO Fix this generating 2 lines too many, resulting in improper display.
-        let log_lines_visible_count = min(area_logs.height as usize, state.log_journal.len());
+        let log_lines_visible_count = min(area_logs.height as usize - 2, state.log_journal.len());
         
         let mut logs_list_items: Vec<ListItem> = Vec::with_capacity(log_lines_visible_count);
         for log in state.log_journal.range(state.log_journal.len() - log_lines_visible_count..) {
@@ -328,7 +377,7 @@ impl TUITerminalBackend {
                         Span::styled(
                             "Logs",
                             Style::default()
-                                .add_modifier(Modifier::ITALIC)
+                                .add_modifier(Modifier::BOLD)
                         )
                     )
                     .borders(Borders::ALL)
@@ -336,6 +385,39 @@ impl TUITerminalBackend {
             );
         
         frame.render_widget(logs, area_logs);
+        
+        
+        // 4. Keybinds / help
+        let help_text = Spans(vec!(
+            Span::styled(
+                "Q",
+                Style::default()
+                    .fg(Color::Indexed(130))  // DarkOrange3 (#af5f00)
+                    .add_modifier(Modifier::BOLD)
+            ),
+            Span::styled(
+                " - quit",
+                Style::default()
+                    .fg(Color::Indexed(137))  // LightSalmon3 (#af875f)
+            )
+        ));
+        
+        let help_menu = Paragraph::new(help_text)
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .title(
+                        Span::styled(
+                            "Keybinds",
+                            Style::default()
+                                .add_modifier(Modifier::BOLD)
+                        )
+                    )
+                    .borders(Borders::ALL)
+                    .title_alignment(Alignment::Center)
+            );
+        
+        frame.render_widget(help_menu, area_help_top_left);
     }
 }
 
@@ -396,21 +478,6 @@ impl TerminalBackend for TUITerminalBackend {
                         }
                     }
                 }
-                
-                // TODO Continue work on this system: implement this in the transcoding and add tiny help menu into the UI.
-                // Check for any keyboard events and pass them forward through the user control Sender.
-                if crossterm::event::poll(Duration::from_secs(0)).into_diagnostic()? {
-                    // Keyboard event is available, check its content and potentially forward it in the form
-                    // of a `UserControlMessage`.
-                    if let Event::Key(key) = crossterm::event::read().into_diagnostic()? {
-                        if let KeyCode::Char(char) = key.code {
-                            if char == 'q' {
-                                user_control_tx.send(UserControlMessage::Exit)
-                                    .into_diagnostic()?;
-                            }
-                        }
-                    }
-                }
 
                 // Perform drawing and thread sleeping.
                 // (subtracts drawing time from tick rate to preserve a consistent update rate)
@@ -426,14 +493,34 @@ impl TerminalBackend for TUITerminalBackend {
                         .into_diagnostic()?;
                 }
                 
-                let used_tick_time_delta = time_tick_begin.elapsed().as_secs_f64();
-                let adjusted_sleep_time = if used_tick_time_delta >= TERMINAL_REFRESH_RATE_SECONDS {
-                    0.0
-                } else {
-                    TERMINAL_REFRESH_RATE_SECONDS - used_tick_time_delta
-                };
-                
-                thread::sleep(Duration::from_secs_f64(adjusted_sleep_time));
+                // Keep waiting and forwarding user input until the new frame should be drawn.
+                loop {
+                    let used_tick_time_delta = time_tick_begin.elapsed().as_secs_f64();
+                    let adjusted_sleep_time = if used_tick_time_delta >= TERMINAL_REFRESH_RATE_SECONDS {
+                        0.0
+                    } else {
+                        TERMINAL_REFRESH_RATE_SECONDS - used_tick_time_delta
+                    };
+                    
+                    // When less than 0.01 ms away from time to next frame, we simply stop waiting for input.
+                    if adjusted_sleep_time < 0.00001 {
+                        break;
+                    }
+                    
+                    // Check for any keyboard events and pass them forward through the user control Sender.
+                    if crossterm::event::poll(Duration::from_secs_f64(adjusted_sleep_time)).into_diagnostic()? {
+                        // Keyboard event is available, check its content and potentially forward it in the form
+                        // of a `UserControlMessage`.
+                        if let Event::Key(key) = crossterm::event::read().into_diagnostic()? {
+                            if let KeyCode::Char(char) = key.code {
+                                if char == 'q' {
+                                    user_control_tx.send(UserControlMessage::Exit)
+                                        .into_diagnostic()?;
+                                }
+                            }
+                        }
+                    }
+                }
             }
             
             // One last draw call before exiting.
@@ -482,25 +569,31 @@ impl TerminalBackend for TUITerminalBackend {
         // The program will exit soon - make sure the next prompt doesn't start somewhere in the
         // middle of the screen, where the UI was - reset cursor and print a newline to make it look
         // like a sane and normal terminal application.
-        let mut terminal = self.terminal.lock().unwrap();
+        {
+            let mut terminal = self.terminal.lock().unwrap();
+    
+            let original_cursor_position = self.terminal_end_cursor_position
+                .expect("has_been_set_up is true, but no original cursor position?!");
+    
+            terminal.backend_mut()
+                .set_cursor(original_cursor_position.0, original_cursor_position.1)
+                .into_diagnostic()?;
+    
+            // No need for additional newline, as our last render pass lowers the height by 1 so
+            // the entire UI can fit on screen in addition to the new console prompt
+            // (see last render in `setup`'s rendering thread).
+    
+            // terminal.backend_mut()
+            //     .execute(Print("\n"))
+            //     .into_diagnostic()?;
+    
+            disable_raw_mode()
+                .into_diagnostic()?;
+        }
         
-        let original_cursor_position = self.terminal_end_cursor_position
-            .expect("has_been_set_up is true, but no original cursor position?!");
-        
-        terminal.backend_mut()
-            .set_cursor(original_cursor_position.0, original_cursor_position.1)
-            .into_diagnostic()?;
-        
-        // No need for additional newline, as our last render pass lowers the height by 1 so
-        // the entire UI can fit on screen in addition to the new console prompt
-        // (see last render in `setup`'s rendering thread).
-        
-        // terminal.backend_mut()
-        //     .execute(Print("\n"))
-        //     .into_diagnostic()?;
-        
-        disable_raw_mode()
-            .into_diagnostic()?;
+        // If logging to file was enabled, we should disable it before this backend is dropped,
+        // otherwise we risk failing to flush to file when the entire struct is dropped.
+        self.disable_saving_logs_to_file()?;
         
         Ok(())
     }
@@ -508,15 +601,28 @@ impl TerminalBackend for TUITerminalBackend {
 
 impl LogBackend for TUITerminalBackend {
     fn log_newline(&self) {
+        // Part 1: add log line to terminal UI.
         {
             let mut state = self.lock_state();
             state.log_journal.push_back("\n".to_string());
         }
         
         self.trim_log_journal();
+        
+        // Part 2: if enabled, write the new line into the log file.
+        if let Some(writer) = self.log_file_output.as_ref() {
+            let mut writer_locked = writer.lock()
+                .expect("writer lock has been poisoned!");
+            
+            writer_locked.write_all("\n".as_bytes())
+                .expect("Could not write to logfile.");
+        }
     }
     
     fn log_println(&self, content: Box<dyn Display>) {
+        let content_string = content.to_string();
+        
+        // Part 1: add log lines to terminal UI.
         {
             let terminal = self.terminal.lock().unwrap();
             let mut state = self.lock_state();
@@ -525,7 +631,7 @@ impl LogBackend for TUITerminalBackend {
                 .expect("Could not get terminal width.")
                 .width as usize;
             
-            for line in content.to_string().split('\n') {
+            for line in content_string.split('\n') {
                 if line.len() > terminal_width {
                     // Will require a manual line break (possibly multiple).
                     
@@ -547,6 +653,17 @@ impl LogBackend for TUITerminalBackend {
         }
         
         self.trim_log_journal();
+        
+        // Part 2: if enabled, write the content into the log file as well.
+        if let Some(writer) = self.log_file_output.as_ref() {
+            let mut writer_locked = writer.lock()
+                .expect("writer lock has been poisoned!");
+        
+            writer_locked.write_all(content_string.as_bytes())
+                .expect("Could not write to logfile.");
+            writer_locked.write_all("\n".as_bytes())
+                .expect("Could not write to logfile (newline).");
+        }
     }
 }
 
@@ -702,6 +819,33 @@ impl UserControllableBackend for TUITerminalBackend {
             .expect("has_been_set_up is true, but user_control_receiver is None?!");
         
         Ok(receiver)
+    }
+}
+
+impl LogToFileBackend for TUITerminalBackend {
+    fn enable_saving_logs_to_file(&mut self, log_file_path: PathBuf) -> Result<()> {
+        let file = File::create(log_file_path)
+            .into_diagnostic()?;
+        
+        let ansi_escaped_file_writer = Writer::new(file);
+        
+        let buf_writer = BufWriter::with_capacity(1024, ansi_escaped_file_writer);
+        self.log_file_output = Some(Mutex::new(buf_writer));
+        
+        Ok(())
+    }
+    
+    fn disable_saving_logs_to_file(&mut self) -> Result<()> {
+        if let Some(buf_writer) = self.log_file_output.take() {
+            let mut buf_writer = buf_writer
+                .into_inner()
+                .into_diagnostic()?;
+            
+            buf_writer.flush()
+                .into_diagnostic()?;
+        }
+        
+        Ok(())
     }
 }
 

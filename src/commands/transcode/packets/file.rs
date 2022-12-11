@@ -10,7 +10,7 @@ use miette::{miette, Result};
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::configuration::Config;
 use crate::filesystem;
-use crate::globals::verbose_enabled;
+use crate::globals::is_verbose_enabled;
 
 const PROCESSING_THREAD_CANCELLATION_TICK_SLEEP_TIME: Duration = Duration::from_millis(50);
 
@@ -170,7 +170,7 @@ impl FileWorkPacket {
             return FileProcessingResult::new_errored(
                 self.clone(),
                 "Invalid source extension for transcode, not a tracked audio file.",
-                verbose_enabled().then_some(format!("Not an audio file. {:?}", self)),
+                is_verbose_enabled().then_some(format!("Not an audio file. {:?}", self)),
             );
         }
 
@@ -181,7 +181,7 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "File target path had no parent directory?!",
-                    verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
+                    is_verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
                 );
             }
         };
@@ -192,7 +192,7 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     error.to_string(),
-                    verbose_enabled().then_some(format!("Couldn't create parent directories. {:?}", self)),
+                    is_verbose_enabled().then_some(format!("Couldn't create parent directories. {:?}", self)),
                 );
             }
         };
@@ -204,7 +204,7 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "Could not convert source path to str!",
-                    verbose_enabled().then_some(format!("Couldn't construct source file path. {:?}", self))
+                    is_verbose_enabled().then_some(format!("Couldn't construct source file path. {:?}", self))
                 );
             }
         };
@@ -215,7 +215,7 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "Could not convert target path to str!",
-                    verbose_enabled().then_some(format!("Couldn't construct target file path. {:?}", self))
+                    is_verbose_enabled().then_some(format!("Couldn't construct target file path. {:?}", self))
                 );
             }
         };
@@ -239,14 +239,14 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "Could not spawn ffmpeg to transcode audio.",
-                    verbose_enabled().then_some(format!("Couldn't spawn ffmpeg: {}", error))
+                    is_verbose_enabled().then_some(format!("Couldn't spawn ffmpeg: {}", error))
                 );
             }
         };
         
         while ffmpeg_child.try_wait().expect("Could not wait for ffmpeg child.").is_none() {
             // Keep checking whether the user requested cancellation.
-            let flag_value = cancellation_flag.load(Ordering::Relaxed);
+            let flag_value = cancellation_flag.load(Ordering::Acquire);
             if flag_value {
                 // Cancellation requested, kill ffmpeg and exit.
                 ffmpeg_child.kill().expect("Could not kill ffmpeg process.");
@@ -256,13 +256,13 @@ impl FileWorkPacket {
             thread::sleep(PROCESSING_THREAD_CANCELLATION_TICK_SLEEP_TIME);
         }
         
-        let final_flag_value = cancellation_flag.load(Ordering::Relaxed);
+        let final_flag_value = cancellation_flag.load(Ordering::Acquire);
         if final_flag_value {
             // Cancellation occured.
             FileProcessingResult::new_errored(
                 self.clone(),
                 "User cancelled task.",
-                verbose_enabled().then_some("User cancelled task.")
+                is_verbose_enabled().then_some("User cancelled task.")
             )
             
         } else {
@@ -274,7 +274,7 @@ impl FileWorkPacket {
                 if error_code == 0 {
                     FileProcessingResult::new_ok(
                         self.clone(),
-                        verbose_enabled().then_some(format!("ffmpeg exited (0). {:?}", self)),
+                        is_verbose_enabled().then_some(format!("ffmpeg exited (0). {:?}", self)),
                     )
                 } else {
                     let ffmpeg_stdout = match String::from_utf8(final_output.stdout) {
@@ -283,7 +283,7 @@ impl FileWorkPacket {
                             return FileProcessingResult::new_errored(
                                 self.clone(),
                                 format!("Couldn't get ffmpeg stdout! {}", error),
-                                verbose_enabled()
+                                is_verbose_enabled()
                                     .then_some(format!("from_utf8(ffmpeg.stdout) failed! {:?}", self)),
                             );
                         }
@@ -295,7 +295,7 @@ impl FileWorkPacket {
                             return FileProcessingResult::new_errored(
                                 self.clone(),
                                 format!("Couldn't get ffmpeg stderr! {}", error),
-                                verbose_enabled()
+                                is_verbose_enabled()
                                     .then_some(format!("from_utf8(ffmpeg.stderr) failed! {:?}", self))
                             );
                         }
@@ -304,7 +304,7 @@ impl FileWorkPacket {
                     FileProcessingResult::new_errored(
                         self.clone(),
                         format!("Non-zero ffmpeg exit code: {}", error_code),
-                        verbose_enabled().then_some(
+                        is_verbose_enabled().then_some(
                             format!(
                                 "ffmpeg exited ({}): {:?}\nffmpeg stdout: {}\nffmpeg stderr: {}",
                                 error_code,
@@ -319,7 +319,7 @@ impl FileWorkPacket {
                 FileProcessingResult::new_errored(
                     self.clone(),
                     "Could not get ffmpeg exit code!",
-                    verbose_enabled().then_some(format!("Couldn't get ffmpeg exit code. {:?}", self))
+                    is_verbose_enabled().then_some(format!("Couldn't get ffmpeg exit code. {:?}", self))
                 )
             }
         }
@@ -405,7 +405,7 @@ impl FileWorkPacket {
             return FileProcessingResult::new_errored(
                 self.clone(),
                 "Invalid source extension for copy: not a tracked data file.",
-                verbose_enabled()
+                is_verbose_enabled()
                     .then_some(format!("Not a data file. {:?}", self)),
             );
         }
@@ -416,7 +416,7 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "No target directory.",
-                    verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
+                    is_verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
                 );
             }
         };
@@ -427,7 +427,7 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     error.to_string(),
-                    verbose_enabled()
+                    is_verbose_enabled()
                         .then_some(format!("Couldn't create parent directories. {:?}", self))
                 );
             }
@@ -438,13 +438,13 @@ impl FileWorkPacket {
                 if bytes_copied > 0 {
                     FileProcessingResult::new_ok(
                         self.clone(),
-                        verbose_enabled().then_some(format!("Copy operation complete. {:?}", self)),
+                        is_verbose_enabled().then_some(format!("Copy operation complete. {:?}", self)),
                     )
                 } else {
                     FileProcessingResult::new_errored(
                         self.clone(),
                         "Copy operation technically complete, but 0 bytes copied?!",
-                        verbose_enabled().then_some(format!("Copy complete, but 0 bytes copied. {:?}", self)),
+                        is_verbose_enabled().then_some(format!("Copy complete, but 0 bytes copied. {:?}", self)),
                     )
                 }
             },
@@ -452,7 +452,7 @@ impl FileWorkPacket {
                 FileProcessingResult::new_errored(
                     self.clone(),
                     error.to_string(),
-                    verbose_enabled().then_some(format!("Error while copying file. {:?}", self)),
+                    is_verbose_enabled().then_some(format!("Error while copying file. {:?}", self)),
                 )
             }
         }
@@ -468,21 +468,21 @@ impl FileWorkPacket {
         if !self.target_file_exists() && ignore_if_missing {
             FileProcessingResult::new_ok(
                 self.clone(),
-                verbose_enabled().then_some(format!("File didn't exist, ignoring. {:?}", self)),
+                is_verbose_enabled().then_some(format!("File didn't exist, ignoring. {:?}", self)),
             )
         } else {
             match fs::remove_file(&self.target_file_path) {
                 Ok(()) => {
                     FileProcessingResult::new_ok(
                         self.clone(),
-                        verbose_enabled().then_some(format!("File removed. {:?}", self)),
+                        is_verbose_enabled().then_some(format!("File removed. {:?}", self)),
                     )
                 },
                 Err(error) => {
                     FileProcessingResult::new_errored(
                         self.clone(),
                         error.to_string(),
-                        verbose_enabled().then_some(format!("Could not remove file. {:?}", self)),
+                        is_verbose_enabled().then_some(format!("Could not remove file. {:?}", self)),
                     )
                 }
             }

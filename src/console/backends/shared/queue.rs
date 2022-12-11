@@ -2,8 +2,9 @@ use std::ops::Deref;
 use std::time::Duration;
 
 use miette::{miette, Result};
+use crossterm::style::Stylize;
 use tui::style::{Modifier, Style};
-use tui::text::Span;
+use tui::text::{Span, Spans};
 use tui::widgets::ListItem;
 use crate::console::backends::shared::{AnimatedSpinner, SpinnerStyle};
 
@@ -28,7 +29,7 @@ impl Deref for QueueItemID {
 }
 
 /// A simple three-value enum containing the three possible queue item states.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum QueueItemState {
     Pending,
     InProgress,
@@ -344,28 +345,37 @@ pub fn generate_dynamic_list_from_queue_items(
         };
         
         dynamic_list.push(
-            ListItem::new(format!(
-                "{}{}{}{}",
-                if let Some(spinner) = &next_item.spinner {
-                    format!(" {} ", spinner.get_current_phase())
-                } else {
-                    match next_item.spaces_when_spinner_is_disabled {
-                        true => "   ".into(),
-                        false => "".into()
-                    }
-                },
-                if let Some(prefix) = &next_item.prefix {
-                    prefix
-                } else {
-                    ""
-                },
-                next_item.content,
-                if let Some(suffix) = &next_item.suffix {
-                    suffix
-                } else {
-                    ""
-                }
-            ))
+            ListItem::new(Spans(vec!(
+                Span::raw(
+                    if let Some(spinner) = &next_item.spinner {
+                        format!(" {} ", spinner.get_current_phase())
+                    } else {
+                        match next_item.spaces_when_spinner_is_disabled {
+                            true => "   ".into(),
+                            false => "".into()
+                        }
+                    },
+                ),
+                Span::styled(
+                    if let Some(prefix) = &next_item.prefix {
+                        prefix
+                    } else {
+                        ""
+                    },
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                ),
+                Span::raw(next_item.content.clone()),
+                Span::styled(
+                    if let Some(suffix) = &next_item.suffix {
+                        suffix
+                    } else {
+                        ""
+                    },
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                )
+            )))
                 .style(item_style)
         );
         
