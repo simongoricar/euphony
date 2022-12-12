@@ -42,8 +42,9 @@ This is done to understand which files have and haven't changed, so we can skip 
 Implementation details of this change detection are available below.
 
 ### Note
-**Importantly, euphony *does not* organise your original audio files** - for this job tools like [MusicBrainz Picard](https://picard.musicbrainz.org/) (just a recommendation) should be used.
-You may even opt to use the even more advanced [Beets](https://beets.readthedocs.io/en/stable/) software for most organizing your source library or libraries.
+**Importantly, euphony *does not* organise your original audio files** - for this job you might want to use tools like [MusicBrainz Picard](https://picard.musicbrainz.org/) 
+(just a recommendation). You could perhaps even opt to use the even more advanced and customizable [Beets](https://beets.readthedocs.io/en/stable/) software 
+for most of organizing in your source library or libraries.
 
 **Regardless, `euphony`'s place in my (and maybe your) music library toolset is well-defined: 
 a CLI for *validating* one's library and *managing transcodes* for on-the-go listening quickly and painlessly.**  
