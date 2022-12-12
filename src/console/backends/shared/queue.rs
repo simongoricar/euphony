@@ -2,7 +2,6 @@ use std::ops::Deref;
 use std::time::Duration;
 
 use miette::{miette, Result};
-use crossterm::style::Stylize;
 use tui::style::{Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::widgets::ListItem;

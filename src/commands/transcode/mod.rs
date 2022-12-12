@@ -202,7 +202,7 @@ fn process_album_files(
 pub fn cmd_transcode_all(
     config: &Config,
     terminal: &mut dyn AdvancedTerminalBackend
-) -> Result<()> {
+) -> Result<String> {
     let processing_begin_time = Instant::now();
     
     term_println_tltb(terminal, "Mode: transcode all libraries.".cyan().bold());
@@ -281,8 +281,7 @@ pub fn cmd_transcode_all(
     // Skip entire processing stage if there are simply no changes,
     // otherwise show a short summary of changes and start transcoding.
     if full_workload.is_empty() {
-        term_println_tltb(terminal, "Transcodes are already up to date.".green().bold());
-        return Ok(());
+        return Ok("Transcodes are already up to date.".green().bold().to_string());
     } else {
         term_println_tltb(
             terminal,
@@ -621,13 +620,11 @@ pub fn cmd_transcode_all(
     }
     
     let processing_time_delta = processing_begin_time.elapsed().as_secs_f64();
-    term_println_tltb(
-        terminal,
+    
+    Ok(
         format!(
             "Full library transcoding completed in {:.2} seconds.",
-            format!("{:.2}", processing_time_delta).italic(),
+            processing_time_delta,
         )
-    );
-    
-    Ok(())
+    )
 }

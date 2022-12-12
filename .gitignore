@@ -25,3 +25,5 @@ bin
 tools/ffmpeg
 *.exe
 *.ffs_db
+*.log
+*.log.bak

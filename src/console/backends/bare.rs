@@ -12,7 +12,7 @@ use crate::console::{LogBackend, SimpleTerminalBackend, TerminalBackend, Transco
 use crate::console::backends::shared::{ProgressState, QueueItem, QueueItemFinishedState, QueueItemID, QueueState, QueueType};
 use crate::console::traits::{AdvancedTerminalBackend, LogToFileBackend, UserControllableBackend};
 
-pub struct BareConsoleBackend {
+pub struct BareTerminalBackend {
     queue: Option<QueueState>,
     
     progress: Option<ProgressState>,
@@ -20,7 +20,7 @@ pub struct BareConsoleBackend {
     log_file_output: Option<Mutex<BufWriter<Writer<File>>>>,
 }
 
-impl BareConsoleBackend {
+impl BareTerminalBackend {
     pub fn new() -> Self {
         Self {
             queue: None,
@@ -30,7 +30,7 @@ impl BareConsoleBackend {
     }
 }
 
-impl TerminalBackend for BareConsoleBackend {
+impl TerminalBackend for BareTerminalBackend {
     fn setup(&mut self) -> Result<()> {
         Ok(())
     }
@@ -44,7 +44,7 @@ impl TerminalBackend for BareConsoleBackend {
     }
 }
 
-impl LogBackend for BareConsoleBackend {
+impl LogBackend for BareTerminalBackend {
     fn log_newline(&self) {
         println!();
     
@@ -72,7 +72,7 @@ impl LogBackend for BareConsoleBackend {
     }
 }
 
-impl TranscodeBackend for BareConsoleBackend {
+impl TranscodeBackend for BareTerminalBackend {
     fn queue_begin(&mut self) {
         println!("Queue starting.");
         self.queue = Some(QueueState::default());
@@ -241,13 +241,13 @@ impl TranscodeBackend for BareConsoleBackend {
     }
 }
 
-impl UserControllableBackend for BareConsoleBackend {
+impl UserControllableBackend for BareTerminalBackend {
     fn get_user_control_receiver(&mut self) -> Result<Receiver<UserControlMessage>> {
         Ok(never::<UserControlMessage>())
     }
 }
 
-impl LogToFileBackend for BareConsoleBackend {
+impl LogToFileBackend for BareTerminalBackend {
     fn enable_saving_logs_to_file(&mut self, log_file_path: PathBuf) -> Result<()> {
         let file = File::create(log_file_path)
             .into_diagnostic()?;
@@ -274,5 +274,5 @@ impl LogToFileBackend for BareConsoleBackend {
     }
 }
 
-impl SimpleTerminalBackend for BareConsoleBackend {}
-impl AdvancedTerminalBackend for BareConsoleBackend {}
+impl SimpleTerminalBackend for BareTerminalBackend {}
+impl AdvancedTerminalBackend for BareTerminalBackend {}

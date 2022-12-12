@@ -28,14 +28,19 @@ use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType, genera
 use crate::console::{LogBackend, SimpleTerminalBackend};
 use crate::console::traits::{TerminalBackend, TranscodeBackend, AdvancedTerminalBackend, UserControllableBackend, UserControlMessage, LogToFileBackend};
 
-const LOG_JOURNAL_MAX_LINES: usize = 20;
+pub const LOG_JOURNAL_MAX_LINES: usize = 20;
 const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
 
 
+/// `tui`-based terminal UI implementation of a terminal backend.
+/// Supports all available terminal backend "extensions", meaning it can be used as a backend
+/// for transcoding.
 pub struct TUITerminalBackend {
     /// `tui::Terminal`, which is how we interact with the terminal and build a terminal UI.
     terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
     
+    /// If `Some`, `log_file_output` contains the buffered writer of the log file
+    /// (writing to this writer will write the content to the log file).
     log_file_output: Option<Mutex<BufWriter<Writer<File>>>>,
     
     /// An end cursor position we save in setup - this allows us to restore the
@@ -53,6 +58,8 @@ pub struct TUITerminalBackend {
     /// signal to the render thread that it should stop.
     render_thread_channel: Option<Sender<()>>,
     
+    /// This optionally contains the `Receiver` pair of the user control channel
+    /// (essentially a message channel for user keybinds).
     user_control_receiver: Option<Receiver<UserControlMessage>>,
     
     /// Houses non-terminal-organisation related data - this is precisely
@@ -61,6 +68,8 @@ pub struct TUITerminalBackend {
 }
 
 impl TUITerminalBackend {
+    /// Initialize a new `tui`-based terminal backend.
+    /// If an error occurs while initializing `tui::Terminal`, `Err` is returned.
     pub fn new() -> Result<Self> {
         let terminal = Terminal::new(CrosstermBackend::new(stdout()))
             .into_diagnostic()?;
@@ -77,6 +86,7 @@ impl TUITerminalBackend {
         })
     }
     
+    /// A private method for locking the terminal state and returning the locked data.
     fn lock_state(&self) -> MutexGuard<TerminalUIState> {
         self.state.lock().unwrap()
     }
@@ -88,8 +98,7 @@ impl TUITerminalBackend {
         
         let current_log_count = state.log_journal.len();
         if current_log_count > LOG_JOURNAL_MAX_LINES {
-            let logs_to_prune = current_log_count - LOG_JOURNAL_MAX_LINES;
-            state.log_journal.drain(0..logs_to_prune - 1);
+            state.log_journal.drain(current_log_count - LOG_JOURNAL_MAX_LINES..);
         }
     }
     
@@ -186,7 +195,7 @@ impl TUITerminalBackend {
         let queue_libraries_styles = ListItemStyleRules {
             item_pending_style: Style::default().fg(Color::DarkGray),
             item_in_progress_style: Style::default().fg(Color::Indexed(176)), // Plum3 (#d787d7)
-            item_finished_ok_style: Style::default().fg(Color::Indexed(119)), // LightGreen (#87ff5f)
+            item_finished_ok_style: Style::default().fg(Color::Indexed(65)), // DarkSeaGreen4 (#5f875f)
             item_finished_not_ok_style: Style::default().fg(Color::Indexed(119)), // LightGreen (#87ff5f
             leading_completed_items_style: Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
             trailing_hidden_pending_items_style: Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
@@ -221,9 +230,8 @@ impl TUITerminalBackend {
                     Block::default()
                         .title(
                             Span::styled(
-                                "Libraries",
+                                " Libraries ",
                                 Style::default()
-                                    .fg(Color::Indexed(104)) //  MediumPurple (#8787d7)
                                     .add_modifier(Modifier::BOLD)
                             )
                         )
@@ -246,9 +254,8 @@ impl TUITerminalBackend {
                     Block::default()
                         .title(
                             Span::styled(
-                                "Albums",
+                                " Albums ",
                                 Style::default()
-                                    .fg(Color::Indexed(117)) // SkyBlue1 (#87d7ff)
                                     .add_modifier(Modifier::BOLD)
                             )
                         )
@@ -283,7 +290,7 @@ impl TUITerminalBackend {
             }
             
             let file_queue_description = format!(
-                "({} waiting, {} working, {} finished, {} failed)",
+                "({} waiting, {} working, {} finished, {} failed) ",
                 pending_item_count,
                 in_progress_item_count,
                 finished_ok_item_count,
@@ -296,7 +303,7 @@ impl TUITerminalBackend {
                         .title(
                             Spans(vec![
                                 Span::styled(
-                                    "Files ",
+                                    " Files ",
                                     Style::default()
                                         .fg(Color::Indexed(139)) // Grey63 (#af87af)
                                         .add_modifier(Modifier::BOLD)
@@ -321,11 +328,16 @@ impl TUITerminalBackend {
                 .block(
                     Block::default()
                         .title(
-                            format!(
-                                "Progress ({}/{})",
-                                progress.current,
-                                progress.total,
-                            )
+                            Spans(vec!(
+                                Span::styled(
+                                    " Progress",
+                                    Style::default()
+                                        .add_modifier(Modifier::BOLD)
+                                ),
+                                Span::raw(
+                                    format!(" ({}/{}) ", progress.current, progress.total)
+                                )
+                            ))
                         )
                         .borders(Borders::ALL)
                         .title_alignment(Alignment::Left)
@@ -343,7 +355,7 @@ impl TUITerminalBackend {
             let empty_progress_bar = Block::default()
                 .title(
                     Span::styled(
-                        "Progress (inactive)",
+                        " Progress (inactive) ",
                         Style::default()
                             .add_modifier(Modifier::ITALIC)
                     )
@@ -356,11 +368,10 @@ impl TUITerminalBackend {
         
         
         // 3. Logs
-        // TODO Fix this generating 2 lines too many, resulting in improper display.
         let log_lines_visible_count = min(area_logs.height as usize - 2, state.log_journal.len());
         
         let mut logs_list_items: Vec<ListItem> = Vec::with_capacity(log_lines_visible_count);
-        for log in state.log_journal.range(state.log_journal.len() - log_lines_visible_count..) {
+        for log in state.log_journal.range(0..log_lines_visible_count).rev() {
             logs_list_items.push(
                 ListItem::new(
                     log
@@ -368,14 +379,14 @@ impl TUITerminalBackend {
                         .expect("Could not convert str into tui::Text.")
                 )
             );
-        }
+        };
         
         let logs = List::new(logs_list_items)
             .block(
                 Block::default()
                     .title(
                         Span::styled(
-                            "Logs",
+                            " Logs ",
                             Style::default()
                                 .add_modifier(Modifier::BOLD)
                         )
@@ -408,7 +419,7 @@ impl TUITerminalBackend {
                 Block::default()
                     .title(
                         Span::styled(
-                            "Keybinds",
+                            " Keybinds ",
                             Style::default()
                                 .add_modifier(Modifier::BOLD)
                         )
@@ -604,7 +615,7 @@ impl LogBackend for TUITerminalBackend {
         // Part 1: add log line to terminal UI.
         {
             let mut state = self.lock_state();
-            state.log_journal.push_back("\n".to_string());
+            state.log_journal.push_front("\n".to_string());
         }
         
         self.trim_log_journal();
@@ -644,10 +655,10 @@ impl LogBackend for TUITerminalBackend {
                         .collect::<Vec<String>>();
                     
                     for chunk in chunks {
-                        state.log_journal.push_back(chunk);
+                        state.log_journal.push_front(chunk);
                     }
                 } else {
-                    state.log_journal.push_back(line.to_string());
+                    state.log_journal.push_front(line.to_string());
                 }
             };
         }

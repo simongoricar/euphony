@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use crate::console::backends::fancy::terminal::LOG_JOURNAL_MAX_LINES;
 use crate::console::backends::shared::{ProgressState, QueueState};
 
 /// Container of entire fancy terminal UI state, and precisely the state required
@@ -19,7 +20,7 @@ impl TerminalUIState {
         Self {
             queue_state: None,
             progress: None,
-            log_journal: VecDeque::default(),
+            log_journal: VecDeque::with_capacity(LOG_JOURNAL_MAX_LINES),
         }
     }
 }

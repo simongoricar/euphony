@@ -8,7 +8,7 @@ use miette::Result;
 
 use crate::configuration::Config;
 use crate::console::{TerminalBackend, AdvancedTerminalBackend};
-use crate::console::backends::{BareConsoleBackend, TUITerminalBackend};
+use crate::console::backends::{BareTerminalBackend, TUITerminalBackend};
 use crate::console::utilities::term_println_tltb;
 use crate::globals::VERBOSE;
 
@@ -130,11 +130,14 @@ fn get_configuration(args: &CLIArgs) -> Config {
 
 /// Initializes and returns a boxed terminal backend.
 /// If `use_bare` is true, this will return `BareConsoleBackend`, otherwise `TUITerminalBackend`.
+///
+/// `TUITerminalBackend` has a better and dynamic terminal UI, but is harder to debug or properly log still down.
+/// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console.
 fn get_terminal_backend(
     use_bare: bool
 ) -> Box<dyn AdvancedTerminalBackend> {
     if use_bare {
-        Box::new(BareConsoleBackend::new())
+        Box::new(BareTerminalBackend::new())
     } else {
         Box::new(TUITerminalBackend::new().expect("Could not create TUI terminal backend."))
     }
@@ -159,9 +162,11 @@ fn process_cli_command(
         }
         
         match commands::cmd_transcode_all(config, terminal.deref_mut()) {
-            Ok(_) => {
-                terminal.log_newline();
-                term_println_tltb(terminal.deref_mut(), "Transcoding finished.".green().italic());
+            Ok(final_message) => {
+                term_println_tltb(
+                    terminal.deref_mut(),
+                    final_message,
+                );
     
                 terminal
                     .destroy()
@@ -170,7 +175,6 @@ fn process_cli_command(
                 Ok(())
             },
             Err(error) => {
-                terminal.log_newline();
                 term_println_tltb(
                     terminal.deref_mut(),
                     error.to_string().red(),
@@ -184,7 +188,7 @@ fn process_cli_command(
             }
         }
     } else if args.command == CLICommand::ValidateAll {
-        let mut bare_terminal = BareConsoleBackend::new();
+        let mut bare_terminal = BareTerminalBackend::new();
     
         bare_terminal.setup()
             .expect("Could not set up bare console backend.");
@@ -195,7 +199,7 @@ fn process_cli_command(
         Ok(())
         
     } else if let CLICommand::ValidateLibrary(validation_args) = args.command {
-        let mut bare_terminal = BareConsoleBackend::new();
+        let mut bare_terminal = BareTerminalBackend::new();
     
         bare_terminal.setup()
             .expect("Could not set up bare console backend.");
@@ -206,7 +210,7 @@ fn process_cli_command(
         Ok(())
         
     } else if args.command == CLICommand::ShowConfig {
-        let mut bare_terminal = BareConsoleBackend::new();
+        let mut bare_terminal = BareTerminalBackend::new();
         
         bare_terminal.setup()
             .expect("Could not set up bare console backend.");
@@ -217,7 +221,7 @@ fn process_cli_command(
         Ok(())
         
     } else if args.command == CLICommand::ListLibraries {
-        let mut bare_terminal = BareConsoleBackend::new();
+        let mut bare_terminal = BareTerminalBackend::new();
     
         bare_terminal.setup()
             .expect("Could not set up bare console backend.");
