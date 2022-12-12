@@ -8,50 +8,51 @@
 > Considering you're here you might've encountered the same :). Before I describe the inner workings of euphony here's a quick outline of why and how.
 >
 > In my case, portable file organisation became a problem relatively quickly: let's say most of your music library is lossless, though some of it is lossy.
-> In the above case, you either:
-> -> have it both lossless or lossy in the same folder (e.g. organized by artist, then by album), or,
-> -> separate lossless and lossy folders (each one again organized by artist, then by album or similarly) or possibly even something more complicated.
+> In the above case, you could:  
+> -> have both lossless and lossy files in the same folder (e.g. organized by artist, then by album, then whatever quality you have or that album), or,  
+> -> separate lossless and lossy folders (each one again organized by artist, then by album, etc.).  
 >
 > If you only listen on one device, none of those approaches are likely to pose a huge problem. However, for multi-device users,
 > this quickly becomes both a storage and a deduplication nightmare.
-> Ideally, you'd want to maintain the original library as they were (be it one or more folders like described above), 
+> Ideally, you'd want to maintain the original library or libraries as they were (be it one or more folders like described above), 
 > but still have a separate (*aggregated*, if you will) version of the entire original library that contains all the files from all the
-> sublibraries transcoded down to a more manageable size, ready for on-the-go listening.
+> libraries transcoded down to a more manageable size, ready to be copied somewhere else for on-the-go listening.
 >
-> **`euphony` was written to solve this problem efficiently.**
+> **This is the problem `euphony` was written to solve.**
 
-Euphony's philosophy acknowledges that you might have split your library into smaller chunks: one directory for lossless, one for lossy audio, one for a specific
-collection, etc. It does not force you to have multiple "sub"-libraries, it works just as well with a single one. 
+Euphony's philosophy acknowledges that you *might* have split your library into smaller chunks: one directory for lossless, one for lossy audio, one for a specific
+collection, etc. It does not force you to have multiple libraries, it works just as well with a single one. 
 However, as described in the preamble, this philosophy also acknowledges that you might want to take the library with you on the go, 
 something that is hard to do when a part of your library contains possibly huge lossless files. Again, the obvious solution is to transcode
-your library down to something like MP3 V0 and copy that version of the library to your portable devices.
+your library down to something like MP3 V0 and copy that version of the library to your portable devices. 
+Still, this is a tedious process that is prone to forgetfullness or other human errors.
 
-Here's how euphony automates this transcoding process:
-- *you register a list of "sub"-libraries* that contain the same basic folder structure (one directory per artist containing one directory per album),
-- you may opt to *validate the library for any collisions* first (see the `validate` command) so you don't accidentally store two copies of the same album in two separate sub-libraries,
-- when you wish to assemble your entire music library into a smaller single-folder transcoded copy, you run the `transcode` command, 
-  which takes all of your sub-libraries with original files and transcodes everything into MP3 V0 (by default), putting the resulting files into the transcoded 
-  library - this is the library that you take with you on the go.
+Here's how euphony automates the transcoding process:
+- *you register a list of libraries* that contain the same basic folder structure (one directory per artist containing one directory per album, see example below),
+- you may opt to *validate the library for any collisions* first (see the `validate` command) so you don't accidentally store two copies of the same album in two separate libraries 
+  (this would cause a problem as it becomes unclear on which version of the album to transcode),
+- when you wish to assemble (i.e. transcode) your entire music library into a smaller single-folder transcoded copy, you run the `transcode` command, 
+  which takes all of your libraries containing original files and transcodes everything into MP3 V0 (by default), putting the resulting files into the 
+  *transcoded library* - this is the directory that you take with you on the go.
 
-As mentioned, audio files are transcoded into MP3 V0 in the process. I've chosen MP3 V0 for now due to a 
+As mentioned, audio files are transcoded into MP3 V0 in the process by default. I've chosen MP3 V0 for now due to a 
 good tradeoff between space on disk and quality (V0 is pretty much transparent anyway and should be more than enough for on-the-go listening, and you *still* have the original files).
-For transcoding efficiency euphony also stores minimal metadata about each album's contents in a file called `.album.euphony` (stored inside each source album's folder).
+For transcoding efficiency, `euphony` also stores minimal metadata about each album's contents in a file called `.album.euphony` (stored inside each source album's folder).
 This is done to understand which files have and haven't changed, so we can skip most of the library the next time you request transcoding of your library after having added a single new album. 
-Implementation details of this detection are available below.
+Implementation details of this change detection are available below.
 
 ### Note
-**Importantly, euphony *does not* organise your (original) audio files** - for this job [MusicBrainz Picard](https://picard.musicbrainz.org/) 
-is a good full-featured tagger (just a recommendation); it is several magnitudes better and more flexible than this project could ever achieve had it opted to include that functionality. 
-You may even opt to use [Beets](https://beets.readthedocs.io/en/stable/) for most tasks regarding source library organisation.
+**Importantly, euphony *does not* organise your original audio files** - for this job tools like [MusicBrainz Picard](https://picard.musicbrainz.org/) (just a recommendation) should be used.
+You may even opt to use the even more advanced [Beets](https://beets.readthedocs.io/en/stable/) software for most organizing your source library or libraries.
 
 **Regardless, `euphony`'s place in my (and maybe your) music library toolset is well-defined: 
-a CLI for *validating* your library and *managing transcodes* for on-the-go listening quickly and efficiently.**  
+a CLI for *validating* one's library and *managing transcodes* for on-the-go listening quickly and painlessly.**  
 
 ---
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/DefaultSimon/euphony/master/assets/euphony-v1.2.0-demo.gif" width="90%" height="auto">
-  <div>Short demo of the transcoding process.</div>
+  <div>Quick demo of the transcoding process ("transcode" command).</div>
 </div>
 
 ---
@@ -199,7 +200,7 @@ The files will be MP3 V0 by default (changing this should be reasonably easy - s
 To make sure we don't have to transcode or copy all the files again when changing a single one, 
 euphony stores a special file in the root directory of each **album** called `.album.euphony`.
 
-The contents of the file a JSON document, similar to this one:
+The contents of the file are in JSON, similar to the example below:
 ```json5
 {
   // All tracked files in the directory are listed here. 
