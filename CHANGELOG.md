@@ -1,5 +1,7 @@
 1.2.0
-- Fixed: `transcode-*` commands now respect the `ignored_directories_in_base_dir` option.
+- Added: a whole new dynamic terminal UI (built with `tui`) which creates a much better visualization of the processing being done
+- Changed: removed barely-used transcoding commands, renamed `transcode-all` to `transcode` and `validate-all` to `validate`.
+- Fixed: `transcode` command now respects the `ignored_directories_in_base_dir` option.
 - Fixed: `show-config` now also shows the `ignored_directories_in_base_dir` option for each library.
 
 1.1.0

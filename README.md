@@ -50,7 +50,7 @@ a CLI for *validating* your library and *managing transcodes* for on-the-go list
 ---
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/DefaultSimon/euphony/master/assets/euphony-short-demo.gif" width="90%" height="auto">
+  <img src="https://raw.githubusercontent.com/DefaultSimon/euphony/master/assets/euphony-v1.2.0-demo.gif" width="90%" height="auto">
   <div>Short demo of the transcoding process.</div>
 </div>
 
@@ -159,34 +159,30 @@ Run `euphony` with the `--help` option to get all available commands and their s
 Euphony is an opinionated music library transcode manager that allows the user to retain high quality audio files in multiple separate libraries while also enabling the listener to transcode their library wi
 th ease into a smaller format (MP3 V0) to take with them on the go. For more info, see the README file in the repository.
 
-Usage: euphony.exe [OPTIONS] <COMMAND>
+Usage: euphony [OPTIONS] <COMMAND>
 
-  Commands:
-    transcode
+Commands:
+  transcode
       Transcode all registered libraries into the aggregated (transcoded) library. [aliases: transcode-all]
-    validate
-      Validate all the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems when aggregating (transcoding), etc. 
-      [aliases: validate-all]
-    validate-library
+  validate
+      Validate all the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems when aggregating (transcoding), etc. [aliases: validate-all]
+  validate-library
       Validate a specific library for inconsistencies, such as forbidden files.
-    show-config
+  show-config
       Loads, validates and prints the current configuration from `./data/configuration.toml`.
-    list-libraries
+  list-libraries
       List all the registered libraries.
-    help
+  help
       Print this message or the help of the given subcommand(s)
 
-  Options:
-    -c, --config <CONFIG>
-      Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might not always be the most convenient location.
-  
-    -v, --verbose
+Options:
+  -c, --config <CONFIG>
+      Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might not always be the most convenient location.        
+  -v, --verbose
       Increase the verbosity of output.
-  
-    -h, --help
+  -h, --help
       Print help information (use `-h` for a summary)
-  
-    -V, --version
+  -V, --version
       Print version information
 ```
 
