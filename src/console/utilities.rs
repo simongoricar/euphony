@@ -19,7 +19,7 @@ pub fn term_println_tltb<T: Display>(
 /// Due to rust's trait upcasting being unstable, this version of the
 /// method operates on `SimpleTerminalBackend`s.
 #[inline]
-pub fn term_println_ltb<T: Display>(
+pub fn term_println_stb<T: Display>(
     terminal: &dyn SimpleTerminalBackend,
     content: T,
 ) {

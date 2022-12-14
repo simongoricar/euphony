@@ -2,10 +2,9 @@ use crossterm::style::Stylize;
 
 use crate::configuration::Config;
 use crate::console::SimpleTerminalBackend;
-use crate::console::utilities::term_println_ltb;
+use crate::console::utilities::term_println_stb;
 
 /// Generic abstraction over `LogBackend::log_println` for printing headers.
-#[inline]
 fn terminal_print_group_header<S: AsRef<str>>(
     terminal: &dyn SimpleTerminalBackend,
     header: S,
@@ -16,7 +15,7 @@ fn terminal_print_group_header<S: AsRef<str>>(
     let left_padding = total_padding / 2;
     let right_padding = total_padding - left_padding;
     
-    term_println_ltb(
+    term_println_stb(
         terminal,
         format!(
             "|----- {}{:^12}{} -----|",
@@ -34,7 +33,7 @@ pub fn cmd_show_config(
     // Binds a few short functions to the current terminal,
     // allowing for a zero- or single-argument calls that print the header, a simple log line, etc.
     let term_print_header = |content: &str| terminal_print_group_header(terminal, content);
-    let term_println = |content: &str| term_println_ltb(terminal, content);
+    let term_println = |content: &str| term_println_stb(terminal, content);
     let term_newline = || terminal.log_newline();
     
     term_println(
@@ -155,7 +154,7 @@ pub fn cmd_list_libraries(
 ) {
     // Binds a few short functions to the current terminal,
     // allowing for a zero- or single-argument calls that print the header, a simple log line, etc.
-    let term_println = |content: &str| term_println_ltb(terminal, content);
+    let term_println = |content: &str| term_println_stb(terminal, content);
     let term_newline = || terminal.log_newline();
     
     term_println(

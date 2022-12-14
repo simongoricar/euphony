@@ -6,7 +6,7 @@ use miette::{Context, IntoDiagnostic, miette, Result};
 
 use crate::commands::validation::collisions::CollisionAudit;
 use crate::console::SimpleTerminalBackend;
-use crate::console::utilities::term_println_ltb;
+use crate::console::utilities::term_println_stb;
 
 use super::super::configuration::{Config, ConfigLibrary};
 use super::super::filesystem as mfs;
@@ -186,8 +186,8 @@ pub fn cmd_validate_all(
     config: &Config,
     terminal: &mut dyn SimpleTerminalBackend,
 ) -> bool {
-    term_println_ltb(terminal, "Validating all libraries.");
-    term_println_ltb(terminal, "-- Step 1: file types --");
+    term_println_stb(terminal, "Validating all libraries.");
+    term_println_stb(terminal, "-- Step 1: file types --");
 
     let mut collision_auditor = CollisionAudit::new();
 
@@ -197,7 +197,7 @@ pub fn cmd_validate_all(
     // 1/2: Check for unexpected files.
     for library in config.libraries.values() {
         terminal.log_newline();
-        term_println_ltb(
+        term_println_stb(
             terminal,
             format!("Library: {}", library.name)
         );
@@ -205,7 +205,7 @@ pub fn cmd_validate_all(
         let validation = match validate_library(config, library, &mut collision_auditor) {
             Ok(validation) => validation,
             Err(error) => {
-                term_println_ltb(
+                term_println_stb(
                     terminal,
                     format!(
                         "❗ {} {}",
@@ -219,14 +219,14 @@ pub fn cmd_validate_all(
 
         match validation {
             LibraryValidationResult::Valid => {
-                term_println_ltb(terminal, "☑ Library valid!".green().bold());
+                term_println_stb(terminal, "☑ Library valid!".green().bold());
             },
             LibraryValidationResult::Invalid { invalid_file_messages } => {
                 has_unexpected_files = true;
     
-                term_println_ltb(terminal, "❌ Invalid entries!".red().bold());
+                term_println_stb(terminal, "❌ Invalid entries!".red().bold());
                 for (index, err) in invalid_file_messages.iter().enumerate() {
-                    term_println_ltb(
+                    term_println_stb(
                         terminal,
                         format!("  {}. {}", index + 1, err)
                     );
@@ -238,16 +238,16 @@ pub fn cmd_validate_all(
     }
 
     terminal.log_newline();
-    term_println_ltb(terminal, "-- Step 2: album collisions between libraries --");
+    term_println_stb(terminal, "-- Step 2: album collisions between libraries --");
     terminal.log_newline();
 
     if collision_auditor.has_collisions() {
         has_collisions = true;
     
-        term_println_ltb(terminal, "❌ Found collisions!".red().bold());
+        term_println_stb(terminal, "❌ Found collisions!".red().bold());
 
         for collision in collision_auditor.collisions {
-            term_println_ltb(
+            term_println_stb(
                 terminal,
                 format!(
                     "Libraries: {} and {}: {} {}.",
@@ -263,7 +263,7 @@ pub fn cmd_validate_all(
         }
 
     } else {
-        term_println_ltb(terminal, "☑ No collisions.".green().bold());
+        term_println_stb(terminal, "☑ No collisions.".green().bold());
     }
 
     terminal.log_newline();
@@ -278,7 +278,7 @@ pub fn cmd_validate_library<S: AsRef<str>>(
     let library = match config.get_library_by_full_name(library_name.as_ref()) {
         Some(library) => library,
         None => {
-            term_println_ltb(
+            term_println_stb(
                 terminal,
                 format!(
                     "{} {}",
@@ -290,7 +290,7 @@ pub fn cmd_validate_library<S: AsRef<str>>(
         }
     };
     
-    term_println_ltb(
+    term_println_stb(
         terminal,
         format!(
             "Validating library: {}.",
@@ -303,7 +303,7 @@ pub fn cmd_validate_library<S: AsRef<str>>(
     let library_validation = match validate_library(config, library, &mut unused_collision_auditor) {
         Ok(validation) => validation,
         Err(error) => {
-            term_println_ltb(
+            term_println_stb(
                 terminal,
                 format!(
                     "{} {}",
@@ -318,15 +318,15 @@ pub fn cmd_validate_library<S: AsRef<str>>(
 
     match library_validation {
         LibraryValidationResult::Valid => {
-            term_println_ltb(terminal, "☑ Library valid.".green().bold());
+            term_println_stb(terminal, "☑ Library valid.".green().bold());
             terminal.log_newline();
 
             true
         },
         LibraryValidationResult::Invalid { invalid_file_messages } => {
-            term_println_ltb(terminal, "❌ Invalid entries!".red().bold());
+            term_println_stb(terminal, "❌ Invalid entries!".red().bold());
             for (index, err) in invalid_file_messages.iter().enumerate() {
-                term_println_ltb(
+                term_println_stb(
                     terminal,
                     format!("  {}. {}", index + 1, err)
                 );

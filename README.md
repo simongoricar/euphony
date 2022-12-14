@@ -81,7 +81,7 @@ Any other library structure will almost certainly fail with `euphony`.
 
 ## 2. Installation
 Prerequisites for installation:
-- [Rust](https://www.rust-lang.org/),
+- [Rust](https://www.rust-lang.org/) (minimal supported version as of v1.2 is `1.61.1`),
 - a [copy of ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
 
 Clone (or download) the repository to your local machine, then move into the directory of the project and do the following:
@@ -112,6 +112,8 @@ it should be just next to the binary in a folder called `tools`. Adapt the `tool
 configuration file to a path to the ffmpeg binary.
 
 Change any other configuration values you haven't yet, then save. **You're ready!**
+
+---
 
 ### 3.1. Advanced usage: `.album.override.euphony` per-album files
 > This is an advanced feature.
@@ -154,6 +156,8 @@ disc in a separate directory, like so:
 In this case you may create an `.album.override.euphony` file inside the album directory and set the `depth` setting to `1`.
 This will make euphony scan one directory deeper, catching and transcoding your per-disc audio files.
 
+---
+
 
 ## 4. Usage
 Run `euphony` with the `--help` option to get all available commands and their short explanations:
@@ -189,6 +193,8 @@ Options:
 ```
 
 For more info about each individual command, run `euphony <command-name> --help`.
+
+---
 
 ### 4.1 About transcoding ("aggregation")
 Using the `transcode` command will attempt to transcode (also called aggregate) the entire music library 
