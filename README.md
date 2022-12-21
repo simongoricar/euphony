@@ -60,23 +60,80 @@ a CLI for *validating* one's library and *managing transcodes* for on-the-go lis
 
 ## 1. Library structure
 Having the library structure be configurable would get incredibly complex very quickly, so `euphony` expects the user
-to have the following exact structure in each sub-library:
+to have the following exact structure in each library:
 
 ```markdown
-  <library directory>
+  <base library directory>
+  |
   |-- <artist directory>
+  |   |
+  |   |  [possibly some album-related README, logs, whatever else, etc.]
+  |   |  (settings for other files (see below) apply here as well)
+  |   |
   |   |-- <album directory>
-  |   |   |-- <... audio files, any extensions that you allow (see per-library configuration)>
-  |   |   |-- <... optionally, cover art>
-  |   |   |-- <... optionally, some album-related README, logs, etc.>
-  |   |   |-- <... optionally, other subdirectories that don't really matter for this purpose (they are ignored by default)>
-  |   |   |   [the second two are examples, euphony will allow whatever you set in the validation configuration]
-  |   |-- <... possibly some artist-related README, etc. (whatever you allow in the validation configuration table)>
-  | [other artist directories ...]
-  | [other files (again, whichever types/names you allow in the validation configuration) ...]
+  |   |   |
+  |   |   | ... [audio files]
+  |   |   |     (whichever types you allow inside each library's configuration, see `allowed_audio_files_by_extension`)
+  |   |   |
+  |   |   | ... [cover art]
+  |   |   | ... [some album-related README, logs, whatever else, etc.]
+  |   |   |     (settings for other files (see below) apply here as well)
+  |   |   |
+  |   |   | ... <possibly other directories that don't really matter for transcoding>s
+  |   |   |     (album subdirectories are ignored by default, see `depth` in per-album configuration)
+  |
+  |-- <any directory (directly in the library directory) that has been ignored>
+  |   (it is sometimes useful to have additional directories inside your library that are
+  |    not artist directories, but instead contain some miscellaneous files (e.g. temporary files) you don't want to
+  |    transcode - these directories can be ignored for each individual library using `ignored_directories_in_base_dir`)
+  |
+  | ... [other files]
+  |     (of whatever type or name you allow in the configuration, see
+  |      `allowed_other_files_by_extension` and `allowed_other_files_by_name` - these settings
+  |      apply also to artist and album directories below)
+```  
+
+Take this example:
+```markdown
+  LosslessLibrary
+  |
+  | LOSSLESS_README.txt
+  |
+  |-- Aindulmedir
+  |   |-- The Lunar Lexicon
+  |   |   | 01 Aindulmedir - Wind-Bitten.flac
+  |   |   | 02 Aindulmedir - Book of Towers.flac
+  |   |   | 03 Aindulmedir - The Librarian.flac
+  |   |   | 04 Aindulmedir - Winter and Slumber.flac
+  |   |   | 05 Aindulmedir - The Lunar Lexicon.flac
+  |   |   | 06 Aindulmedir - Snow Above Blue Fire.flac
+  |   |   | 07 Aindulmedir - Sleep-Form.flac
+  |   |   | cover.jpg
+  |
+  |-- _other
+  |   | some_other_metadata_or_something.db
 ```
 
-Any other library structure will almost certainly fail with `euphony`.
+In the example above, there exists a lossless library by the name of LosslessLibrary.
+For this to validate correctly, this library would require the following configuration:
+- its `allowed_audio_files_by_extension` should be set to `["flac"]`,
+- its `ignored_directories_in_base_dir` should be set to `["_other"]`,
+- the global setting `allowed_other_files_by_extension` should include `txt` (which it does by default).
+
+Visually (ignoring the last global setting) this would mean the following library configuration:
+```toml
+[libraries.lossless_private]
+name = "Losless"
+path = "..../LosslessLibrary"
+allowed_audio_files_by_extension = ["flac"]
+ignored_directories_in_base_dir = ["_other"]
+```
+
+Specifying the files to transcode or copy is not directly linked to validation! See
+`tracked_audio_extensions` and `tracked_other_extensions`, which dictate which
+extensions are transcoded and which are copied when running the `transcode` command.
+
+> **NOTE: Any other library structure will almost certainly fail with `euphony`.**
 
 
 ## 2. Installation
