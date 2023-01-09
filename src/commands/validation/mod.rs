@@ -54,10 +54,10 @@ impl<'a> ValidationError<'a> {
 }
 
 pub enum UnexpectedFileType {
-    LibraryRootFile,
-    ArtistDirectoryFile,
-    AlbumDirectoryAudioFile,
-    AlbumDirectoryOtherFile,
+    LibraryRoot,
+    ArtistDirectory,
+    AlbumDirectoryAudio,
+    AlbumDirectoryOther,
 }
 
 pub struct UnexpectedFile<'a> {
@@ -108,10 +108,10 @@ impl<'a> ValidationErrorDisplay for UnexpectedFile<'a> {
         
         Ok(ValidationErrorInfo::new(
             match self.reason {
-                UnexpectedFileType::LibraryRootFile => "Unexpected file in library root.",
-                UnexpectedFileType::ArtistDirectoryFile => "Unexpected file in artist directory.",
-                UnexpectedFileType::AlbumDirectoryAudioFile => "Unexpected audio file in album directory.",
-                UnexpectedFileType::AlbumDirectoryOtherFile => "Unexpected data file in album directory.",
+                UnexpectedFileType::LibraryRoot => "Unexpected file in library root.",
+                UnexpectedFileType::ArtistDirectory => "Unexpected file in artist directory.",
+                UnexpectedFileType::AlbumDirectoryAudio => "Unexpected audio file in album directory.",
+                UnexpectedFileType::AlbumDirectoryOther => "Unexpected data file in album directory.",
             },
             attributes,
         ))
@@ -454,7 +454,7 @@ fn validate_entire_collection(
                     ValidationError::new_unexpected_file(
                         file_path,
                         library,
-                        UnexpectedFileType::LibraryRootFile,
+                        UnexpectedFileType::LibraryRoot,
                     )
                 )
             }
@@ -487,7 +487,7 @@ fn validate_entire_collection(
                         ValidationError::new_unexpected_file(
                             file_path,
                             library,
-                            UnexpectedFileType::ArtistDirectoryFile,
+                            UnexpectedFileType::ArtistDirectory,
                         )
                     )
                 }
@@ -518,7 +518,7 @@ fn validate_entire_collection(
                             ValidationError::new_unexpected_file(
                                 file_path,
                                 library,
-                                UnexpectedFileType::AlbumDirectoryAudioFile,
+                                UnexpectedFileType::AlbumDirectoryAudio,
                             )
                         )
                     } else if !is_valid_other_file(&file_path) {
@@ -527,14 +527,14 @@ fn validate_entire_collection(
                             ValidationError::new_unexpected_file(
                                 file_path,
                                 library,
-                                UnexpectedFileType::AlbumDirectoryOtherFile,
+                                UnexpectedFileType::AlbumDirectoryOther,
                             )
                         )
                     }
                 }
                 
                 // TODO Implement depth config that is available per-album.
-                //      At this moment it only matters in transcoding, and it is ignored during validation. This can (and will) make validation miss nested files.
+                //      At this moment it only matters in transcoding and is ignored during validation. This can (and will) make validation miss nested files.
                 
                 // TODO Refactor this code to avoid such deep nesting.
             }
@@ -545,7 +545,7 @@ fn validate_entire_collection(
     validation_errors.extend(
         collision_validator.get_collisions()?
             .into_iter()
-            .map(|collision| ValidationError::AlbumCollision(collision))
+            .map(ValidationError::AlbumCollision)
     );
     
     // Validation process complete, display the results.

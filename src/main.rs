@@ -7,7 +7,7 @@ use crossterm::style::Stylize;
 use miette::Result;
 
 use crate::configuration::Config;
-use crate::console::{TerminalBackend, AdvancedTranscodeTerminalBackend};
+use crate::console::{TerminalBackend, AdvancedTranscodeTerminalBackend, LogToFileBackend};
 use crate::console::backends::{BareTerminalBackend, TUITerminalBackend};
 use crate::console::utilities::{term_println_attb, term_println_fvb};
 use crate::globals::VERBOSE;
@@ -24,31 +24,29 @@ mod console;
 enum CLICommand {
     #[command(
         name = "transcode",
-        visible_aliases = ["transcode-all"],
-        about = "Transcode all registered libraries into the aggregated (transcoded) library."
+        visible_aliases = ["transcode-collection"],
+        about = "Transcode all libraries into the aggregated library."
     )]
     TranscodeAll(TranscodeAllArgs),
-    
-    // TODO Reimplement transcode-library and transcode-album with the new terminal backend.
 
     #[command(
         name = "validate",
-        visible_aliases = ["validate-all"],
-        about = "Validate all the available (sub)libraries for inconsistencies, such as \
+        visible_aliases = ["validate-collection"],
+        about = "Validate all the available libraries for inconsistencies, such as \
                  forbidden files, any inter-library collisions that would cause problems \
-                 when aggregating (transcoding), etc."
+                 when transcoding, etc."
     )]
-    ValidateAll,
+    ValidateAll(ValidateAllArgs),
 
     #[command(
         name = "show-config",
-        about = "Loads, validates and prints the current configuration from `./data/configuration.toml`."
+        about = "Loads, validates and prints the current configuration."
     )]
     ShowConfig,
 
     #[command(
         name = "list-libraries",
-        about = "List all the registered libraries."
+        about = "List all the registered libraries registered in the configuration."
     )]
     ListLibraries,
 }
@@ -72,11 +70,12 @@ struct TranscodeAllArgs {
 }
 
 #[derive(Args, Eq, PartialEq)]
-struct ValidateLibraryArgs {
+struct ValidateAllArgs {
     #[arg(
-        help = "Library to process (by full name)."
+        long = "log-to-file",
+        help = "Path to the log file. If this is unset, no logs are saved."
     )]
-    library_name: String,
+    log_to_file: Option<String>,
 }
 
 #[derive(Parser)]
@@ -85,15 +84,17 @@ struct ValidateLibraryArgs {
     author = "Simon G. <simon.peter.goricar@gmail.com>",
     about = "An opinionated music library transcode manager.",
     long_about = "Euphony is an opinionated music library transcode manager that allows the user to \
-                  retain high quality audio files in multiple separate libraries while also enabling \
-                  the listener to transcode their library with ease into a smaller format (MP3 V0) \
-                  to take with them on the go. For more info, see the README file in the repository.",
+                  retain high quality audio files in multiple separate libraries while also \
+                  helping to transcode their collection into a smaller format (MP3 V0). That smaller \
+                  version of the library can then be used on portable devices or similar occasions where space has a larger impact. \
+                  For more info, see the README file in the repository.",
     version
 )]
 struct CLIArgs {
     #[arg(
         short = 'c',
         long = "config",
+        global = true,
         help = "Optionally a path to your configuration file. Without this option, \
                 euphony tries to load ./data/configuration.toml, but understandably this \
                 might not always be the most convenient location."
@@ -181,16 +182,22 @@ fn process_cli_command(
                 Err(1)
             }
         }
-    } else if args.command == CLICommand::ValidateAll {
+    } else if let CLICommand::ValidateAll(args) = args.command {
         let mut bare_terminal = BareTerminalBackend::new();
     
         bare_terminal.setup()
             .expect("Could not set up bare console backend.");
+        
+        if let Some(log_file_path) = args.log_to_file {
+            bare_terminal.enable_saving_logs_to_file(PathBuf::from(log_file_path))
+                .map_err(|_| 1)?;
+        }
+        
         match commands::cmd_validate_all(config, &mut bare_terminal) {
             Ok(_) => {}
             Err(error) => {
                 term_println_fvb(
-                    &mut bare_terminal,
+                    &bare_terminal,
                     format!(
                         "{}: {}",
                         "Something went wrong while validating:".red(),
