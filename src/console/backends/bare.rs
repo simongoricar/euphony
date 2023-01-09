@@ -4,13 +4,14 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use crossbeam::channel::{never, Receiver};
+use crossterm::style::{Color, Stylize};
 
 use miette::{IntoDiagnostic, miette, Result};
 use strip_ansi_escapes::Writer;
 
-use crate::console::{LogBackend, SimpleTerminalBackend, TerminalBackend, TranscodeBackend, UserControlMessage};
+use crate::console::{FullValidationBackend, LogBackend, SimpleTerminalBackend, TerminalBackend, TranscodeBackend, UserControlMessage};
 use crate::console::backends::shared::{ProgressState, QueueItem, QueueItemFinishedState, QueueItemID, QueueState, QueueType};
-use crate::console::traits::{AdvancedTerminalBackend, LogToFileBackend, UserControllableBackend};
+use crate::console::traits::{AdvancedTranscodeTerminalBackend, LogToFileBackend, UserControllableBackend, ValidationBackend, ValidationErrorInfo};
 
 pub struct BareTerminalBackend {
     queue: Option<QueueState>,
@@ -241,6 +242,34 @@ impl TranscodeBackend for BareTerminalBackend {
     }
 }
 
+impl ValidationBackend for BareTerminalBackend {
+    fn validation_add_error(&self, error: ValidationErrorInfo) {
+        self.log_newline();
+        self.log_newline();
+        
+        let formatted_header = format!(
+            "{} {}",
+            "#".with(Color::AnsiValue(142)), // Gold3 (#afaf00)
+            error.header.bold()
+        );
+        let formatted_attributes = error.attributes
+            .iter()
+            .map(|(name, value)|
+                format!(
+                    "{}: {}",
+                    name.to_string().dark_grey(),
+                    value
+                )
+            )
+            .collect::<Vec<String>>()
+            .join("\n");
+        
+        self.log_println(Box::new(
+            format!("{}\n{}", formatted_header, formatted_attributes)
+        ));
+    }
+}
+
 impl UserControllableBackend for BareTerminalBackend {
     fn get_user_control_receiver(&mut self) -> Result<Receiver<UserControlMessage>> {
         Ok(never::<UserControlMessage>())
@@ -275,4 +304,5 @@ impl LogToFileBackend for BareTerminalBackend {
 }
 
 impl SimpleTerminalBackend for BareTerminalBackend {}
-impl AdvancedTerminalBackend for BareTerminalBackend {}
+impl FullValidationBackend for BareTerminalBackend {}
+impl AdvancedTranscodeTerminalBackend for BareTerminalBackend {}

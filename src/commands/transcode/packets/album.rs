@@ -6,13 +6,14 @@ use crate::cached::CachedValue;
 use crate::commands::transcode::directories::AlbumDirectoryInfo;
 use crate::commands::transcode::metadata::AlbumMetadata;
 use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
-use crate::configuration::Config;
+use crate::configuration::{Config, ConfigLibrary};
 
 /// Represents a grouping of file packets into a single album.
 /// Using this struct we can generate a list of file work packets in the album.
 #[derive(Clone)]
-pub struct AlbumWorkPacket {
-    pub album_info: AlbumDirectoryInfo,
+pub struct AlbumWorkPacket<'a> {
+    /// Album information (artist name, album title, source library).
+    pub album_info: AlbumDirectoryInfo<'a>,
 
     /// Contains a cached version of the metadata available on disk (if any).
     /// Generated on first access.
@@ -23,16 +24,24 @@ pub struct AlbumWorkPacket {
     cached_fresh_meta: CachedValue<AlbumMetadata>,
 }
 
-impl AlbumWorkPacket {
+impl<'a> AlbumWorkPacket<'a> {
     pub fn from_album_path<P: AsRef<Path>>(
         album_directory_path: P,
-        config: &Config,
-    ) -> Result<AlbumWorkPacket> {
-        let directory_info = AlbumDirectoryInfo::new(album_directory_path.as_ref(), config)?;
+        config: &'a Config,
+        library: &'a ConfigLibrary,
+    ) -> Result<AlbumWorkPacket<'a>> {
+        let directory_info = AlbumDirectoryInfo::new(
+            album_directory_path.as_ref(),
+            config,
+            library,
+        )?;
+        
         Ok(AlbumWorkPacket::from_album_info(directory_info))
     }
 
-    pub fn from_album_info(album_directory_info: AlbumDirectoryInfo) -> AlbumWorkPacket {
+    pub fn from_album_info(
+        album_directory_info: AlbumDirectoryInfo<'a>,
+    ) -> AlbumWorkPacket<'a> {
         AlbumWorkPacket {
             album_info: album_directory_info,
             cached_saved_meta: CachedValue::new(),
@@ -41,7 +50,8 @@ impl AlbumWorkPacket {
     }
 
     fn get_album_directory_path(&self) -> PathBuf {
-        let mut path = PathBuf::from(&self.album_info.library_path);
+        let mut path = PathBuf::from(&self.album_info.library.path);
+        
         path.push(&self.album_info.artist_name);
         path.push(&self.album_info.album_title);
 
@@ -64,7 +74,7 @@ impl AlbumWorkPacket {
         Ok(saved_meta)
     }
 
-    pub fn get_fresh_meta(&mut self, config: &Config) -> Result<AlbumMetadata> {
+    pub fn get_fresh_meta(&mut self) -> Result<AlbumMetadata> {
         if self.cached_fresh_meta.is_cached() {
             return Ok(self.cached_fresh_meta.get().clone());
         }
@@ -73,7 +83,7 @@ impl AlbumWorkPacket {
 
         let fresh_meta = AlbumMetadata::generate(
             &full_album_directory_path,
-            &config.file_metadata.tracked_extensions,
+            &self.album_info.library.transcoding.all_tracked_extensions
         )?;
         self.cached_fresh_meta.set(fresh_meta.clone());
 
@@ -84,7 +94,7 @@ impl AlbumWorkPacket {
         let saved_meta = self.get_saved_meta()?;
         
         if let Some(saved_meta) = saved_meta {
-            let fresh_meta = self.get_fresh_meta(config)?;
+            let fresh_meta = self.get_fresh_meta()?;
     
             let meta_diff = saved_meta.diff_with_fresh_or_missing_from_target_dir(
                 &fresh_meta,
@@ -106,7 +116,7 @@ impl AlbumWorkPacket {
 
         // Generate a fresh look at the files and generate a list of file packets from that.
         let saved_meta = self.get_saved_meta()?;
-        let fresh_meta = self.get_fresh_meta(config)?;
+        let fresh_meta = self.get_fresh_meta()?;
 
         let mut file_packets: Vec<FileWorkPacket> = Vec::new();
         
@@ -188,8 +198,8 @@ impl AlbumWorkPacket {
         Ok(file_packets)
     }
 
-    pub fn save_fresh_meta(&mut self, config: &Config, allow_overwrite: bool) -> Result<()> {
-        let fresh_meta = self.get_fresh_meta(config)?;
+    pub fn save_fresh_meta(&mut self, allow_overwrite: bool) -> Result<()> {
+        let fresh_meta = self.get_fresh_meta()?;
         fresh_meta.save(&self.get_album_directory_path(), allow_overwrite)?;
 
         Ok(())

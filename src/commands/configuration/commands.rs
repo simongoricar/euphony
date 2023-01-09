@@ -48,17 +48,27 @@ pub fn cmd_show_config(
     term_print_header("essentials");
     term_println(
         &format!(
-            "  base_library_path = {}",
+            "    base_library_path = {}",
             config.essentials.base_library_path,
         )
     );
     term_println(
         &format!(
-            "  base_tools_path = {}",
+            "    base_tools_path = {}",
             config.essentials.base_tools_path,
         )
     );
     term_newline();
+    
+    
+    // Validation (basics)
+    term_print_header("validation");
+    term_println(
+        &format!(
+            "    extensions_considered_audio_files = {:?}",
+            config.validation.extensions_considered_audio_files,
+        )
+    );
     
     
     // Tools
@@ -84,35 +94,18 @@ pub fn cmd_show_config(
     term_newline();
     
     
-    // Validation
-    term_print_header("validation");
-    term_println(
-        &format!(
-            "  allowed_other_files_by_extension = {:?}",
-            config.validation.allowed_other_files_by_extension,
-        )
-    );
-    term_println(
-        &format!(
-            "  allowed_other_files_by_name = {:?}",
-            config.validation.allowed_other_files_by_name,
-        )
-    );
-    term_newline();
-    
-    
     // Libraries
     term_print_header("libraries");
     
     for (library_key, library) in &config.libraries {
         term_println(
             &format!(
-                " => {} ({})",
-                library.name.clone().bold(),
+                "{} ({})",
+                format!(" => {}", library.name).bold(),
                 library_key,
             )
         );
-    
+        
         term_println(
             &format!(
                 "    path = \"{}\"",
@@ -121,19 +114,59 @@ pub fn cmd_show_config(
         );
         term_println(
             &format!(
-                "    allowed_audio_files_by_extension = {:?}",
-                &library.allowed_audio_files_by_extension,
+                "    ignored_directories_in_base_directory = {:?}",
+                library.ignored_directories_in_base_directory
+                    .as_ref()
+                    .unwrap_or(&Vec::new())
+            )
+        );
+        
+        // `validation` sub-table
+        term_println(
+            &format!(
+                "     => {}",
+                "validation".italic()
             )
         );
         term_println(
             &format!(
-                "    ignored_directories_in_base_dir = {}",
-                match &library.ignored_directories_in_base_dir {
-                    Some(ignores) => format!("{:?}", ignores),
-                    None => String::from("[]"),
-                },
+                "        allowed_audio_file_extensions = {:?}",
+                library.validation.allowed_audio_file_extensions,
             )
         );
+        term_println(
+            &format!(
+                "        allowed_other_file_extensions = {:?}",
+                library.validation.allowed_other_file_extensions,
+            )
+        );
+        term_println(
+            &format!(
+                "        allowed_other_files_by_name = {:?}",
+                library.validation.allowed_other_files_by_name,
+            )
+        );
+        
+        // `transcoding` sub-table
+        term_println(
+            &format!(
+                "     => {}",
+                "transcoding".italic()
+            )
+        );
+        term_println(
+            &format!(
+                "        audio_file_extensions = {:?}",
+                library.transcoding.audio_file_extensions,
+            )
+        );
+        term_println(
+            &format!(
+                "        other_file_extensions = {:?}",
+                library.transcoding.other_file_extensions,
+            )
+        );
+        
         term_newline();
     }
     
@@ -144,6 +177,24 @@ pub fn cmd_show_config(
         &format!(
             "  path = {}",
             config.aggregated_library.path,
+        )
+    );
+    term_println(
+        &format!(
+            "  transcode_threads = {}",
+            config.aggregated_library.transcode_threads,
+        )
+    );
+    term_println(
+        &format!(
+            "  failure_max_retries = {}",
+            config.aggregated_library.failure_max_retries,
+        )
+    );
+    term_println(
+        &format!(
+            "  failure_delay_seconds = {}",
+            config.aggregated_library.failure_delay_seconds,
         )
     );
 }
@@ -177,12 +228,12 @@ pub fn cmd_list_libraries(
     for (library_key, library) in &config.libraries {
         term_println(
             &format!(
-                " - {} ({})",
-                library.name.clone().bold(),
+                "{} ({})",
+                format!(" => {}", library.name).bold(),
                 library_key,
             )
         );
-    
+        
         term_println(
             &format!(
                 "    path = \"{}\"",
@@ -191,19 +242,59 @@ pub fn cmd_list_libraries(
         );
         term_println(
             &format!(
-                "    allowed_audio_files_by_extension = {:?}",
-                &library.allowed_audio_files_by_extension,
+                "    ignored_directories_in_base_directory = {:?}",
+                library.ignored_directories_in_base_directory
+                    .as_ref()
+                    .unwrap_or(&Vec::new())
+            )
+        );
+        
+        // `validation` sub-table
+        term_println(
+            &format!(
+                "     => {}",
+                "validation".italic()
             )
         );
         term_println(
             &format!(
-                "    ignored_directories_in_base_dir = {}",
-                match &library.ignored_directories_in_base_dir {
-                    Some(ignores) => format!("{:?}", ignores),
-                    None => String::from("[]"),
-                },
+                "        allowed_audio_file_extensions = {:?}",
+                library.validation.allowed_audio_file_extensions,
             )
         );
+        term_println(
+            &format!(
+                "        allowed_other_file_extensions = {:?}",
+                library.validation.allowed_other_file_extensions,
+            )
+        );
+        term_println(
+            &format!(
+                "        allowed_other_files_by_name = {:?}",
+                library.validation.allowed_other_files_by_name,
+            )
+        );
+        
+        // `transcoding` sub-table
+        term_println(
+            &format!(
+                "     => {}",
+                "transcoding".italic()
+            )
+        );
+        term_println(
+            &format!(
+                "        audio_file_extensions = {:?}",
+                library.transcoding.audio_file_extensions,
+            )
+        );
+        term_println(
+            &format!(
+                "        other_file_extensions = {:?}",
+                library.transcoding.other_file_extensions,
+            )
+        );
+        
         term_newline();
     }
 }

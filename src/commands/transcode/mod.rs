@@ -14,9 +14,9 @@ use crate::commands::transcode::packets::file::{FilePacketType, FileProcessingRe
 use crate::commands::transcode::packets::library::LibraryWorkPacket;
 use crate::commands::transcode::threadpool::CancellableThreadPool;
 use crate::configuration::Config;
-use crate::console::{AdvancedTerminalBackend, UserControlMessage};
+use crate::console::{AdvancedTranscodeTerminalBackend, UserControlMessage};
 use crate::console::backends::shared::{QueueItemID, QueueType, SpinnerStyle};
-use crate::console::utilities::term_println_tltb;
+use crate::console::utilities::term_println_attb;
 use crate::globals::is_verbose_enabled;
 
 mod metadata;
@@ -201,12 +201,12 @@ fn process_album_files(
 /// and performs the transcode using ffmpeg (for audio files) and simple file copy (for data files).
 pub fn cmd_transcode_all(
     config: &Config,
-    terminal: &mut dyn AdvancedTerminalBackend
+    terminal: &mut dyn AdvancedTranscodeTerminalBackend
 ) -> Result<String> {
     let processing_begin_time = Instant::now();
     
-    term_println_tltb(terminal, "Mode: transcode all libraries.".cyan().bold());
-    term_println_tltb(terminal, "Scanning all libraries for changes...");
+    term_println_attb(terminal, "Mode: transcode all libraries.".cyan().bold());
+    term_println_attb(terminal, "Scanning all libraries for changes...");
     
     // The user may send control messages through the selected backend (such as a stop message).
     // We can receive such messages through this receiver.
@@ -214,12 +214,11 @@ pub fn cmd_transcode_all(
     
     // Generate a list of `LibraryWorkPacket`s for each library and sort the libraries alphabetically.
     let mut all_libraries: Vec<LibraryWorkPacket> = config.libraries
-        .iter()
-        .map(|(name, library)|
-            LibraryWorkPacket::from_library_path(
-                name,
-                &library.path,
+        .values()
+        .map(|library|
+            LibraryWorkPacket::from_library(
                 config,
+                library,
             )
         )
         .collect::<Result<Vec<LibraryWorkPacket>>>()?;
@@ -238,15 +237,16 @@ pub fn cmd_transcode_all(
     // Some utility types are set up here for better readability. The difference between e.g.
     // `AlbumsWorkload` and `AlbumsQueuedWorkload` is the additional `QueueItemID` element which
     // simply the ID of that album (or library) in the queue of the selected terminal backend.
-    type AlbumsWorkload = Vec<(AlbumWorkPacket, Vec<FileWorkPacket>)>;
-    type LibrariesWorkload = Vec<(LibraryWorkPacket, AlbumsWorkload)>;
+    type AlbumsWorkload<'a> = Vec<(AlbumWorkPacket<'a>, Vec<FileWorkPacket>)>;
+    type LibrariesWorkload<'a> = Vec<(LibraryWorkPacket<'a>, AlbumsWorkload<'a>)>;
     
-    type AlbumsQueuedWorkload = Vec<(AlbumWorkPacket, QueueItemID, Vec<FileWorkPacket>)>;
-    type LibrariesQueuedWorkload = Vec<(LibraryWorkPacket, QueueItemID, AlbumsQueuedWorkload)>;
+    type AlbumsQueuedWorkload<'a> = Vec<(AlbumWorkPacket<'a>, QueueItemID, Vec<FileWorkPacket>)>;
+    type LibrariesQueuedWorkload<'a> = Vec<(LibraryWorkPacket<'a>, QueueItemID, AlbumsQueuedWorkload<'a>)>;
     
     let mut full_workload: LibrariesWorkload = Vec::new();
     
     for mut library in all_libraries {
+        // TODO Fix this lifetime issue.
         let mut albums_to_process = library
             .get_albums_in_need_of_processing(config)?;
     
@@ -283,7 +283,7 @@ pub fn cmd_transcode_all(
     if full_workload.is_empty() {
         return Ok("Transcodes are already up to date.".green().bold().to_string());
     } else {
-        term_println_tltb(
+        term_println_attb(
             terminal,
             format!(
                 "Detected {} changed files, transcoding.",
@@ -355,7 +355,7 @@ pub fn cmd_transcode_all(
             Box::new(|item| item.set_suffix(" [active]"))
         )?;
     
-        term_println_tltb(
+        term_println_attb(
             terminal,
             format!(
                 "Transcoding contents of library: {} ({} albums)",
@@ -377,7 +377,7 @@ pub fn cmd_transcode_all(
                 })
             )?;
     
-            term_println_tltb(
+            term_println_attb(
                 terminal,
                 format!(
                     "|-> Transcoding album: {} ({} files)",
@@ -391,8 +391,8 @@ pub fn cmd_transcode_all(
             );
             
             if is_verbose_enabled() {
-                let fresh_metadata = album.get_fresh_meta(config)?;
-                term_println_tltb(
+                let fresh_metadata = album.get_fresh_meta()?;
+                term_println_attb(
                     terminal,
                     format!(
                         "[VERBOSE] AlbumWorkPacket album: {:?}; files in meta: {:?}",
@@ -458,7 +458,7 @@ pub fn cmd_transcode_all(
                             )?;
                         },
                         WorkerMessage::WriteToLog { content } => {
-                            term_println_tltb(
+                            term_println_attb(
                                 terminal,
                                 content,
                             );
@@ -471,7 +471,7 @@ pub fn cmd_transcode_all(
                             )?;
                             
                             if is_verbose_enabled() {
-                                term_println_tltb(
+                                term_println_attb(
                                     terminal,
                                     format!("[VERBOSE] File finished, result: {:?}", processing_result),
                                 );
@@ -503,7 +503,7 @@ pub fn cmd_transcode_all(
                         // in which case we should stop waiting.
                         if error == RecvTimeoutError::Disconnected {
                             if is_verbose_enabled() {
-                                term_println_tltb(terminal, "Exiting infinite processing wait: processing thread dropped sender.");
+                                term_println_attb(terminal, "Exiting infinite processing wait: processing thread dropped sender.");
                             }
                             
                             break;
@@ -511,7 +511,7 @@ pub fn cmd_transcode_all(
                     }
                 }
                 
-                // TODO Investigate why some keypresses don't trigger this.
+                // TODO Add additional user input, such as a way to view an expanded log view, etc.
                 // Periodically receive user control messages, such as the exit command.
                 let user_control_message = terminal_user_input.recv_timeout(Duration::from_millis(1));
                 if let Ok(message) = user_control_message {
@@ -522,7 +522,7 @@ pub fn cmd_transcode_all(
                                 .into_diagnostic()?;
                             
                             if is_verbose_enabled() {
-                                term_println_tltb(terminal, "Exiting infinite processing wait: user requested exit.");
+                                term_println_attb(terminal, "Exiting infinite processing wait: user requested exit.");
                             }
                             
                             break;
@@ -534,7 +534,7 @@ pub fn cmd_transcode_all(
                 // Make sure the main processing thread is still alive.
                 if processing_thread_handle.is_finished() {
                     if is_verbose_enabled() {
-                        term_println_tltb(terminal, "Exiting infinite processing wait: process_album thread has finished.");
+                        term_println_attb(terminal, "Exiting infinite processing wait: process_album thread has finished.");
                     }
                     
                     break;
@@ -542,7 +542,7 @@ pub fn cmd_transcode_all(
             }
             
             if is_verbose_enabled() {
-                term_println_tltb(terminal, "Waiting for process_album thread to finish (calling join).");
+                term_println_attb(terminal, "Waiting for process_album thread to finish (calling join).");
             }
             
             processing_thread_handle.join()
@@ -553,7 +553,7 @@ pub fn cmd_transcode_all(
                 
                 // TODO Implement deletion of partial transcodes (e.g. when the user cancels transcoding).
                 
-                term_println_tltb(
+                term_println_attb(
                     terminal,
                     format!(
                         "NOTE: A half-transcoded album ({} - {}) has potentially been left behind \
@@ -569,7 +569,7 @@ pub fn cmd_transcode_all(
             } else {
                 // Update the metadata in .album.euphony file, saving details that will ensure
                 // they are not needlessly transcoded again next time.
-                album.save_fresh_meta(config, true)?;
+                album.save_fresh_meta(true)?;
     
                 terminal.queue_item_finish(album_queue_id, true)?;
                 terminal.queue_item_modify(
@@ -585,7 +585,7 @@ pub fn cmd_transcode_all(
                 let time_album_elapsed = time_album_start
                     .elapsed()
                     .as_secs_f64();
-                term_println_tltb(
+                term_println_attb(
                     terminal,
                     format!(
                         "|-> Album {} transcoded in {:.2} seconds.",
@@ -609,7 +609,7 @@ pub fn cmd_transcode_all(
         let time_library_elapsed = time_library_start
             .elapsed()
             .as_secs_f64();
-        term_println_tltb(
+        term_println_attb(
             terminal,
             format!(
                 "|-> Library {} transcoded in {:.2} seconds.",

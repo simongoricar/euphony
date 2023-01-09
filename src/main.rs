@@ -7,9 +7,9 @@ use crossterm::style::Stylize;
 use miette::Result;
 
 use crate::configuration::Config;
-use crate::console::{TerminalBackend, AdvancedTerminalBackend};
+use crate::console::{TerminalBackend, AdvancedTranscodeTerminalBackend};
 use crate::console::backends::{BareTerminalBackend, TUITerminalBackend};
-use crate::console::utilities::term_println_tltb;
+use crate::console::utilities::{term_println_attb, term_println_fvb};
 use crate::globals::VERBOSE;
 
 mod configuration;
@@ -39,12 +39,6 @@ enum CLICommand {
                  when aggregating (transcoding), etc."
     )]
     ValidateAll,
-
-    #[command(
-        name = "validate-library",
-        about = "Validate a specific library for inconsistencies, such as forbidden files."
-    )]
-    ValidateLibrary(ValidateLibraryArgs),
 
     #[command(
         name = "show-config",
@@ -135,7 +129,7 @@ fn get_configuration(args: &CLIArgs) -> Config {
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console.
 fn get_terminal_backend(
     use_bare: bool
-) -> Box<dyn AdvancedTerminalBackend> {
+) -> Box<dyn AdvancedTranscodeTerminalBackend> {
     if use_bare {
         Box::new(BareTerminalBackend::new())
     } else {
@@ -163,7 +157,7 @@ fn process_cli_command(
         
         match commands::cmd_transcode_all(config, terminal.deref_mut()) {
             Ok(final_message) => {
-                term_println_tltb(
+                term_println_attb(
                     terminal.deref_mut(),
                     final_message,
                 );
@@ -175,7 +169,7 @@ fn process_cli_command(
                 Ok(())
             },
             Err(error) => {
-                term_println_tltb(
+                term_println_attb(
                     terminal.deref_mut(),
                     error.to_string().red(),
                 );
@@ -192,18 +186,19 @@ fn process_cli_command(
     
         bare_terminal.setup()
             .expect("Could not set up bare console backend.");
-        commands::cmd_validate_all(config, &mut bare_terminal);
-        bare_terminal.destroy()
-            .expect("Could not destroy bare console backend.");
-    
-        Ok(())
-        
-    } else if let CLICommand::ValidateLibrary(validation_args) = args.command {
-        let mut bare_terminal = BareTerminalBackend::new();
-    
-        bare_terminal.setup()
-            .expect("Could not set up bare console backend.");
-        commands::cmd_validate_library(config, validation_args.library_name, &mut bare_terminal);
+        match commands::cmd_validate_all(config, &mut bare_terminal) {
+            Ok(_) => {}
+            Err(error) => {
+                term_println_fvb(
+                    &mut bare_terminal,
+                    format!(
+                        "{}: {}",
+                        "Something went wrong while validating:".red(),
+                        error,
+                    ),
+                );
+            }
+        };
         bare_terminal.destroy()
             .expect("Could not destroy bare console backend.");
     

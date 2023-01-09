@@ -8,7 +8,7 @@ use std::time::Duration;
 use miette::{miette, Result};
 
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
-use crate::configuration::Config;
+use crate::configuration::{Config, ConfigLibrary};
 use crate::filesystem;
 use crate::globals::is_verbose_enabled;
 
@@ -30,13 +30,16 @@ impl Display for FilePacketType {
 }
 
 impl FilePacketType {
-    pub fn from_path<P: AsRef<Path>>(file_path: P, config: &Config) -> Option<FilePacketType> {
+    pub fn from_path<P: AsRef<Path>>(
+        file_path: P,
+        library: &ConfigLibrary,
+    ) -> Option<FilePacketType> {
         let source_file_extension = filesystem::get_path_file_extension(file_path.as_ref())
             .ok()?;
-
-        if config.file_metadata.matches_audio_extension(&source_file_extension) {
+        
+        if library.transcoding.audio_file_extensions.contains(&source_file_extension) {
             Some(FilePacketType::AudioFile)
-        } else if config.file_metadata.matches_data_extension(&source_file_extension) {
+        } else if library.transcoding.other_file_extensions.contains(&source_file_extension) {
             Some(FilePacketType::DataFile)
         } else {
             None
@@ -110,19 +113,18 @@ impl FileWorkPacket {
         action: FilePacketAction,
     ) -> Result<FileWorkPacket> {
         let source_file_path = source_album_info
-            .build_full_file_path(file_name);
+            .build_source_file_path(file_name);
 
-        let source_file_type = FilePacketType::from_path(&source_file_path, config)
+        let source_file_type = FilePacketType::from_path(&source_file_path, source_album_info.library)
             .ok_or_else(|| miette!("Invalid source file extension: doesn't match any tracked extension."))?;
 
         let target_file_extension = match source_file_type {
             FilePacketType::AudioFile => String::from("mp3"),
             FilePacketType::DataFile => filesystem::get_path_file_extension(&source_file_path)?,
         };
-
+        
         let target_file_path = source_album_info
-            .as_aggregated_directory(config)
-            .build_full_file_path(file_name)
+            .build_target_file_path(config, file_name)
             .with_extension(target_file_extension);
 
         Ok(FileWorkPacket {

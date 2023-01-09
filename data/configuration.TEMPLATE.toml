@@ -1,22 +1,38 @@
-####
-# ESSENTIALS
+#####
+## ESSENTIALS
 # This configuration table contains the most essential configuration values.
-# You may use the "{SELF}" placeholder in these paths, it refers to
+# You may use the `{SELF}` placeholder in these two configuration values - it refers to
 # the location (directory) of the CLI binary.
-####
 [essentials]
-# `base_library_path` will become the "{LIBRARY_BASE}" placeholder in several tables below:
+# `base_library_path` will become the `{LIBRARY_BASE}` placeholder in several tables below:
 # - libraries,
 # - aggregated_library.
 base_library_path = "D:/_temp/MusicTesting"
-# `base_tools_path` will become the "{TOOLS_BASE}" placeholder for use in the `tools` configuration table below.
+# `base_tools_path` will become the `{TOOLS_BASE}` placeholder for use in the `tools` configuration table below.
 base_tools_path = "{SELF}/tools/"
 
 
-####
-# TOOLS
+
+#####
+## VALIDATION (general configuration)
+# Contains the basic validation settings. For per-library validation settings,
+# see the [libraries] key below.
+[validation]
+# These extensions are files that you consider to be audio files **while validating**.
+# This is pretty much nothing more than a cosmetic change and does not impact anything in the transcoding process.
+# Given these extensions we can simply show if an invalid file is an audio file or some other data file.
+# You probably shouldn't modify this list, unless some of the audio file extensions you use are missing.
+# **Again, this one is pretty much cosmetic and only adds better validation error logging.**
+extensions_considered_audio_files = [
+    "mp3", "opus", "flac", "wav", "pcm", "m4a",
+    "ogg", "aac", "aiff", "wma", "alac",
+]
+
+
+
+#####
+## TOOLS
 # Contains configuration regarding external tools that are used (ffmpeg, etc.).
-####
 [tools]
 # This music manager uses ffmpeg as its workhorse for audio conversion. Its configuration is available below.
 [tools.ffmpeg]
@@ -28,114 +44,91 @@ binary = "{TOOLS_BASE}/ffmpeg/bin/ffmpeg.exe"
 to_mp3_v0_args = ["-i", "{INPUT_FILE}", "-vn", "-codec:a", "libmp3lame", "-q:a", "0", "-y", "{OUTPUT_FILE}"]
 
 
-####
-# LIBRARY VALIDATION
-# The "validate-all" command looks through all available libraries and attemps to spot any unusual or downright
-# invalid folder structure and files. The function of the settings below is to give some defaults for each library
-# regarding non-audio ("other") files. This is intended for stuff like allowing cover art files, logs, playlists, etc.
-####
-[validation]
-# The distinction between audio (you'll see it below) and other files is made to detect erroneous audio files in
-# e.g. the root or artist directory. To be clear: "other" files mean files everywhere,
-# but "audio" files mean those only in the album directories.
-allowed_other_files_by_extension = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
-# These files are always ignored and do not cause validation errors (these are matched by full file name).
-# (".album.euphony" is a mandatory entry if you use the transcode commands)
-allowed_other_files_by_name = [".album.euphony", ".album.override.euphony", "desktop.ini"]
-# NOTE: If a file without a valid extension or name match is found during the scan, it is marked
-# as an unexpected file and makes the validation fail (this is the entire point of validation).
 
-
-####
-# LIBRARY
-####
-# Library structure is expected to be:
-#  <library directory>
-#  |-- <artist>
-#  |   |-- <album>
-#  |   |   |-- <... audio files>
-#  |   |   |-- <... cover art>
-#  |   |   |-- <... possibly some album-related README, logs, etc.>
-#  |   |   |-- <... possibly other directory that don't matter>
-#  |   |-- <... possibly some artist-related README, etc.>
-#  | ...
-#  |--
-#
-# Add additional libraries (as many as you need) by adding keys to the "libraries" key as shown below.
+#####
+## LIBRARY
+# Important: see `README.md` (or `commands/validation/mod.rs`) for the expected folder structure in each libray.
 [libraries]
 
+
+# You can add additional libraries (as many as you want) by adding keys (notice how the example library is created
+# by creating a new key in the `libraries` key - `libraries.lossless`).
 [libraries.lossless]
-# This is the full name of your library.
+# The full display name of the library.
 name = "Lossless"
-# This is the full absolute path to your library. You may use the "{LIBRARY_BASE}" placeholder that was set above
-# in the essentials table to avoid typing the absolute path each time.
-path = "{LIBRARY_BASE}/MusicLibraryLossless"
-# This array should contain the audio file extensions you allow in this library. Note that euphony expects the exact
-# library structure descibed above. File extensions from this option are used when scanning album directories.
-# Any file that does not match allowed_other_files_by_extension, allowed_other_files_by_name or this one shows up
+# This is the full path to your library. You may use the "{LIBRARY_BASE}" placeholder
+# (set above in `essentials`) in the essentials table to avoid typing the absolute path each time.
+path = "{LIBRARY_BASE}/LosslessLibrary"
+# This array should contain names of directories (if any) in the base of the library that should be ignored by `euphony`.
+ignored_directories_in_base_directory = []
+
+## VALIDATION
+# The `validate` command (and related) scans the available libraries and attempts to spot any unusual
+# or downright invalid folder structure and/or files. The configuration below influences that scanning by allowing
+# a set of extensions and file names.
+[libraries.lossless.validation]
+# This array should contain the audio file extensions you allow in this library. File extensions from this option are
+# used when scanning album directories. Any file that does not match by extension and not by full name either shows up
 # as an invalid file during the validation process (as is to be expected, it's an unexpected file after all).
-allowed_audio_files_by_extension = ["flac"]
-# This array should contain names of directories that should be ignored during the scanning process.
-# These are names of directories in the base directory of the library.
-ignored_directories_in_base_dir = []
+allowed_audio_file_extensions = ["flac"]
+# This array should contain file extensions of all non-audio files you allow in this library.
+allowed_other_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
+# This array should contain full file names of all non-audio files you allow in this library.
+# Different from `allowed_other_file_extensions` in that these values should be full file names, not just extensions.
+# (IMPORTANT: `.album.euphony` and `.album.override.euphony` are mandatory entires if you use the transcode commands)
+allowed_other_files_by_name = [".album.euphony", ".album.override.euphony", "desktop.ini"]
 
-[libraries.lossless_private]
-name = "Lossless Private"
-path = "{LIBRARY_BASE}/MusicLibraryLosslessPrivate"
-allowed_audio_files_by_extension = ["flac"]
-ignored_directories_in_base_dir = []
+## TRANSCODING
+# Note: in order to optimize the speed and skip existing transcodes, `euphony` actually tracks your album files
+#       via a special dotfile called ".album.euphony", placed in each album directory. Implementation
+#       details are available in the README, but the general idea and purpose is to understand when any file
+#       has changed and has to be encoded (if it's an audio file) or copied (if it's a data file) again.
+#       Any file that is not specified below is *untracked* and not processed by `euphony`.
+[libraries.lossless.transcoding]
+# This array should contain audio file extensions (e.g. "mp3", "flac" - don't include ".")
+# Files with these extensions are considered audio files and are transcoded using ffmpeg (see `tools.ffmpeg`).
+audio_file_extensions = ["flac"]
+# This array should contain other tracked file extensions (e.g. `jpg`, `png` - don't include ".").
+# Files with these extensions are considered data files and are copied when running `transcode`.
+other_file_extensions = ["png", "jpg", "jpeg"]
 
+
+# Another example: a library with only MP3 content.
 [libraries.standard]
 name = "Standard"
-path = "{LIBRARY_BASE}/MusicLibraryStandard"
-allowed_audio_files_by_extension = ["mp3"]
-ignored_directories_in_base_dir = []
+path = "{LIBRARY_BASE}/StandardLibrary"
+ignored_directories_in_base_directory = ["_other"]
 
-[libraries.standard_private]
-name = "Standard Private"
-path = "{LIBRARY_BASE}/MusicLibraryStandardPrivate"
-allowed_audio_files_by_extension = ["mp3"]
-ignored_directories_in_base_dir = ["_other"]
+[libraries.standard.validation]
+allowed_audio_file_extensions = ["mp3"]
+allowed_other_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
+allowed_other_files_by_name = [".album.euphony", ".album.override.euphony", "desktop.ini"]
+
+[libraries.standard.transcoding]
+audio_file_extensions = ["mp3"]
+other_file_extensions = ["png", "jpg", "jpeg"]
 
 
-####
-# AGGREGATED LIBRARY (also called the transcoded library)
-# The philosophy of this music library manager is that you should split your library
-# into smaller parts: one for lossless audio, one for lossy, one for a specific collection, etc.
-# However, this philosophy also acknowledges that you might want to take the library with you on the go,
-# something that is hard to do when it is contains possibly huge lossless files.
+
+#####
+## AGGREGATED LIBRARY (i.e. transcoded library)
+# The idea behind euphony is that your music "super"-library is split into multiple smaller parts - one for lossless audio,
+# one for lossy, one for a specific collection, etc.
+# In a traditional setup, this could cause problems with space if you had to copy each library in full size.
 #
-# This is why the aggregation ("transcode" in most of the CLI) exists. It takes all of your registered "sub-libraries"
-# (see `libraries` above) and transcodes them down into MP3 V0 into a single aggregated library you may then take along with you.
-####
+# `euphony` opts to solve this by having the user configure all the libraries they have, as well as the location of the
+# aggregated library. Then, the user should use the `transcode` command, which will take all these libraries and
+# convert them into a lower quality (by default into MP3 V0), placing all the resulting files into the same structure
+# inside the single aggregated library. This smaller copy of the library can then be copied to portable devices for listening.
 [aggregated_library]
 # This path should point to the destination directory of your transcoded (aggregated) library.
-path = "{LIBRARY_BASE}/MusicLibrary"
-# In order to speed up the transcoding, you can increase the amount of threads that are transcoding at once.
-# Anywhere between a half and all of your CPU cores are a good choice and an incredible speedup.
-# The minimum value is 1.
+# You may use the `{LIBRARY_BASE}` placeholder here.
+path = "{LIBRARY_BASE}/PortableMusicLibrary"
+# In order to speed up the transcoding you can increase the amount of threads that are transcoding (or copying) at once.
+# Anywhere between a half and all of your CPU cores are usually a good choice and result in an incredible speedup.
+# The minimum value is 1, I'd recommend somewhere around 4 - 8.
 transcode_threads = 6
-# In case processing of a file fails (be it a transcode or a copy), you may want to allow
-# for a retry a specific amount of times (each time delayed by a few seconds).
-max_processing_retries = 2
-processing_retry_delay_seconds = 2
-
-
-####
-# FILE METADATA
-# In order to optimize the speed and remove redundant transcodes, euphony actually "tracks" your album files
-# via a special dotfile called ".album.euphony" (placed in each album directory).
-# Implementation details are available in the README, but the general idea and purpouse of those files are to
-# understand when any single file has changed and has to be reencoded (if it's an audio file) or recopied (if it's a data file).
-####
-[file_metadata]
-# Files with these extensions count as audio files and will be converted into MP3 V0 during the aggregation process.
-# There are no library-specific settings here.
-tracked_audio_extensions = [
-    "mp3", "flac", "alac", "m4a", "ogg"
-]
-# Files with these extension count as data files and will be simply copied over into the aggregated library.
-tracked_other_extensions = [
-    "png", "jpg", "jpeg", "gif"
-]
-# NOTE: All other files are untracked.
+# If transcoding or copying a file fails, you may want to allow for a retry `failure_max_retries` times,
+# each one delayed by `failure_delay_seconds` seconds.
+failure_max_retries = 2
+failure_delay_seconds = 2

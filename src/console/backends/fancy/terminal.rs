@@ -26,7 +26,7 @@ use tui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
 use crate::console::backends::fancy::state::TerminalUIState;
 use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType, generate_dynamic_list_from_queue_items, ListItemStyleRules, QueueItemFinishedState, QueueState, ProgressState, QueueItemState};
 use crate::console::{LogBackend, SimpleTerminalBackend};
-use crate::console::traits::{TerminalBackend, TranscodeBackend, AdvancedTerminalBackend, UserControllableBackend, UserControlMessage, LogToFileBackend};
+use crate::console::traits::{TerminalBackend, TranscodeBackend, AdvancedTranscodeTerminalBackend, UserControllableBackend, UserControlMessage, LogToFileBackend};
 
 pub const LOG_JOURNAL_MAX_LINES: usize = 20;
 const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
@@ -861,4 +861,4 @@ impl LogToFileBackend for TUITerminalBackend {
 }
 
 impl SimpleTerminalBackend for TUITerminalBackend {}
-impl AdvancedTerminalBackend for TUITerminalBackend {}
+impl AdvancedTranscodeTerminalBackend for TUITerminalBackend {}

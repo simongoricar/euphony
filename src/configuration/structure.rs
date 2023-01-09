@@ -17,15 +17,13 @@ use crate::configuration::{
 pub struct Config {
     pub essentials: ConfigEssentials,
     
-    pub tools: ConfigTools,
-    
     pub validation: ConfigValidation,
+    
+    pub tools: ConfigTools,
     
     pub libraries: BTreeMap<String, ConfigLibrary>,
     
     pub aggregated_library: ConfigAggregated,
-    
-    pub file_metadata: ConfigFileMetadata,
     
     #[serde(skip)]
     pub configuration_file_path: PathBuf,
@@ -40,23 +38,23 @@ impl Config {
         let configuration_string = fs::read_to_string(&configuration_filepath)
             .expect("Could not read configuration file!");
         
-        // Parse the string into a structure.
+        // Parse the string into the `Config` structure.
         let mut config: Config = toml::from_str(&configuration_string)
             .expect("Could not load configuration file!");
         
         config.configuration_file_path = dunce::canonicalize(configuration_filepath)
             .expect("Could not canocalize configuration file path even though it has loaded!");
         
-        // Run init methods for all sub-configurations.
+        // Run init methods for all configuration subtables.
+        
         config.essentials.after_load_init();
+        config.validation.after_load_init();
         
         for library in config.libraries.values_mut() {
             library.after_load_init(&config.essentials);
         }
         
-        config.validation.after_load_init();
         config.aggregated_library.after_load_init(&config.essentials);
-        config.file_metadata.after_load_init();
         config.tools.after_load_init(&config.essentials);
         
         config
@@ -135,6 +133,19 @@ impl AfterLoadInitable for ConfigEssentials {
 }
 
 #[derive(Deserialize, Clone)]
+pub struct ConfigValidation {
+    pub extensions_considered_audio_files: Vec<String>,
+}
+
+impl AfterLoadInitable for ConfigValidation {
+    fn after_load_init(&mut self) {
+        for ext in &mut self.extensions_considered_audio_files {
+            ext.make_ascii_lowercase();
+        }
+    }
+}
+
+#[derive(Deserialize, Clone)]
 pub struct ConfigTools {
     pub ffmpeg: ConfigToolsFFMPEG,
 }
@@ -174,33 +185,21 @@ impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
 }
 
 #[derive(Deserialize, Clone)]
-pub struct ConfigValidation {
-    pub allowed_other_files_by_extension: Vec<String>,
-    pub allowed_other_files_by_name: Vec<String>,
-}
-
-impl AfterLoadInitable for ConfigValidation {
-    fn after_load_init(&mut self) {
-        for ext in &mut self.allowed_other_files_by_extension {
-            ext.make_ascii_lowercase();
-        }
-    }
-}
-
-#[derive(Deserialize, Clone)]
 pub struct ConfigLibrary {
-    /// Full name of the library.
+    /// Library display name.
     pub name: String,
     
-    /// Absolute path to the library (can contain {LIBRARY_BASE} placeholder on load).
+    /// Absolute path to the library (can include {LIBRARY_BASE},
+    /// which will be dynamically replaced with `essentials.base_library_path` on load).
     pub path: String,
     
-    /// A list of allowed audio extensions.
-    /// Any not specified here are forbidden, see configuration template for more information.
-    pub allowed_audio_files_by_extension: Vec<String>,
+    pub ignored_directories_in_base_directory: Option<Vec<String>>,
     
-    /// A list of directories that should be ignored when scanning for artist directories.
-    pub ignored_directories_in_base_dir: Option<Vec<String>>,
+    /// Validation-related configuration for this library.
+    pub validation: ConfigLibraryValidation,
+    
+    /// Transcoding-related configuration for this library.
+    pub transcoding: ConfigLibraryTranscoding,
 }
 
 impl AfterLoadWithEssentialsInitable for ConfigLibrary {
@@ -224,11 +223,67 @@ impl AfterLoadWithEssentialsInitable for ConfigLibrary {
         }
         
         self.path = canonicalized_path.to_string_lossy().to_string();
-        
+    
+        self.validation.after_load_init();
+        self.transcoding.after_load_init();
+    }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct ConfigLibraryValidation {
+    /// A list of allowed audio extensions. Any not specified here are forbidden
+    /// (flagged when running validation), see configuration template for more information.
+    pub allowed_audio_file_extensions: Vec<String>,
+    
+    pub allowed_other_file_extensions: Vec<String>,
+    
+    pub allowed_other_files_by_name: Vec<String>,
+}
+
+impl AfterLoadInitable for ConfigLibraryValidation {
+    fn after_load_init(&mut self) {
         // Make extensions lowercase.
-        for ext in &mut self.allowed_audio_files_by_extension {
+        for ext in &mut self.allowed_audio_file_extensions {
             ext.make_ascii_lowercase();
         }
+    }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct ConfigLibraryTranscoding {
+    /// A list of audio file extensions (e.g. "mp3", "flac" - don't include ".").
+    /// Files with these extensions are considered audio files and are transcoded using ffmpeg
+    /// (see `tools.ffmpeg`).
+    pub audio_file_extensions: Vec<String>,
+    
+    /// A list of other tracked file extensions (e.g. `jpg`, `png` - don't include ".").
+    /// Files with these extensions are considered data files and are copied when transcoding.
+    pub other_file_extensions: Vec<String>,
+    
+    /// Dynamically contains extensions from both `audio_file_extensions` and `other_file_extensions`.
+    #[serde(skip)]
+    pub all_tracked_extensions: Vec<String>,
+}
+
+impl AfterLoadInitable for ConfigLibraryTranscoding {
+    fn after_load_init(&mut self) {
+        // Make extensions lowercase.
+        for ext in &mut self.audio_file_extensions {
+            ext.make_ascii_lowercase();
+        }
+    
+        for ext in &mut self.other_file_extensions {
+            ext.make_ascii_lowercase();
+        }
+        
+        self.all_tracked_extensions.extend(
+            self.audio_file_extensions.iter()
+                .cloned()
+        );
+        self.all_tracked_extensions.extend(
+            self.other_file_extensions.iter()
+                .cloned()
+        );
     }
 }
 
@@ -238,9 +293,9 @@ pub struct ConfigAggregated {
     
     pub transcode_threads: usize,
     
-    pub max_processing_retries: u16,
+    pub failure_max_retries: u16,
     
-    pub processing_retry_delay_seconds: u16,
+    pub failure_delay_seconds: u16,
 }
 
 impl AfterLoadWithEssentialsInitable for ConfigAggregated {
@@ -252,43 +307,3 @@ impl AfterLoadWithEssentialsInitable for ConfigAggregated {
         }
     }
 }
-
-#[derive(Deserialize, Clone)]
-pub struct ConfigFileMetadata {
-    pub tracked_audio_extensions: Vec<String>,
-    
-    pub tracked_other_extensions: Vec<String>,
-    
-    #[serde(skip)]
-    pub tracked_extensions: Vec<String>,
-}
-
-impl AfterLoadInitable for ConfigFileMetadata {
-    fn after_load_init(&mut self) {
-        self.tracked_extensions
-            .extend(
-                self.tracked_audio_extensions
-                    .iter()
-                    .map(|item| item.to_string())
-            );
-        
-        self.tracked_extensions
-            .extend(
-                self.tracked_other_extensions
-                    .iter()
-                    .map(|item| item.to_string())
-            );
-    }
-}
-
-impl ConfigFileMetadata {
-    pub fn matches_audio_extension(&self, extension: &String) -> bool {
-        self.tracked_audio_extensions.contains(extension)
-    }
-    
-    pub fn matches_data_extension(&self, extension: &String) -> bool {
-        self.tracked_other_extensions.contains(extension)
-    }
-}
-
-
