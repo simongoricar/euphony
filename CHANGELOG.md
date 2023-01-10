@@ -1,3 +1,8 @@
+1.3.0
+- Added: `validate` command has been rewritten and will now work properly again.
+- Changed: `validate-all` and `transcode-all` are now aliased as `validate-collection` and `transcode-collection`.
+- Changed: several Rust optimizations that now pass around much more references where possible.
+
 1.2.0
 - Added: a whole new dynamic terminal UI (built with `tui`) which creates a much better visualization of the processing being done
 - Changed: removed barely-used transcoding commands, renamed `transcode-all` to `transcode` and `validate-all` to `validate`.
