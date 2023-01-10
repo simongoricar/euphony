@@ -249,7 +249,7 @@ impl ValidationBackend for BareTerminalBackend {
         
         let formatted_header = format!(
             "{} {}",
-            "#".with(Color::AnsiValue(142)), // Gold3 (#afaf00)
+            "#".bold().with(Color::AnsiValue(142)), // Gold3 (#afaf00)
             error.header.bold()
         );
         let formatted_attributes = error.attributes
@@ -257,7 +257,7 @@ impl ValidationBackend for BareTerminalBackend {
             .map(|(name, value)|
                 format!(
                     "{}: {}",
-                    name.to_string().dark_grey(),
+                    name.to_string().dark_yellow(),
                     value
                 )
             )

@@ -226,7 +226,7 @@ impl<'a> ValidationErrorDisplay for AlbumCollision<'a> {
         // Album: The Lunar Lexicon
         
         let colliding_libraries = self.get_colliding_library_names()
-            .join(" + ");
+            .join(", ");
         
         let attributes = vec![
             ("Colliding libraries".to_string(), colliding_libraries),
@@ -512,7 +512,12 @@ fn validate_entire_collection(
                 
                 for album_dir_file in album_dir_files {
                     let file_path = album_dir_file.path();
-                    if is_audio_file(&file_path) && !is_valid_audio_file(&file_path) {
+                    
+                    let is_audio = is_audio_file(&file_path);
+                    let is_valid_audio = is_valid_audio_file(&file_path);
+                    let is_valid_other = is_valid_other_file(&file_path);
+                    
+                    if is_audio && !is_valid_audio {
                         // File was an audio file, but not the kind that is allowed in this library.
                         validation_errors.push(
                             ValidationError::new_unexpected_file(
@@ -521,7 +526,7 @@ fn validate_entire_collection(
                                 UnexpectedFileType::AlbumDirectoryAudio,
                             )
                         )
-                    } else if !is_valid_other_file(&file_path) {
+                    } else if !is_audio && !is_valid_other {
                         // File was not an audio file, and is not a data file the user allows in this library.
                         validation_errors.push(
                             ValidationError::new_unexpected_file(
