@@ -5,12 +5,10 @@ use std::path::{Path, PathBuf};
 use crossterm::style::Stylize;
 use miette::{Context, miette, Result};
 
-use crate::console::{FullValidationBackend, ValidationErrorInfo};
-use crate::console::utilities::term_println_fvb;
+use crate::console::{LogBackend, ValidationBackend, ValidationErrorInfo};
 use crate::configuration::{Config, ConfigLibrary};
+use crate::console::backends::ValidationTerminal;
 use crate::filesystem as efs;
-
-// TODO Rewrite new validation
 
 pub trait ValidationErrorDisplay {
     /// This method should format and return the complete string that
@@ -23,7 +21,6 @@ pub enum ValidationError<'a> {
     AlbumCollision(AlbumCollision<'a>),
 }
 
-#[allow(dead_code)]
 impl<'a> ValidationError<'a> {
     pub fn new_unexpected_file<P: Into<PathBuf>>(
         file_path: P,
@@ -37,6 +34,7 @@ impl<'a> ValidationError<'a> {
         ))
     }
     
+    #[allow(dead_code)]
     pub fn new_album_collision(
         colliding_albums: Vec<&'a ValidationAlbumEntry<'a>>,
     ) -> Result<Self> {
@@ -315,7 +313,7 @@ impl<'a> CollectionCollisionValidator<'a> {
 
 fn validate_entire_collection(
     config: &Config,
-    terminal: &mut dyn FullValidationBackend,
+    terminal: &mut ValidationTerminal,
 ) -> Result<()> {
     // As explained in the README and configuration template, library structure is expected to be the following:
     // <base library directory>
@@ -560,13 +558,9 @@ fn validate_entire_collection(
         .collect::<Result<Vec<ValidationErrorInfo>>>()?;
     
     if validation_error_info_array.is_empty() {
-        term_println_fvb(
-            terminal,
-            "Entire collection validated, no validation errors.".green()
-        );
+        terminal.log_println("Entire collection validated, no validation errors.".green());
     } else {
-        term_println_fvb(
-            terminal,
+        terminal.log_println(
             format!(
                 "Entire collection validated, found {} validation errors!",
                 validation_error_info_array.len().to_string().bold()
@@ -583,9 +577,9 @@ fn validate_entire_collection(
 
 pub fn cmd_validate_all(
     config: &Config,
-    terminal: &mut dyn FullValidationBackend,
+    terminal: &mut ValidationTerminal,
 ) -> Result<()> {
-    term_println_fvb(terminal, "Mode: validate all libraries.".cyan().bold());
+    terminal.log_println("Mode: validate all libraries.".cyan().bold());
     
     validate_entire_collection(config, terminal)?;
     Ok(())

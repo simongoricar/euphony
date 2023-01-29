@@ -25,8 +25,8 @@ use tui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
 
 use crate::console::backends::fancy::state::TerminalUIState;
 use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType, generate_dynamic_list_from_queue_items, ListItemStyleRules, QueueItemFinishedState, QueueState, ProgressState, QueueItemState};
-use crate::console::{LogBackend, SimpleTerminalBackend};
-use crate::console::traits::{TerminalBackend, TranscodeBackend, AdvancedTranscodeTerminalBackend, UserControllableBackend, UserControlMessage, LogToFileBackend};
+use crate::console::LogBackend;
+use crate::console::traits::{TerminalBackend, TranscodeBackend, UserControllableBackend, UserControlMessage, LogToFileBackend};
 
 pub const LOG_JOURNAL_MAX_LINES: usize = 20;
 const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
@@ -630,7 +630,7 @@ impl LogBackend for TUITerminalBackend {
         }
     }
     
-    fn log_println(&self, content: Box<dyn Display>) {
+    fn log_println<D: Display>(&self, content: D) {
         let content_string = content.to_string();
         
         // Part 1: add log lines to terminal UI.
@@ -859,6 +859,3 @@ impl LogToFileBackend for TUITerminalBackend {
         Ok(())
     }
 }
-
-impl SimpleTerminalBackend for TUITerminalBackend {}
-impl AdvancedTranscodeTerminalBackend for TUITerminalBackend {}

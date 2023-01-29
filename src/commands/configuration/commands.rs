@@ -1,12 +1,12 @@
 use crossterm::style::Stylize;
 
 use crate::configuration::Config;
-use crate::console::SimpleTerminalBackend;
-use crate::console::utilities::term_println_stb;
+use crate::console::backends::SimpleTerminal;
+use crate::console::LogBackend;
 
-/// Generic abstraction over `LogBackend::log_println` for printing headers.
+/// Prints a "group header", for example: `|----- your header here -----|`.
 fn terminal_print_group_header<S: AsRef<str>>(
-    terminal: &dyn SimpleTerminalBackend,
+    terminal: &SimpleTerminal,
     header: S,
 ) {
     const PAD_TO_WIDTH: usize = 10;
@@ -15,8 +15,7 @@ fn terminal_print_group_header<S: AsRef<str>>(
     let left_padding = total_padding / 2;
     let right_padding = total_padding - left_padding;
     
-    term_println_stb(
-        terminal,
+    terminal.log_println(
         format!(
             "|----- {}{:^12}{} -----|",
             " ".repeat(left_padding),
@@ -26,44 +25,39 @@ fn terminal_print_group_header<S: AsRef<str>>(
     );
 }
 
+/// Show the entire currently active configuration.
 pub fn cmd_show_config(
     config: &Config,
-    terminal: &mut dyn SimpleTerminalBackend,
+    terminal: &mut SimpleTerminal,
 ) {
-    // Binds a few short functions to the current terminal,
-    // allowing for a zero- or single-argument calls that print the header, a simple log line, etc.
-    let term_print_header = |content: &str| terminal_print_group_header(terminal, content);
-    let term_println = |content: &str| term_println_stb(terminal, content);
-    let term_newline = || terminal.log_newline();
-    
-    term_println(
+    terminal.log_println(
         &format!(
             "Configuration file: {}",
             config.configuration_file_path.to_string_lossy(),
         )
     );
-    term_newline();
+    terminal.log_newline();
     
     // Essentials
-    term_print_header("essentials");
-    term_println(
+    terminal_print_group_header(terminal, "essentials");
+    terminal.log_println(
         &format!(
             "    base_library_path = {}",
             config.essentials.base_library_path,
         )
     );
-    term_println(
+    terminal.log_println(
         &format!(
             "    base_tools_path = {}",
             config.essentials.base_tools_path,
         )
     );
-    term_newline();
+    terminal.log_newline();
     
     
     // Validation (basics)
-    term_print_header("validation");
-    term_println(
+    terminal_print_group_header(terminal, "validation");
+    terminal.log_println(
         &format!(
             "    extensions_considered_audio_files = {:?}",
             config.validation.extensions_considered_audio_files,
@@ -72,48 +66,48 @@ pub fn cmd_show_config(
     
     
     // Tools
-    term_print_header("tools");
-    term_println(
+    terminal_print_group_header(terminal, "tools");
+    terminal.log_println(
         &format!(
             " => {}",
             "ffmpeg".bold()
         )
     );
-    term_println(
+    terminal.log_println(
         &format!(
             "    binary = {}",
             config.tools.ffmpeg.binary,
         )
     );
-    term_println(
+    terminal.log_println(
         &format!(
             "    to_mp3_v0_args = {:?}",
             config.tools.ffmpeg.to_mp3_v0_args,
         )
     );
-    term_newline();
+    terminal.log_newline();
     
     
     // Libraries
-    term_print_header("libraries");
+    terminal_print_group_header(terminal, "libraries");
     
     for (library_key, library) in &config.libraries {
-        term_println(
+        terminal.log_println(
             &format!(
                 "{} ({})",
                 format!(" => {}", library.name).bold(),
                 library_key,
             )
         );
-        
-        term_println(
-            &format!(
+    
+        terminal.log_println(
+            format!(
                 "    path = \"{}\"",
                 library.path,
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "    ignored_directories_in_base_directory = {:?}",
                 library.ignored_directories_in_base_directory
                     .as_ref()
@@ -122,102 +116,98 @@ pub fn cmd_show_config(
         );
         
         // `validation` sub-table
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "     => {}",
                 "validation".italic()
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        allowed_audio_file_extensions = {:?}",
                 library.validation.allowed_audio_file_extensions,
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        allowed_other_file_extensions = {:?}",
                 library.validation.allowed_other_file_extensions,
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        allowed_other_files_by_name = {:?}",
                 library.validation.allowed_other_files_by_name,
             )
         );
         
         // `transcoding` sub-table
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "     => {}",
                 "transcoding".italic()
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        audio_file_extensions = {:?}",
                 library.transcoding.audio_file_extensions,
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        other_file_extensions = {:?}",
                 library.transcoding.other_file_extensions,
             )
         );
-        
-        term_newline();
+    
+        terminal.log_newline();
     }
     
     
     // Aggregated library
-    term_print_header("aggregated_library");
-    term_println(
-        &format!(
+    terminal_print_group_header(terminal, "aggregated_library");
+    terminal.log_println(
+        format!(
             "  path = {}",
             config.aggregated_library.path,
         )
     );
-    term_println(
-        &format!(
+    terminal.log_println(
+        format!(
             "  transcode_threads = {}",
             config.aggregated_library.transcode_threads,
         )
     );
-    term_println(
-        &format!(
+    terminal.log_println(
+        format!(
             "  failure_max_retries = {}",
             config.aggregated_library.failure_max_retries,
         )
     );
-    term_println(
-        &format!(
+    terminal.log_println(
+        format!(
             "  failure_delay_seconds = {}",
             config.aggregated_library.failure_delay_seconds,
         )
     );
 }
 
+/// Show the registered music libraries from the current configuration.
 pub fn cmd_list_libraries(
     config: &Config,
-    terminal: &mut dyn SimpleTerminalBackend,
+    terminal: &mut SimpleTerminal,
 ) {
-    // Binds a few short functions to the current terminal,
-    // allowing for a zero- or single-argument calls that print the header, a simple log line, etc.
-    let term_println = |content: &str| term_println_stb(terminal, content);
-    let term_newline = || terminal.log_newline();
-    
-    term_println(
-        &format!(
+    terminal.log_println(
+        format!(
             "Configuration file: {}",
             config.configuration_file_path.to_string_lossy(),
         )
     );
-    term_newline();
+    terminal.log_newline();
     
-    term_println(
-        &format!(
+    terminal.log_println(
+        format!(
             "{} libraries are available:",
             config.libraries.len()
                 .to_string()
@@ -226,22 +216,22 @@ pub fn cmd_list_libraries(
     );
     
     for (library_key, library) in &config.libraries {
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "{} ({})",
                 format!(" => {}", library.name).bold(),
                 library_key,
             )
         );
-        
-        term_println(
-            &format!(
+    
+        terminal.log_println(
+            format!(
                 "    path = \"{}\"",
                 library.path,
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "    ignored_directories_in_base_directory = {:?}",
                 library.ignored_directories_in_base_directory
                     .as_ref()
@@ -250,51 +240,51 @@ pub fn cmd_list_libraries(
         );
         
         // `validation` sub-table
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "     => {}",
                 "validation".italic()
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        allowed_audio_file_extensions = {:?}",
                 library.validation.allowed_audio_file_extensions,
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        allowed_other_file_extensions = {:?}",
                 library.validation.allowed_other_file_extensions,
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        allowed_other_files_by_name = {:?}",
                 library.validation.allowed_other_files_by_name,
             )
         );
         
         // `transcoding` sub-table
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "     => {}",
                 "transcoding".italic()
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        audio_file_extensions = {:?}",
                 library.transcoding.audio_file_extensions,
             )
         );
-        term_println(
-            &format!(
+        terminal.log_println(
+            format!(
                 "        other_file_extensions = {:?}",
                 library.transcoding.other_file_extensions,
             )
         );
         
-        term_newline();
+        terminal.log_newline();
     }
 }

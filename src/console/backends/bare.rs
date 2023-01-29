@@ -9,9 +9,9 @@ use crossterm::style::{Color, Stylize};
 use miette::{IntoDiagnostic, miette, Result};
 use strip_ansi_escapes::Writer;
 
-use crate::console::{FullValidationBackend, LogBackend, SimpleTerminalBackend, TerminalBackend, TranscodeBackend, UserControlMessage};
+use crate::console::{LogBackend, TerminalBackend, TranscodeBackend, UserControlMessage};
 use crate::console::backends::shared::{ProgressState, QueueItem, QueueItemFinishedState, QueueItemID, QueueState, QueueType};
-use crate::console::traits::{AdvancedTranscodeTerminalBackend, LogToFileBackend, UserControllableBackend, ValidationBackend, ValidationErrorInfo};
+use crate::console::traits::{LogToFileBackend, UserControllableBackend, ValidationBackend, ValidationErrorInfo};
 
 pub struct BareTerminalBackend {
     queue: Option<QueueState>,
@@ -58,14 +58,16 @@ impl LogBackend for BareTerminalBackend {
         }
     }
     
-    fn log_println(&self, content: Box<dyn Display>) {
-        println!("{}", content);
+    fn log_println<D: Display>(&self, content: D) {
+        let content_string = content.to_string();
+        
+        println!("{}", content_string);
     
         if let Some(writer) = self.log_file_output.as_ref() {
             let mut writer_locked = writer.lock()
                 .expect("writer lock has been poisoned!");
         
-            writer_locked.write_all(content.to_string().as_bytes())
+            writer_locked.write_all(content_string.as_bytes())
                 .expect("Could not write to logfile.");
             writer_locked.write_all("\n".as_bytes())
                 .expect("Could not write to logfile (newline).");
@@ -302,7 +304,3 @@ impl LogToFileBackend for BareTerminalBackend {
         Ok(())
     }
 }
-
-impl SimpleTerminalBackend for BareTerminalBackend {}
-impl FullValidationBackend for BareTerminalBackend {}
-impl AdvancedTranscodeTerminalBackend for BareTerminalBackend {}

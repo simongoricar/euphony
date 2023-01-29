@@ -19,7 +19,7 @@ pub trait LogBackend {
     fn log_newline(&self);
     
     /// Print a string into the log, followed by a new line.
-    fn log_println(&self, content: Box<dyn Display>);
+    fn log_println<D: Display>(&self, content: D);
 }
 
 pub trait TranscodeBackend {
@@ -99,12 +99,3 @@ pub trait LogToFileBackend {
     fn enable_saving_logs_to_file(&mut self, log_file_path: PathBuf) -> Result<()>;
     fn disable_saving_logs_to_file(&mut self) -> Result<()>;
 }
-
-/// Terminal backends that implement this only allow for basic logging and saving logs to file.
-pub trait SimpleTerminalBackend: TerminalBackend + LogBackend + LogToFileBackend {}
-
-/// Terminal backends that implement this allow for basic logging, saving logs to file and validation actions.
-pub trait FullValidationBackend: TerminalBackend + LogBackend + ValidationBackend + LogToFileBackend {}
-
-/// Terminal backends that implement this allow for basic logging, transcoding actions, are user-controllable and allow saving logs to file.
-pub trait AdvancedTranscodeTerminalBackend: TerminalBackend + LogBackend + TranscodeBackend + UserControllableBackend + LogToFileBackend {}
