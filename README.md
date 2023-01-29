@@ -219,34 +219,35 @@ This will make euphony scan one directory deeper, catching and transcoding your 
 ## 4. Usage
 Run `euphony` with the `--help` option to get all available commands and their short explanations:
 ```
-Euphony is an opinionated music library transcode manager that allows the user to retain high quality audio files in multiple separate libraries while also enabling the listener to transcode their library wi
-th ease into a smaller format (MP3 V0) to take with them on the go. For more info, see the README file in the repository.
+Euphony is an opinionated music library transcode manager that allows the user to retain high quality audio files in multiple separate libraries while also helping to transcode their collection into a sm
+aller format (MP3 V0). That smaller version of the library can then be used on portable devices or similar occasions where space has a larger impact. For more info, see the README file in the repository.
 
 Usage: euphony [OPTIONS] <COMMAND>
 
 Commands:
   transcode
-      Transcode all registered libraries into the aggregated (transcoded) library. [aliases: transcode-all]
+          Transcode all libraries into the aggregated library. [aliases: transcode-collection]
   validate
-      Validate all the available (sub)libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems when aggregating (transcoding), etc. [aliases: validate-all]
-  validate-library
-      Validate a specific library for inconsistencies, such as forbidden files.
+          Validate all the available libraries for inconsistencies, such as forbidden files, any inter-library collisions that would cause problems when transcoding, etc. [aliases: validate-collection]  
   show-config
-      Loads, validates and prints the current configuration from `./data/configuration.toml`.
+          Loads, validates and prints the current configuration.
   list-libraries
-      List all the registered libraries.
+          List all the registered libraries registered in the configuration.
   help
-      Print this message or the help of the given subcommand(s)
+          Print this message or the help of the given subcommand(s)
 
 Options:
   -c, --config <CONFIG>
-      Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might not always be the most convenient location.        
+          Optionally a path to your configuration file. Without this option, euphony tries to load ./data/configuration.toml, but understandably this might not always be the most convenient location.    
+
   -v, --verbose
-      Increase the verbosity of output.
+          Increase the verbosity of output.
+
   -h, --help
-      Print help information (use `-h` for a summary)
+          Print help (see a summary with '-h')
+
   -V, --version
-      Print version information
+          Print version
 ```
 
 For more info about each individual command, run `euphony <command-name> --help`.
