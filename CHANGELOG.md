@@ -2,7 +2,11 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
+
 ## [Unreleased]
+
+
+---
 
 
 ## [1.3.1] - 2023-01-29
@@ -11,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Under-the-hood optimizations: instead of [trait objects](https://doc.rust-lang.org/book/ch17-02-trait-objects.html) 
   the backends now use *enum dispatching* (like the [enum_dispatch](https://docs.rs/enum_dispatch/latest/enum_dispatch/) crate does it, but in-house). 
   This gives better performance, but more importantly we are no longer limited to [object safety](https://doc.rust-lang.org/reference/items/traits.html#object-safety), 
-  meaning we can now use generics and other trait features.
+  meaning we can now use generics and other features.
 - Project dependencies have been updated to the latest versions.
 
 
@@ -71,7 +75,7 @@ Contains features for validation and transcoding of the libraries
 
 
 
-[Unreleased]: https://github.com/DefaultSimon/euphony/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/DefaultSimon/euphony/compare/v1.3.1...HEAD
 [1.3.1]: https://github.com/DefaultSimon/euphony/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/DefaultSimon/euphony/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/DefaultSimon/euphony/compare/v1.1.0...v1.2.0
