@@ -16,8 +16,9 @@ fn_call_width = 50
 # Unstable
 unstable_features = true
 binop_separator = "Front"
-blank_spaces_lower_bound = 0
-blank_spaces_upper_bound = 3
+blank_lines_lower_bound = 0
+blank_lines_upper_bound = 3
 imports_indent = "Block"
 imports_layout = "HorizontalVertical"
 group_imports = "StdExternalCrate"
+skip_macro_invocations = ["All"]
