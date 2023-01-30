@@ -6,12 +6,15 @@ use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use miette::{Context, IntoDiagnostic, miette, Result};
+use miette::{miette, Context, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
 use crate::commands::transcode::overrides::AlbumOverride;
-use crate::commands::transcode::packets::file::{FilePacketAction, FileWorkPacket};
+use crate::commands::transcode::packets::file::{
+    FilePacketAction,
+    FileWorkPacket,
+};
 use crate::configuration::Config;
 use crate::filesystem;
 
@@ -63,10 +66,11 @@ impl AlbumMetadata {
         let library_meta_string = fs::read_to_string(file_path)
             .into_diagnostic()
             .wrap_err_with(|| miette!("Could not read file into string."))?;
-        
-        let library_meta: AlbumMetadata = serde_json::from_str(&library_meta_string)
-            .into_diagnostic()
-            .wrap_err_with(|| miette!("Could not deserialize from json."))?;
+
+        let library_meta: AlbumMetadata =
+            serde_json::from_str(&library_meta_string)
+                .into_diagnostic()
+                .wrap_err_with(|| miette!("Could not deserialize from json."))?;
 
         Ok(Some(library_meta))
     }
@@ -91,7 +95,7 @@ impl AlbumMetadata {
                 } else {
                     DEFAULT_MAX_DEPTH
                 }
-            },
+            }
             None => DEFAULT_MAX_DEPTH,
         };
 
@@ -103,34 +107,44 @@ impl AlbumMetadata {
         )?;
 
         // Generate info about each file (limited to relevant extensions).
-        let mut file_hashmap: HashMap<String, AlbumMetadataFile> = HashMap::new();
+        let mut file_hashmap: HashMap<String, AlbumMetadataFile> =
+            HashMap::new();
 
         for file in files {
-            let file_metadata = file.metadata()
-                .into_diagnostic()
-                .wrap_err_with(|| miette!("Could not retrieve file metadata."))?;
+            let file_metadata =
+                file.metadata().into_diagnostic().wrap_err_with(|| {
+                    miette!("Could not retrieve file metadata.")
+                })?;
 
             // Calculate size in bytes
             let file_size_bytes = file_metadata.len();
 
             // Get file creation and modification time
-            let file_created_at_duration = match file_metadata.created()
+            let file_created_at_duration = match file_metadata
+                .created()
                 .into_diagnostic()
                 .wrap_err_with(|| miette!("Could not get file creation time."))?
-                .duration_since(UNIX_EPOCH) {
-                    Ok(duration) => duration,
-                    Err(_) => {
-                        return Err(miette!("Could not get file creation time."));
-                    }
+                .duration_since(UNIX_EPOCH)
+            {
+                Ok(duration) => duration,
+                Err(_) => {
+                    return Err(miette!("Could not get file creation time."));
+                }
             };
-            let file_modified_at_duration = match file_metadata.modified()
+            let file_modified_at_duration = match file_metadata
+                .modified()
                 .into_diagnostic()
-                .wrap_err_with(|| miette!("Could not get file modification time."))?
-                .duration_since(UNIX_EPOCH) {
-                    Ok(duration) => duration,
-                    Err(_) => {
-                        return Err(miette!("Could not get file modification time."));
-                    }
+                .wrap_err_with(|| {
+                    miette!("Could not get file modification time.")
+                })?
+                .duration_since(UNIX_EPOCH)
+            {
+                Ok(duration) => duration,
+                Err(_) => {
+                    return Err(miette!(
+                        "Could not get file modification time."
+                    ));
+                }
             };
 
             let file_metadata = AlbumMetadataFile {
@@ -140,20 +154,24 @@ impl AlbumMetadata {
             };
 
             let file_path = file.path();
-            let file_path_relative_to_meta_file = match pathdiff::diff_paths(file_path, directory_path) {
-                Some(relative_path) => relative_path,
-                None => {
-                    return Err(miette!("Could not generate relative path."));
-                }
-            };
-            let file_path_relative_to_meta_file = match file_path_relative_to_meta_file.to_str() {
-                Some(str) => {
-                    String::from(str)
-                },
-                None => {
-                    return Err(miette!("Could not get string from relative path."));
-                }
-            };
+            let file_path_relative_to_meta_file =
+                match pathdiff::diff_paths(file_path, directory_path) {
+                    Some(relative_path) => relative_path,
+                    None => {
+                        return Err(miette!(
+                            "Could not generate relative path."
+                        ));
+                    }
+                };
+            let file_path_relative_to_meta_file =
+                match file_path_relative_to_meta_file.to_str() {
+                    Some(str) => String::from(str),
+                    None => {
+                        return Err(miette!(
+                            "Could not get string from relative path."
+                        ));
+                    }
+                };
 
             file_hashmap.insert(file_path_relative_to_meta_file, file_metadata);
         }
@@ -170,7 +188,11 @@ impl AlbumMetadata {
 
     /// Given a directory, save the LibraryMeta struct in question into the .album.euphony file
     /// as a JSON document.
-    pub fn save(&self, directory_path: &Path, allow_overwrite: bool) -> Result<()> {
+    pub fn save(
+        &self,
+        directory_path: &Path,
+        allow_overwrite: bool,
+    ) -> Result<()> {
         let file_path = get_album_metadata_filepath(directory_path);
         if file_path.exists() && !allow_overwrite {
             return Err(miette!("File already exists."));
@@ -183,7 +205,7 @@ impl AlbumMetadata {
         let mut file = fs::File::create(file_path)
             .into_diagnostic()
             .wrap_err_with(|| miette!("Could not create file."))?;
-        
+
         file.write_all(serialized_meta.as_bytes())
             .into_diagnostic()
             .wrap_err_with(|| miette!("Could not write to file."))?;
@@ -193,9 +215,13 @@ impl AlbumMetadata {
 
     /// Given another instance of the LibraryMeta struct (expected to be the fresh one),
     /// compare them and generate a list of new, changed and removed files between the snapshots.
-    pub fn diff_with_fresh_metadata(&self, current_meta_state: &AlbumMetadata) -> FileChanges {
+    pub fn diff_with_fresh_metadata(
+        &self,
+        current_meta_state: &AlbumMetadata,
+    ) -> FileChanges {
         let saved_file_paths: HashSet<&String> = self.files.keys().collect();
-        let current_file_paths: HashSet<&String> = current_meta_state.files.keys().collect();
+        let current_file_paths: HashSet<&String> =
+            current_meta_state.files.keys().collect();
 
         // Compute new files.
         let mut files_new: Vec<String> = current_file_paths
@@ -217,8 +243,7 @@ impl AlbumMetadata {
         // Compute changed files.
         let mut files_changed: Vec<String> = Vec::new();
 
-        let matching_files = saved_file_paths
-            .intersection(&current_file_paths);
+        let matching_files = saved_file_paths.intersection(&current_file_paths);
 
         for matching_file_name in matching_files {
             let saved_file_meta = self.files.get(*matching_file_name)
@@ -235,7 +260,7 @@ impl AlbumMetadata {
             files_untranscoded: Vec::new(),
             files_removed,
             files_new,
-            files_changed
+            files_changed,
         }
     }
 
@@ -250,7 +275,7 @@ impl AlbumMetadata {
         config: &Config,
     ) -> Result<FileChanges> {
         let mut diff = self.diff_with_fresh_metadata(current_meta_state);
-        
+
         // Generate a list of files that are in the source directory,
         // but are *not* in the target directory. These files will be marked as "new",
         // with the special precaution that they will be removed from `files_changed` if they are
@@ -273,10 +298,12 @@ impl AlbumMetadata {
         }
 
         diff.files_untranscoded = files_missing_in_target;
-        
+
         // TODO Improve this diffing mechanism as this kind of iteration is not the most performant.
-        diff.files_new.retain(|file| !diff.files_untranscoded.contains(file));
-        diff.files_changed.retain(|file| !diff.files_untranscoded.contains(file));
+        diff.files_new
+            .retain(|file| !diff.files_untranscoded.contains(file));
+        diff.files_changed
+            .retain(|file| !diff.files_untranscoded.contains(file));
 
         Ok(diff)
     }
@@ -301,11 +328,19 @@ impl AlbumMetadataFile {
 
         static DEFAULT_MAX_DISTANCE: f64 = 0.1;
 
-        if !f64_approximate_eq(self.time_created, other_meta.time_created, DEFAULT_MAX_DISTANCE) {
+        if !f64_approximate_eq(
+            self.time_created,
+            other_meta.time_created,
+            DEFAULT_MAX_DISTANCE,
+        ) {
             return false;
         }
 
-        if !f64_approximate_eq(self.time_modified, other_meta.time_modified, DEFAULT_MAX_DISTANCE) {
+        if !f64_approximate_eq(
+            self.time_modified,
+            other_meta.time_modified,
+            DEFAULT_MAX_DISTANCE,
+        ) {
             return false;
         }
 
@@ -318,13 +353,13 @@ impl AlbumMetadataFile {
 pub struct FileChanges {
     /// Files that haven't been transcoded yet at all (missing from target directory).
     pub files_untranscoded: Vec<String>,
-    
+
     /// Files that have been added since the last transcode (if any).
     pub files_new: Vec<String>,
-    
+
     /// Files that have been changed since the last transcode (if any).
     pub files_changed: Vec<String>,
-    
+
     /// Files that have been removed from the source directory since the last transcode.
     pub files_removed: Vec<String>,
 }

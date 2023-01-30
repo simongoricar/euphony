@@ -44,10 +44,10 @@ pub fn get_spinner_default_speed(style: SpinnerStyle) -> Duration {
 pub struct AnimatedSpinner {
     /// Time at which this spinner was started.
     init_time: Instant,
-    
+
     /// A list of phases of this spiner.
     phases: &'static [char],
-    
+
     /// How long each phase of the spinner should be held
     /// (automatically loops back to the first phase after the last one).
     phase_hold_time: Duration,
@@ -57,25 +57,23 @@ impl AnimatedSpinner {
     pub fn new(style: SpinnerStyle, speed: Option<Duration>) -> Self {
         let phases = get_spinner_phases(style);
         let speed = speed.unwrap_or_else(|| get_spinner_default_speed(style));
-        
+
         let phase_hold_time = speed / phases.len() as u32;
-        
+
         Self {
             init_time: Instant::now(),
             phases,
             phase_hold_time,
         }
     }
-    
+
     pub fn get_current_phase(&self) -> char {
-        let since_init = self.init_time
-            .elapsed()
-            .as_secs_f64();
-        
-        let phase_hold_time_secs = self.phase_hold_time
-            .as_secs_f64();
-        
-        let current_index = (since_init / phase_hold_time_secs) as usize % self.phases.len();
+        let since_init = self.init_time.elapsed().as_secs_f64();
+
+        let phase_hold_time_secs = self.phase_hold_time.as_secs_f64();
+
+        let current_index =
+            (since_init / phase_hold_time_secs) as usize % self.phases.len();
         self.phases[current_index]
     }
 }

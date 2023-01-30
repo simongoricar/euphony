@@ -1,9 +1,9 @@
 use std::fmt::{Debug, Display, Formatter};
-use std::{fs, thread};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use std::{fs, thread};
 
 use miette::{miette, Result};
 
@@ -12,7 +12,8 @@ use crate::configuration::{Config, ConfigLibrary};
 use crate::filesystem;
 use crate::globals::is_verbose_enabled;
 
-const PROCESSING_THREAD_CANCELLATION_TICK_SLEEP_TIME: Duration = Duration::from_millis(50);
+const PROCESSING_THREAD_CANCELLATION_TICK_SLEEP_TIME: Duration =
+    Duration::from_millis(50);
 
 #[derive(Eq, PartialEq, Clone)]
 pub enum FilePacketType {
@@ -34,12 +35,20 @@ impl FilePacketType {
         file_path: P,
         library: &ConfigLibrary,
     ) -> Option<FilePacketType> {
-        let source_file_extension = filesystem::get_path_file_extension(file_path.as_ref())
-            .ok()?;
-        
-        if library.transcoding.audio_file_extensions.contains(&source_file_extension) {
+        let source_file_extension =
+            filesystem::get_path_file_extension(file_path.as_ref()).ok()?;
+
+        if library
+            .transcoding
+            .audio_file_extensions
+            .contains(&source_file_extension)
+        {
             Some(FilePacketType::AudioFile)
-        } else if library.transcoding.other_file_extensions.contains(&source_file_extension) {
+        } else if library
+            .transcoding
+            .other_file_extensions
+            .contains(&source_file_extension)
+        {
             Some(FilePacketType::DataFile)
         } else {
             None
@@ -71,7 +80,10 @@ impl FileProcessingResult {
 }
 
 impl FileProcessingResult {
-    pub fn new_ok<S: Into<String>>(packet: FileWorkPacket, verbose_info: Option<S>) -> Self {
+    pub fn new_ok<S: Into<String>>(
+        packet: FileWorkPacket,
+        verbose_info: Option<S>,
+    ) -> Self {
         FileProcessingResult {
             is_final: true,
             file_work_packet: packet,
@@ -112,17 +124,19 @@ impl FileWorkPacket {
         config: &Config,
         action: FilePacketAction,
     ) -> Result<FileWorkPacket> {
-        let source_file_path = source_album_info
-            .build_source_file_path(file_name);
+        let source_file_path =
+            source_album_info.build_source_file_path(file_name);
 
         let source_file_type = FilePacketType::from_path(&source_file_path, source_album_info.library)
             .ok_or_else(|| miette!("Invalid source file extension: doesn't match any tracked extension."))?;
 
         let target_file_extension = match source_file_type {
             FilePacketType::AudioFile => String::from("mp3"),
-            FilePacketType::DataFile => filesystem::get_path_file_extension(&source_file_path)?,
+            FilePacketType::DataFile => {
+                filesystem::get_path_file_extension(&source_file_path)?
+            }
         };
-        
+
         let target_file_path = source_album_info
             .build_target_file_path(config, file_name)
             .with_extension(target_file_extension);
@@ -136,10 +150,16 @@ impl FileWorkPacket {
     }
 
     pub fn get_file_name(&self) -> Result<String> {
-        Ok(self.source_file_path.file_name()
-            .ok_or_else(|| miette!("Could not extract file name from source path."))?
+        Ok(self
+            .source_file_path
+            .file_name()
+            .ok_or_else(|| {
+                miette!("Could not extract file name from source path.")
+            })?
             .to_str()
-            .ok_or_else(|| miette!("Could not extract file name: invalid utf-8!"))?
+            .ok_or_else(|| {
+                miette!("Could not extract file name: invalid utf-8!")
+            })?
             .to_string())
     }
 
@@ -153,7 +173,9 @@ impl FileWorkPacket {
     ) -> FileProcessingResult {
         match self.action {
             FilePacketAction::Process => match self.file_type {
-                FilePacketType::AudioFile => self.transcode_into_mp3_v0(config, cancellation_flag),
+                FilePacketType::AudioFile => {
+                    self.transcode_into_mp3_v0(config, cancellation_flag)
+                }
                 FilePacketType::DataFile => self.copy_data_file(),
             },
             FilePacketAction::RemoveAtTarget => self.remove_processed_file(true),
@@ -183,7 +205,10 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "File target path had no parent directory?!",
-                    is_verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
+                    is_verbose_enabled().then_some(format!(
+                        "Couldn't construct target directory. {:?}",
+                        self
+                    )),
                 );
             }
         };
@@ -194,7 +219,10 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     error.to_string(),
-                    is_verbose_enabled().then_some(format!("Couldn't create parent directories. {:?}", self)),
+                    is_verbose_enabled().then_some(format!(
+                        "Couldn't create parent directories. {:?}",
+                        self
+                    )),
                 );
             }
         };
@@ -206,28 +234,37 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "Could not convert source path to str!",
-                    is_verbose_enabled().then_some(format!("Couldn't construct source file path. {:?}", self))
+                    is_verbose_enabled().then_some(format!(
+                        "Couldn't construct source file path. {:?}",
+                        self
+                    )),
                 );
             }
         };
-    
+
         let target_file_path_str = match self.target_file_path.to_str() {
             Some(str) => str,
             None => {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "Could not convert target path to str!",
-                    is_verbose_enabled().then_some(format!("Couldn't construct target file path. {:?}", self))
+                    is_verbose_enabled().then_some(format!(
+                        "Couldn't construct target file path. {:?}",
+                        self
+                    )),
                 );
             }
         };
 
-        let ffmpeg_arguments: Vec<String> = config.tools.ffmpeg.to_mp3_v0_args
+        let ffmpeg_arguments: Vec<String> = config
+            .tools
+            .ffmpeg
+            .to_mp3_v0_args
             .iter()
-            .map(|item| item
-                .replace("{INPUT_FILE}", source_file_path_str)
-                .replace("{OUTPUT_FILE}", target_file_path_str)
-            )
+            .map(|item| {
+                item.replace("{INPUT_FILE}", source_file_path_str)
+                    .replace("{OUTPUT_FILE}", target_file_path_str)
+            })
             .collect();
 
         // Run the actual transcode using ffmpeg.
@@ -235,18 +272,24 @@ impl FileWorkPacket {
             .args(ffmpeg_arguments)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn() {
+            .spawn()
+        {
             Ok(child) => child,
             Err(error) => {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "Could not spawn ffmpeg to transcode audio.",
-                    is_verbose_enabled().then_some(format!("Couldn't spawn ffmpeg: {}", error))
+                    is_verbose_enabled()
+                        .then_some(format!("Couldn't spawn ffmpeg: {}", error)),
                 );
             }
         };
-        
-        while ffmpeg_child.try_wait().expect("Could not wait for ffmpeg child.").is_none() {
+
+        while ffmpeg_child
+            .try_wait()
+            .expect("Could not wait for ffmpeg child.")
+            .is_none()
+        {
             // Keep checking whether the user requested cancellation.
             let flag_value = cancellation_flag.load(Ordering::Acquire);
             if flag_value {
@@ -254,55 +297,68 @@ impl FileWorkPacket {
                 ffmpeg_child.kill().expect("Could not kill ffmpeg process.");
                 break;
             }
-            
+
             thread::sleep(PROCESSING_THREAD_CANCELLATION_TICK_SLEEP_TIME);
         }
-        
+
         let final_flag_value = cancellation_flag.load(Ordering::Acquire);
         if final_flag_value {
             // Cancellation occured.
             FileProcessingResult::new_errored(
                 self.clone(),
                 "User cancelled task.",
-                is_verbose_enabled().then_some("User cancelled task.")
+                is_verbose_enabled().then_some("User cancelled task."),
             )
-            
         } else {
             // No cancellation occured.
-            let final_output = ffmpeg_child.wait_with_output()
+            let final_output = ffmpeg_child
+                .wait_with_output()
                 .expect("Could not wait for ffmpeg to finish");
-            
+
             if let Some(error_code) = final_output.status.code() {
                 if error_code == 0 {
                     FileProcessingResult::new_ok(
                         self.clone(),
-                        is_verbose_enabled().then_some(format!("ffmpeg exited (0). {:?}", self)),
+                        is_verbose_enabled()
+                            .then_some(format!("ffmpeg exited (0). {:?}", self)),
                     )
                 } else {
-                    let ffmpeg_stdout = match String::from_utf8(final_output.stdout) {
-                        Ok(stdout) => stdout,
-                        Err(error) => {
-                            return FileProcessingResult::new_errored(
-                                self.clone(),
-                                format!("Couldn't get ffmpeg stdout! {}", error),
-                                is_verbose_enabled()
-                                    .then_some(format!("from_utf8(ffmpeg.stdout) failed! {:?}", self)),
-                            );
-                        }
-                    };
-        
-                    let ffmpeg_stderr = match String::from_utf8(final_output.stderr) {
-                        Ok(stderr) => stderr,
-                        Err(error) => {
-                            return FileProcessingResult::new_errored(
-                                self.clone(),
-                                format!("Couldn't get ffmpeg stderr! {}", error),
-                                is_verbose_enabled()
-                                    .then_some(format!("from_utf8(ffmpeg.stderr) failed! {:?}", self))
-                            );
-                        }
-                    };
-        
+                    let ffmpeg_stdout =
+                        match String::from_utf8(final_output.stdout) {
+                            Ok(stdout) => stdout,
+                            Err(error) => {
+                                return FileProcessingResult::new_errored(
+                                    self.clone(),
+                                    format!(
+                                        "Couldn't get ffmpeg stdout! {}",
+                                        error
+                                    ),
+                                    is_verbose_enabled().then_some(format!(
+                                        "from_utf8(ffmpeg.stdout) failed! {:?}",
+                                        self
+                                    )),
+                                );
+                            }
+                        };
+
+                    let ffmpeg_stderr =
+                        match String::from_utf8(final_output.stderr) {
+                            Ok(stderr) => stderr,
+                            Err(error) => {
+                                return FileProcessingResult::new_errored(
+                                    self.clone(),
+                                    format!(
+                                        "Couldn't get ffmpeg stderr! {}",
+                                        error
+                                    ),
+                                    is_verbose_enabled().then_some(format!(
+                                        "from_utf8(ffmpeg.stderr) failed! {:?}",
+                                        self
+                                    )),
+                                );
+                            }
+                        };
+
                     FileProcessingResult::new_errored(
                         self.clone(),
                         format!("Non-zero ffmpeg exit code: {}", error_code),
@@ -321,11 +377,14 @@ impl FileWorkPacket {
                 FileProcessingResult::new_errored(
                     self.clone(),
                     "Could not get ffmpeg exit code!",
-                    is_verbose_enabled().then_some(format!("Couldn't get ffmpeg exit code. {:?}", self))
+                    is_verbose_enabled().then_some(format!(
+                        "Couldn't get ffmpeg exit code. {:?}",
+                        self
+                    )),
                 )
             }
         }
-        
+
         /*
         let ffmpeg_command = match Command::new(&config.tools.ffmpeg.binary)
             .args(ffmpeg_arguments)
@@ -339,7 +398,7 @@ impl FileWorkPacket {
                 );
             }
         };
-        
+
         match ffmpeg_command.status.code() {
             Some(error_code) => {
                 if error_code == 0 {
@@ -359,7 +418,7 @@ impl FileWorkPacket {
                             );
                         }
                     };
-        
+
                     let ffmpeg_stderr = match String::from_utf8(ffmpeg_command.stderr) {
                         Ok(stderr) => stderr,
                         Err(error) => {
@@ -371,7 +430,7 @@ impl FileWorkPacket {
                             );
                         }
                     };
-        
+
                     FileProcessingResult::new_errored(
                         self.clone(),
                         format!("Non-zero ffmpeg exit code: {}", error_code),
@@ -395,7 +454,7 @@ impl FileWorkPacket {
                 )
             }
         }
-        
+
          */
     }
 
@@ -418,7 +477,10 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     "No target directory.",
-                    is_verbose_enabled().then_some(format!("Couldn't construct target directory. {:?}", self))
+                    is_verbose_enabled().then_some(format!(
+                        "Couldn't construct target directory. {:?}",
+                        self
+                    )),
                 );
             }
         };
@@ -429,8 +491,10 @@ impl FileWorkPacket {
                 return FileProcessingResult::new_errored(
                     self.clone(),
                     error.to_string(),
-                    is_verbose_enabled()
-                        .then_some(format!("Couldn't create parent directories. {:?}", self))
+                    is_verbose_enabled().then_some(format!(
+                        "Couldn't create parent directories. {:?}",
+                        self
+                    )),
                 );
             }
         }
@@ -440,7 +504,10 @@ impl FileWorkPacket {
                 if bytes_copied > 0 {
                     FileProcessingResult::new_ok(
                         self.clone(),
-                        is_verbose_enabled().then_some(format!("Copy operation complete. {:?}", self)),
+                        is_verbose_enabled().then_some(format!(
+                            "Copy operation complete. {:?}",
+                            self
+                        )),
                     )
                 } else {
                     FileProcessingResult::new_errored(
@@ -449,14 +516,13 @@ impl FileWorkPacket {
                         is_verbose_enabled().then_some(format!("Copy complete, but 0 bytes copied. {:?}", self)),
                     )
                 }
-            },
-            Err(error) => {
-                FileProcessingResult::new_errored(
-                    self.clone(),
-                    error.to_string(),
-                    is_verbose_enabled().then_some(format!("Error while copying file. {:?}", self)),
-                )
             }
+            Err(error) => FileProcessingResult::new_errored(
+                self.clone(),
+                error.to_string(),
+                is_verbose_enabled()
+                    .then_some(format!("Error while copying file. {:?}", self)),
+            ),
         }
     }
 
@@ -466,27 +532,31 @@ impl FileWorkPacket {
     }
 
     /// Remove the processed (transcoded/copied) file.
-    fn remove_processed_file(&self, ignore_if_missing: bool) -> FileProcessingResult {
+    fn remove_processed_file(
+        &self,
+        ignore_if_missing: bool,
+    ) -> FileProcessingResult {
         if !self.target_file_exists() && ignore_if_missing {
             FileProcessingResult::new_ok(
                 self.clone(),
-                is_verbose_enabled().then_some(format!("File didn't exist, ignoring. {:?}", self)),
+                is_verbose_enabled().then_some(format!(
+                    "File didn't exist, ignoring. {:?}",
+                    self
+                )),
             )
         } else {
             match fs::remove_file(&self.target_file_path) {
-                Ok(()) => {
-                    FileProcessingResult::new_ok(
-                        self.clone(),
-                        is_verbose_enabled().then_some(format!("File removed. {:?}", self)),
-                    )
-                },
-                Err(error) => {
-                    FileProcessingResult::new_errored(
-                        self.clone(),
-                        error.to_string(),
-                        is_verbose_enabled().then_some(format!("Could not remove file. {:?}", self)),
-                    )
-                }
+                Ok(()) => FileProcessingResult::new_ok(
+                    self.clone(),
+                    is_verbose_enabled()
+                        .then_some(format!("File removed. {:?}", self)),
+                ),
+                Err(error) => FileProcessingResult::new_errored(
+                    self.clone(),
+                    error.to_string(),
+                    is_verbose_enabled()
+                        .then_some(format!("Could not remove file. {:?}", self)),
+                ),
             }
         }
     }
@@ -497,9 +567,7 @@ impl Debug for FileWorkPacket {
         write!(
             f,
             "<FileWorkPacket({}) {:?}=>{:?}>",
-            self.file_type,
-            self.source_file_path,
-            self.target_file_path,
+            self.file_type, self.source_file_path, self.target_file_path,
         )
     }
 }

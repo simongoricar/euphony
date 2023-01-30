@@ -7,9 +7,7 @@ pub struct CachedValue<T> {
 impl<T> CachedValue<T> {
     /// Creates a new, empty, `CachedValue`.
     pub fn new() -> CachedValue<T> {
-        CachedValue {
-            value: None,
-        }
+        CachedValue { value: None }
     }
 
     /// Sets the cached value.
@@ -19,21 +17,21 @@ impl<T> CachedValue<T> {
 
     /// Returns a `bool` indicating whether the value is cached.
     pub fn is_cached(&self) -> bool {
-        self.value
-            .is_some()
+        self.value.is_some()
     }
 
     /// Extracts the refernce to the inner cached value.
     /// **NOTE: This method panics if the inner value is not cached.**
     /// Use `is_cached` beforehand.
     pub fn get(&self) -> &T {
-        self.value
-            .as_ref()
-            .expect("Could not get value.")
+        self.value.as_ref().expect("Could not get value.")
     }
 }
 
-impl<T> Clone for CachedValue<T> where T: Clone {
+impl<T> Clone for CachedValue<T>
+where
+    T: Clone,
+{
     fn clone(&self) -> Self {
         Self {
             value: self.value.clone(),

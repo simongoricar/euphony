@@ -10,281 +10,186 @@ fn terminal_print_group_header<S: AsRef<str>>(
     header: S,
 ) {
     const PAD_TO_WIDTH: usize = 10;
-    
+
     let total_padding = PAD_TO_WIDTH.saturating_sub(header.as_ref().len());
     let left_padding = total_padding / 2;
     let right_padding = total_padding - left_padding;
-    
-    terminal.log_println(
-        format!(
-            "|----- {}{:^12}{} -----|",
-            " ".repeat(left_padding),
-            header.as_ref().bold(),
-            " ".repeat(right_padding)
-        ),
-    );
+
+    terminal.log_println(format!(
+        "|----- {}{:^12}{} -----|",
+        " ".repeat(left_padding),
+        header.as_ref().bold(),
+        " ".repeat(right_padding)
+    ));
 }
 
 /// Show the entire currently active configuration.
-pub fn cmd_show_config(
-    config: &Config,
-    terminal: &mut SimpleTerminal,
-) {
-    terminal.log_println(
-        &format!(
-            "Configuration file: {}",
-            config.configuration_file_path.to_string_lossy(),
-        )
-    );
+pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
+    terminal.log_println(&format!(
+        "Configuration file: {}",
+        config.configuration_file_path.to_string_lossy(),
+    ));
     terminal.log_newline();
-    
+
     // Essentials
     terminal_print_group_header(terminal, "essentials");
-    terminal.log_println(
-        &format!(
-            "    base_library_path = {}",
-            config.essentials.base_library_path,
-        )
-    );
-    terminal.log_println(
-        &format!(
-            "    base_tools_path = {}",
-            config.essentials.base_tools_path,
-        )
-    );
+    terminal.log_println(&format!(
+        "    base_library_path = {}",
+        config.essentials.base_library_path,
+    ));
+    terminal.log_println(&format!(
+        "    base_tools_path = {}",
+        config.essentials.base_tools_path,
+    ));
     terminal.log_newline();
-    
-    
+
+
     // Validation (basics)
     terminal_print_group_header(terminal, "validation");
-    terminal.log_println(
-        &format!(
-            "    extensions_considered_audio_files = {:?}",
-            config.validation.extensions_considered_audio_files,
-        )
-    );
-    
-    
+    terminal.log_println(&format!(
+        "    extensions_considered_audio_files = {:?}",
+        config.validation.extensions_considered_audio_files,
+    ));
+
+
     // Tools
     terminal_print_group_header(terminal, "tools");
-    terminal.log_println(
-        &format!(
-            " => {}",
-            "ffmpeg".bold()
-        )
-    );
-    terminal.log_println(
-        &format!(
-            "    binary = {}",
-            config.tools.ffmpeg.binary,
-        )
-    );
-    terminal.log_println(
-        &format!(
-            "    to_mp3_v0_args = {:?}",
-            config.tools.ffmpeg.to_mp3_v0_args,
-        )
-    );
+    terminal.log_println(&format!(" => {}", "ffmpeg".bold()));
+    terminal.log_println(&format!(
+        "    binary = {}",
+        config.tools.ffmpeg.binary,
+    ));
+    terminal.log_println(&format!(
+        "    to_mp3_v0_args = {:?}",
+        config.tools.ffmpeg.to_mp3_v0_args,
+    ));
     terminal.log_newline();
-    
-    
+
+
     // Libraries
     terminal_print_group_header(terminal, "libraries");
-    
+
     for (library_key, library) in &config.libraries {
-        terminal.log_println(
-            &format!(
-                "{} ({})",
-                format!(" => {}", library.name).bold(),
-                library_key,
-            )
-        );
-    
-        terminal.log_println(
-            format!(
-                "    path = \"{}\"",
-                library.path,
-            )
-        );
-        terminal.log_println(
-            format!(
-                "    ignored_directories_in_base_directory = {:?}",
-                library.ignored_directories_in_base_directory
-                    .as_ref()
-                    .unwrap_or(&Vec::new())
-            )
-        );
-        
+        terminal.log_println(&format!(
+            "{} ({})",
+            format!(" => {}", library.name).bold(),
+            library_key,
+        ));
+
+        terminal.log_println(format!("    path = \"{}\"", library.path,));
+        terminal.log_println(format!(
+            "    ignored_directories_in_base_directory = {:?}",
+            library
+                .ignored_directories_in_base_directory
+                .as_ref()
+                .unwrap_or(&Vec::new())
+        ));
+
         // `validation` sub-table
-        terminal.log_println(
-            format!(
-                "     => {}",
-                "validation".italic()
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        allowed_audio_file_extensions = {:?}",
-                library.validation.allowed_audio_file_extensions,
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        allowed_other_file_extensions = {:?}",
-                library.validation.allowed_other_file_extensions,
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        allowed_other_files_by_name = {:?}",
-                library.validation.allowed_other_files_by_name,
-            )
-        );
-        
+        terminal.log_println(format!("     => {}", "validation".italic()));
+        terminal.log_println(format!(
+            "        allowed_audio_file_extensions = {:?}",
+            library.validation.allowed_audio_file_extensions,
+        ));
+        terminal.log_println(format!(
+            "        allowed_other_file_extensions = {:?}",
+            library.validation.allowed_other_file_extensions,
+        ));
+        terminal.log_println(format!(
+            "        allowed_other_files_by_name = {:?}",
+            library.validation.allowed_other_files_by_name,
+        ));
+
         // `transcoding` sub-table
-        terminal.log_println(
-            format!(
-                "     => {}",
-                "transcoding".italic()
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        audio_file_extensions = {:?}",
-                library.transcoding.audio_file_extensions,
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        other_file_extensions = {:?}",
-                library.transcoding.other_file_extensions,
-            )
-        );
-    
+        terminal.log_println(format!("     => {}", "transcoding".italic()));
+        terminal.log_println(format!(
+            "        audio_file_extensions = {:?}",
+            library.transcoding.audio_file_extensions,
+        ));
+        terminal.log_println(format!(
+            "        other_file_extensions = {:?}",
+            library.transcoding.other_file_extensions,
+        ));
+
         terminal.log_newline();
     }
-    
-    
+
+
     // Aggregated library
     terminal_print_group_header(terminal, "aggregated_library");
-    terminal.log_println(
-        format!(
-            "  path = {}",
-            config.aggregated_library.path,
-        )
-    );
-    terminal.log_println(
-        format!(
-            "  transcode_threads = {}",
-            config.aggregated_library.transcode_threads,
-        )
-    );
-    terminal.log_println(
-        format!(
-            "  failure_max_retries = {}",
-            config.aggregated_library.failure_max_retries,
-        )
-    );
-    terminal.log_println(
-        format!(
-            "  failure_delay_seconds = {}",
-            config.aggregated_library.failure_delay_seconds,
-        )
-    );
+    terminal.log_println(format!(
+        "  path = {}",
+        config.aggregated_library.path,
+    ));
+    terminal.log_println(format!(
+        "  transcode_threads = {}",
+        config.aggregated_library.transcode_threads,
+    ));
+    terminal.log_println(format!(
+        "  failure_max_retries = {}",
+        config.aggregated_library.failure_max_retries,
+    ));
+    terminal.log_println(format!(
+        "  failure_delay_seconds = {}",
+        config.aggregated_library.failure_delay_seconds,
+    ));
 }
 
 /// Show the registered music libraries from the current configuration.
-pub fn cmd_list_libraries(
-    config: &Config,
-    terminal: &mut SimpleTerminal,
-) {
-    terminal.log_println(
-        format!(
-            "Configuration file: {}",
-            config.configuration_file_path.to_string_lossy(),
-        )
-    );
+pub fn cmd_list_libraries(config: &Config, terminal: &mut SimpleTerminal) {
+    terminal.log_println(format!(
+        "Configuration file: {}",
+        config.configuration_file_path.to_string_lossy(),
+    ));
     terminal.log_newline();
-    
-    terminal.log_println(
-        format!(
-            "{} libraries are available:",
-            config.libraries.len()
-                .to_string()
-                .bold()
-        )
-    );
-    
+
+    terminal.log_println(format!(
+        "{} libraries are available:",
+        config.libraries.len().to_string().bold()
+    ));
+
     for (library_key, library) in &config.libraries {
-        terminal.log_println(
-            format!(
-                "{} ({})",
-                format!(" => {}", library.name).bold(),
-                library_key,
-            )
-        );
-    
-        terminal.log_println(
-            format!(
-                "    path = \"{}\"",
-                library.path,
-            )
-        );
-        terminal.log_println(
-            format!(
-                "    ignored_directories_in_base_directory = {:?}",
-                library.ignored_directories_in_base_directory
-                    .as_ref()
-                    .unwrap_or(&Vec::new())
-            )
-        );
-        
+        terminal.log_println(format!(
+            "{} ({})",
+            format!(" => {}", library.name).bold(),
+            library_key,
+        ));
+
+        terminal.log_println(format!("    path = \"{}\"", library.path,));
+        terminal.log_println(format!(
+            "    ignored_directories_in_base_directory = {:?}",
+            library
+                .ignored_directories_in_base_directory
+                .as_ref()
+                .unwrap_or(&Vec::new())
+        ));
+
         // `validation` sub-table
-        terminal.log_println(
-            format!(
-                "     => {}",
-                "validation".italic()
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        allowed_audio_file_extensions = {:?}",
-                library.validation.allowed_audio_file_extensions,
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        allowed_other_file_extensions = {:?}",
-                library.validation.allowed_other_file_extensions,
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        allowed_other_files_by_name = {:?}",
-                library.validation.allowed_other_files_by_name,
-            )
-        );
-        
+        terminal.log_println(format!("     => {}", "validation".italic()));
+        terminal.log_println(format!(
+            "        allowed_audio_file_extensions = {:?}",
+            library.validation.allowed_audio_file_extensions,
+        ));
+        terminal.log_println(format!(
+            "        allowed_other_file_extensions = {:?}",
+            library.validation.allowed_other_file_extensions,
+        ));
+        terminal.log_println(format!(
+            "        allowed_other_files_by_name = {:?}",
+            library.validation.allowed_other_files_by_name,
+        ));
+
         // `transcoding` sub-table
-        terminal.log_println(
-            format!(
-                "     => {}",
-                "transcoding".italic()
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        audio_file_extensions = {:?}",
-                library.transcoding.audio_file_extensions,
-            )
-        );
-        terminal.log_println(
-            format!(
-                "        other_file_extensions = {:?}",
-                library.transcoding.other_file_extensions,
-            )
-        );
-        
+        terminal.log_println(format!("     => {}", "transcoding".italic()));
+        terminal.log_println(format!(
+            "        audio_file_extensions = {:?}",
+            library.transcoding.audio_file_extensions,
+        ));
+        terminal.log_println(format!(
+            "        other_file_extensions = {:?}",
+            library.transcoding.other_file_extensions,
+        ));
+
         terminal.log_newline();
     }
 }

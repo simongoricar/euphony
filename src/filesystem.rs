@@ -2,7 +2,7 @@ use std::fs;
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
 
-use miette::{Context, IntoDiagnostic, miette, Result};
+use miette::{miette, Context, IntoDiagnostic, Result};
 
 pub type DirectoryContents = (Vec<DirEntry>, Vec<DirEntry>);
 
@@ -22,10 +22,11 @@ pub fn list_directory_contents<P: AsRef<Path>>(
         let entry = entry
             .into_diagnostic()
             .wrap_err_with(|| miette!("Could not get directory entry."))?;
-        
-        let entry_type = entry.file_type()
-            .into_diagnostic()
-            .wrap_err_with(|| miette!("Could not get directory entry file type."))?;
+
+        let entry_type =
+            entry.file_type().into_diagnostic().wrap_err_with(|| {
+                miette!("Could not get directory entry file type.")
+            })?;
 
         if entry_type.is_file() {
             file_list.push(entry);
@@ -45,13 +46,13 @@ pub fn list_dir_entry_contents(
     dir_entry: &DirEntry,
 ) -> Result<DirectoryContents> {
     let path = dir_entry.path();
-    
+
     return if !path.is_dir() {
         Err(miette!("dir_entry is not a directory."))
     } else {
         list_directory_contents(path.as_path())
             .wrap_err_with(|| miette!("Could not list DirEntry contents."))
-    }
+    };
 }
 
 /// Given a directory `Path`, **recursively** scan its contents and return a `Result` containing
@@ -73,8 +74,10 @@ pub fn recursively_list_directory_files(
         let (current_dir, current_depth) = pending_directories.pop()
             .expect("Could not pop directory off directory stack, even though !is_empty()");
 
-        let (current_files, current_dirs) = list_directory_contents(current_dir.as_path())
-            .wrap_err_with(|| miette!("Could not list directory contents."))?;
+        let (current_files, current_dirs) = list_directory_contents(
+            current_dir.as_path(),
+        )
+        .wrap_err_with(|| miette!("Could not list directory contents."))?;
 
         aggregated_files.extend(current_files);
 
@@ -110,8 +113,10 @@ pub fn recursively_list_directory_files_filtered<P: Into<PathBuf>>(
         let (current_dir, current_depth) = pending_directories.pop()
             .expect("Could not pop directory off directory stack, even though pending_directories was not empty.");
 
-        let (current_files, current_dirs) = list_directory_contents(current_dir.as_path())
-            .wrap_err_with(|| miette!("Could not list directory contents."))?;
+        let (current_files, current_dirs) = list_directory_contents(
+            current_dir.as_path(),
+        )
+        .wrap_err_with(|| miette!("Could not list directory contents."))?;
 
         // Make sure only files with matching extensions are aggregated.
         for file in current_files {
@@ -121,7 +126,7 @@ pub fn recursively_list_directory_files_filtered<P: Into<PathBuf>>(
                     .to_str()
                     .ok_or_else(|| miette!("File contained invalid UTF-8."))?
                     .to_string(),
-                None => continue
+                None => continue,
             };
 
             if allowed_extensions.contains(&file_ext) {
@@ -133,9 +138,8 @@ pub fn recursively_list_directory_files_filtered<P: Into<PathBuf>>(
         // (that don't go too deep) onto the search stack.
         if current_depth < maximum_recursion_depth {
             for sub_directory in current_dirs {
-                pending_directories.push(
-                    (sub_directory.path(), current_depth + 1)
-                );
+                pending_directories
+                    .push((sub_directory.path(), current_depth + 1));
             }
         }
     }
@@ -183,7 +187,7 @@ pub fn is_file_inside_directory<P1: AsRef<Path>, P2: AsRef<Path>>(
                         Some(depth_limit - 1),
                     )
                 }
-            },
+            }
             None => false,
         }
     }

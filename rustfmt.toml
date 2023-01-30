@@ -21,4 +21,3 @@ blank_lines_upper_bound = 3
 imports_indent = "Block"
 imports_layout = "HorizontalVertical"
 group_imports = "StdExternalCrate"
-skip_macro_invocations = ["All"]

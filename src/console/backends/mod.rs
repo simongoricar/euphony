@@ -1,25 +1,24 @@
 use std::fmt::Display;
 use std::path::PathBuf;
 
-use crossbeam::channel::Receiver;
-
 pub use bare::*;
+use crossbeam::channel::Receiver;
 pub use fancy::*;
 
+use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType};
 use crate::console::{
     LogBackend,
     LogToFileBackend,
     TerminalBackend,
     TranscodeBackend,
-    UserControllableBackend,
     UserControlMessage,
+    UserControllableBackend,
     ValidationBackend,
     ValidationErrorInfo,
 };
-use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType};
 
-mod fancy;
 mod bare;
+mod fancy;
 pub mod shared;
 
 
@@ -47,7 +46,7 @@ macro_rules! enumdispatch_impl_terminal {
                     $($variant(terminal) => terminal.setup()),+
                 }
             }
-            
+
             fn destroy(&mut self) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.destroy()),+
@@ -68,7 +67,7 @@ macro_rules! enumdispatch_impl_log {
                     $($variant(terminal) => terminal.log_newline()),+
                 }
             }
-            
+
             fn log_println<D: Display>(&self, content: D) {
                 match self {
                     $($variant(terminal) => terminal.log_println(content)),+
@@ -89,7 +88,7 @@ macro_rules! enumdispatch_impl_log_to_file {
                     $($variant(terminal) => terminal.enable_saving_logs_to_file(log_file_path)),+
                 }
             }
-            
+
             fn disable_saving_logs_to_file(&mut self) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.disable_saving_logs_to_file()),+
@@ -125,67 +124,67 @@ macro_rules! enumdispatch_impl_transcode {
                     $($variant(terminal) => terminal.queue_begin()),+
                 }
             }
-            
+
             fn queue_end(&mut self) {
                 match self {
                     $($variant(terminal) => terminal.queue_end()),+
                 }
             }
-            
+
             fn queue_item_add(&mut self, item: String, item_type: QueueType) -> miette::Result<QueueItemID> {
                 match self {
                     $($variant(terminal) => terminal.queue_item_add(item, item_type)),+
                 }
             }
-            
+
             fn queue_item_start(&mut self, item_id: QueueItemID) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.queue_item_start(item_id)),+
                 }
             }
-            
+
             fn queue_item_finish(&mut self, item_id: QueueItemID, was_ok: bool) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.queue_item_finish(item_id, was_ok)),+
                 }
             }
-            
+
             fn queue_item_modify(&mut self, item_id: QueueItemID, function: Box<dyn FnOnce(&mut QueueItem)>) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.queue_item_modify(item_id, function)),+
                 }
             }
-            
+
             fn queue_item_remove(&mut self, item_id: QueueItemID) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.queue_item_remove(item_id)),+
                 }
             }
-            
+
             fn queue_clear(&mut self, queue_type: QueueType) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.queue_clear(queue_type)),+
                 }
             }
-            
+
             fn progress_begin(&mut self) {
                 match self {
                     $($variant(terminal) => terminal.progress_begin()),+
                 }
             }
-            
+
             fn progress_end(&mut self) {
                 match self {
                     $($variant(terminal) => terminal.progress_end()),+
                 }
             }
-            
+
             fn progress_set_total(&mut self, total: usize) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.progress_set_total(total)),+
                 }
             }
-            
+
             fn progress_set_current(&mut self, finished: usize) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.progress_set_current(finished)),+
@@ -216,19 +215,43 @@ pub enum SimpleTerminal {
     Fancy(TUITerminalBackend),
 }
 
-terminal_impl_direct_from!(SimpleTerminal, BareTerminalBackend, SimpleTerminal::Bare);
-terminal_impl_direct_from!(SimpleTerminal, TUITerminalBackend, SimpleTerminal::Fancy);
+terminal_impl_direct_from!(
+    SimpleTerminal,
+    BareTerminalBackend,
+    SimpleTerminal::Bare
+);
+terminal_impl_direct_from!(
+    SimpleTerminal,
+    TUITerminalBackend,
+    SimpleTerminal::Fancy
+);
 
-enumdispatch_impl_terminal!(SimpleTerminal, SimpleTerminal::Bare, SimpleTerminal::Fancy);
-enumdispatch_impl_log!(SimpleTerminal, SimpleTerminal::Bare, SimpleTerminal::Fancy);
-enumdispatch_impl_log_to_file!(SimpleTerminal, SimpleTerminal::Bare, SimpleTerminal::Fancy);
+enumdispatch_impl_terminal!(
+    SimpleTerminal,
+    SimpleTerminal::Bare,
+    SimpleTerminal::Fancy
+);
+enumdispatch_impl_log!(
+    SimpleTerminal,
+    SimpleTerminal::Bare,
+    SimpleTerminal::Fancy
+);
+enumdispatch_impl_log_to_file!(
+    SimpleTerminal,
+    SimpleTerminal::Bare,
+    SimpleTerminal::Fancy
+);
 
 
 pub enum ValidationTerminal {
     Bare(BareTerminalBackend),
 }
 
-terminal_impl_direct_from!(ValidationTerminal, BareTerminalBackend, ValidationTerminal::Bare);
+terminal_impl_direct_from!(
+    ValidationTerminal,
+    BareTerminalBackend,
+    ValidationTerminal::Bare
+);
 
 enumdispatch_impl_terminal!(ValidationTerminal, ValidationTerminal::Bare);
 enumdispatch_impl_log!(ValidationTerminal, ValidationTerminal::Bare);
@@ -242,11 +265,39 @@ pub enum TranscodeTerminal {
     Fancy(TUITerminalBackend),
 }
 
-terminal_impl_direct_from!(TranscodeTerminal, BareTerminalBackend, TranscodeTerminal::Bare);
-terminal_impl_direct_from!(TranscodeTerminal, TUITerminalBackend, TranscodeTerminal::Fancy);
+terminal_impl_direct_from!(
+    TranscodeTerminal,
+    BareTerminalBackend,
+    TranscodeTerminal::Bare
+);
+terminal_impl_direct_from!(
+    TranscodeTerminal,
+    TUITerminalBackend,
+    TranscodeTerminal::Fancy
+);
 
-enumdispatch_impl_terminal!(TranscodeTerminal, TranscodeTerminal::Bare, TranscodeTerminal::Fancy);
-enumdispatch_impl_log!(TranscodeTerminal, TranscodeTerminal::Bare, TranscodeTerminal::Fancy);
-enumdispatch_impl_log_to_file!(TranscodeTerminal, TranscodeTerminal::Bare, TranscodeTerminal::Fancy);
-enumdispatch_impl_user_controllable!(TranscodeTerminal, TranscodeTerminal::Bare, TranscodeTerminal::Fancy);
-enumdispatch_impl_transcode!(TranscodeTerminal, TranscodeTerminal::Bare, TranscodeTerminal::Fancy);
+enumdispatch_impl_terminal!(
+    TranscodeTerminal,
+    TranscodeTerminal::Bare,
+    TranscodeTerminal::Fancy
+);
+enumdispatch_impl_log!(
+    TranscodeTerminal,
+    TranscodeTerminal::Bare,
+    TranscodeTerminal::Fancy
+);
+enumdispatch_impl_log_to_file!(
+    TranscodeTerminal,
+    TranscodeTerminal::Bare,
+    TranscodeTerminal::Fancy
+);
+enumdispatch_impl_user_controllable!(
+    TranscodeTerminal,
+    TranscodeTerminal::Bare,
+    TranscodeTerminal::Fancy
+);
+enumdispatch_impl_transcode!(
+    TranscodeTerminal,
+    TranscodeTerminal::Bare,
+    TranscodeTerminal::Fancy
+);

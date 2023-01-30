@@ -5,6 +5,7 @@ use miette::{miette, Result};
 use tui::style::{Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::widgets::ListItem;
+
 use crate::console::backends::shared::{AnimatedSpinner, SpinnerStyle};
 
 /// Queue item type.
@@ -21,7 +22,7 @@ pub struct QueueItemID(pub u32);
 
 impl Deref for QueueItemID {
     type Target = u32;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -58,28 +59,28 @@ pub struct QueueItemFinishedState {
 pub struct QueueItem {
     /// Prefix to put before the queue item's `content`. This comes after the potential spinner.
     pub prefix: Option<String>,
-    
+
     /// The main queue item contents.
     pub content: String,
-    
+
     /// Suffix to put after the queue item's `content`.
     pub suffix: Option<String>,
-    
+
     /// Queue item type.
     pub item_type: QueueType,
-    
+
     /// Queue unique item ID.
     pub id: QueueItemID,
-    
+
     /// Whether the queue item is currently active/being processed/etc.
     pub is_active: bool,
-    
+
     /// If finished, the `QueueItemFinishedState` containing finished state (whether processing went ok, etc.).
     pub finished_state: Option<QueueItemFinishedState>,
-    
+
     /// Optionally, a spinner to prefix the entire item with.
     pub spinner: Option<AnimatedSpinner>,
-    
+
     /// If `true`, three spaces will be generated before the prefix when the spinner is disabled.
     /// This is useful for a queue where all items will at some point have enabled spinners and you
     /// just want to align them vertically even when they don't.
@@ -88,12 +89,9 @@ pub struct QueueItem {
 
 impl QueueItem {
     /// Initialize a new `QueueItem` from textual content and the item type.
-    pub fn new<S: Into<String>>(
-        content: S,
-        item_type: QueueType,
-    ) -> Self {
+    pub fn new<S: Into<String>>(content: S, item_type: QueueType) -> Self {
         let random_id = QueueItemID(rand::random::<u32>());
-        
+
         Self {
             prefix: None,
             content: content.into(),
@@ -106,7 +104,7 @@ impl QueueItem {
             spaces_when_spinner_is_disabled: true,
         }
     }
-    
+
     /// Retrieve the current queue item state (pending / in progress / finished).
     pub fn get_state(&self) -> QueueItemState {
         if !self.is_active && self.finished_state.is_none() {
@@ -117,38 +115,45 @@ impl QueueItem {
             QueueItemState::Finished
         }
     }
-    
+
     /// Set the item as finished, giving it a `QueueItemFinishedState`.
-    pub fn set_finished_state(&mut self, finished_state: QueueItemFinishedState) {
+    pub fn set_finished_state(
+        &mut self,
+        finished_state: QueueItemFinishedState,
+    ) {
         self.finished_state = Some(finished_state);
     }
-    
+
     /// Enable the spinner with the given `SpinnerStyle` and
     /// speed (optional, defaults to the speed associated with that spinner style).
-    pub fn enable_spinner(&mut self, style: SpinnerStyle, speed: Option<Duration>) {
+    pub fn enable_spinner(
+        &mut self,
+        style: SpinnerStyle,
+        speed: Option<Duration>,
+    ) {
         self.spinner = Some(AnimatedSpinner::new(style, speed));
     }
-    
+
     /// Disable the spinner, if any.
     pub fn disable_spinner(&mut self) {
         self.spinner = None;
     }
-    
+
     /// Set the queue item's prefix.
     pub fn set_prefix<S: Into<String>>(&mut self, prefix: S) {
         self.prefix = Some(prefix.into());
     }
-    
+
     /// Clear the queue item's prefix, if any.
     pub fn clear_prefix(&mut self) {
         self.prefix = None;
     }
-    
+
     /// Set the queue item's suffix.
     pub fn set_suffix<S: Into<String>>(&mut self, suffix: S) {
         self.suffix = Some(suffix.into());
     }
-    
+
     /// Clear the queue item's suffix, if any.
     pub fn clear_suffix(&mut self) {
         self.suffix = None;
@@ -166,17 +171,14 @@ pub struct QueueState {
 
 impl QueueState {
     /// Add `QueueItem` to the queue.
-    pub fn add_item(
-        &mut self,
-        item: QueueItem,
-    ) {
+    pub fn add_item(&mut self, item: QueueItem) {
         match &item.item_type {
             QueueType::Library => self.library_items.push(item),
             QueueType::Album => self.album_items.push(item),
             QueueType::File => self.file_items.push(item),
         }
     }
-    
+
     /// Find the queue item by its `QueueItemID` (searches all queues).
     /// Returns `None` if the item isn't in any of the queues.
     pub fn find_item_by_id(
@@ -189,44 +191,40 @@ impl QueueState {
             .chain(self.file_items.iter_mut())
             .find(|item| item.id == item_id)
     }
-    
+
     /// Remove the queue item by its `QueueItemID` (searches all queues).
     /// Returns `Err` if the item isn't in any of the queues.
-    pub fn remove_item_by_id(
-        &mut self,
-        item_id: QueueItemID,
-    ) -> Result<()> {
+    pub fn remove_item_by_id(&mut self, item_id: QueueItemID) -> Result<()> {
         // Look at `library_items`.
-        let library_items_pos = self.library_items
+        let library_items_pos = self
+            .library_items
             .iter()
             .position(|item| item.id == item_id);
         if let Some(position) = library_items_pos {
             self.library_items.remove(position);
             return Ok(());
         }
-        
+
         // Look at `album_items`.
-        let album_items_pos = self.album_items
-            .iter()
-            .position(|item| item.id == item_id);
+        let album_items_pos =
+            self.album_items.iter().position(|item| item.id == item_id);
         if let Some(position) = album_items_pos {
             self.album_items.remove(position);
             return Ok(());
         }
-        
+
         // Look at `file_items`.
-        let file_items_pos = self.file_items
-            .iter()
-            .position(|item| item.id == item_id);
+        let file_items_pos =
+            self.file_items.iter().position(|item| item.id == item_id);
         if let Some(position) = file_items_pos {
             self.file_items.remove(position);
             return Ok(());
         }
-        
+
         // No match in any of the queues, no such item.
         Err(miette!("No such queue item."))
     }
-    
+
     /// Clears a single queue by type.
     pub fn clear_queue_by_type(&mut self, queue_type: QueueType) {
         match queue_type {
@@ -242,19 +240,19 @@ impl QueueState {
 pub struct ListItemStyleRules {
     /// Style to apply to items that are pending.
     pub item_pending_style: Style,
-    
+
     /// Style to apply to items that are in progress.
     pub item_in_progress_style: Style,
-    
+
     /// Style to apply to items that have finished successfully.
     pub item_finished_ok_style: Style,
-    
+
     /// Style to apply to items that have finished unsuccessfully.
     pub item_finished_not_ok_style: Style,
-    
+
     /// Style to apply to the potential leading "... (N completed) ..." message at the top of the queue.
     pub leading_completed_items_style: Style,
-    
+
     /// Style to apply to the potential trailing "... (N remaining) ..." message at the bottom of the queue.
     pub trailing_hidden_pending_items_style: Style,
 }
@@ -285,84 +283,87 @@ pub fn generate_dynamic_list_from_queue_items(
 ) -> Result<Vec<ListItem>> {
     let total_queue_size = full_queue.len();
     let mut dynamic_list: Vec<ListItem> = Vec::with_capacity(max_lines);
-    
+
     let leading_items_completed_count = full_queue
         .iter()
         .take_while(|item| item.finished_state.is_some())
         .count();
-    
+
     // Generate dynamic list.
     let mut lines_used: usize = 0;
     let mut current_queue_offset: usize = 0;
-    
+
     // Additionally, don't generate the leading and trailing lines if
     // the amount of tasks fits in the window anyway.
-    
+
     // Generates leading "... (12 completed) ..." if there are
     // at least two completed items at the top of the queue.
-    if leading_items_completed_count >= 2
-        && total_queue_size > max_lines
-    {
+    if leading_items_completed_count >= 2 && total_queue_size > max_lines {
         dynamic_list.push(
-            ListItem::new(
-                Span::styled(
-                    format!("  ... ({} completed) ...", leading_items_completed_count),
-                    Style::default().add_modifier(Modifier::ITALIC)
-                )
-            )
-                .style(list_style_rules.leading_completed_items_style)
+            ListItem::new(Span::styled(
+                format!(
+                    "  ... ({} completed) ...",
+                    leading_items_completed_count
+                ),
+                Style::default().add_modifier(Modifier::ITALIC),
+            ))
+            .style(list_style_rules.leading_completed_items_style),
         );
         current_queue_offset += leading_items_completed_count;
         lines_used += 1;
     }
-    
+
     // Preparation for trailing "... (23 remaining) ..." line.
     // This trailing message is shown only if there are more items that are hidden.
-    let add_trailing = total_queue_size - current_queue_offset + 1 > max_lines - lines_used;
+    let add_trailing =
+        total_queue_size - current_queue_offset + 1 > max_lines - lines_used;
     if add_trailing {
         lines_used += 1;
     }
-    
+
     // Generates as many "normal" lines as possible.
-    while lines_used < max_lines
-        && current_queue_offset < total_queue_size
-    {
-        let next_item = full_queue.get(current_queue_offset)
+    while lines_used < max_lines && current_queue_offset < total_queue_size {
+        let next_item = full_queue
+            .get(current_queue_offset)
             .ok_or_else(|| miette!("Could not get queue item."))?;
-        
+
         let item_style = match next_item.get_state() {
             QueueItemState::Pending => list_style_rules.item_pending_style,
-            QueueItemState::InProgress => list_style_rules.item_in_progress_style,
+            QueueItemState::InProgress => {
+                list_style_rules.item_in_progress_style
+            }
             QueueItemState::Finished => {
-                match next_item.finished_state.as_ref()
-                    .expect("QueueItemState::Finished, but finished state is None?!")
-                    .is_ok {
+                match next_item
+                    .finished_state
+                    .as_ref()
+                    .expect(
+                        "QueueItemState::Finished, but finished state is None?!",
+                    )
+                    .is_ok
+                {
                     true => list_style_rules.item_finished_ok_style,
                     false => list_style_rules.item_finished_not_ok_style,
                 }
             }
         };
-        
+
         dynamic_list.push(
-            ListItem::new(Spans(vec!(
-                Span::raw(
-                    if let Some(spinner) = &next_item.spinner {
-                        format!(" {} ", spinner.get_current_phase())
-                    } else {
-                        match next_item.spaces_when_spinner_is_disabled {
-                            true => "   ".into(),
-                            false => "".into()
-                        }
-                    },
-                ),
+            ListItem::new(Spans(vec![
+                Span::raw(if let Some(spinner) = &next_item.spinner {
+                    format!(" {} ", spinner.get_current_phase())
+                } else {
+                    match next_item.spaces_when_spinner_is_disabled {
+                        true => "   ".into(),
+                        false => "".into(),
+                    }
+                }),
                 Span::styled(
                     if let Some(prefix) = &next_item.prefix {
                         prefix
                     } else {
                         ""
                     },
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(next_item.content.clone()),
                 Span::styled(
@@ -371,34 +372,35 @@ pub fn generate_dynamic_list_from_queue_items(
                     } else {
                         ""
                     },
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
-                )
-            )))
-                .style(item_style)
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+            ]))
+            .style(item_style),
         );
-        
+
         current_queue_offset += 1;
         lines_used += 1;
     }
-    
+
     // If there are still (overflowing) trailing pending tasks, we show them in the last line
     // as "... (54 remaining) ...".
     if add_trailing {
-        let hidden_pending_item_count = total_queue_size - current_queue_offset + 2;
-        
+        let hidden_pending_item_count =
+            total_queue_size - current_queue_offset + 2;
+
         dynamic_list.pop();
         dynamic_list.pop();
         dynamic_list.push(
-            ListItem::new(
-                Span::styled(
-                    format!("  ... ({} remaining) ...", hidden_pending_item_count),
-                    Style::default().add_modifier(Modifier::ITALIC)
-                )
-            )
-                .style(list_style_rules.trailing_hidden_pending_items_style)
+            ListItem::new(Span::styled(
+                format!(
+                    "  ... ({} remaining) ...",
+                    hidden_pending_item_count
+                ),
+                Style::default().add_modifier(Modifier::ITALIC),
+            ))
+            .style(list_style_rules.trailing_hidden_pending_items_style),
         );
     }
-    
+
     Ok(dynamic_list)
 }

@@ -5,4 +5,3 @@ pub use utilities::*;
 mod structure;
 mod traits;
 mod utilities;
-

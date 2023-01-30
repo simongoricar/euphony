@@ -6,16 +6,22 @@ use crossterm::style::Stylize;
 use miette::Result;
 
 use crate::configuration::Config;
-use crate::console::{TerminalBackend, LogToFileBackend, LogBackend};
-use crate::console::backends::{BareTerminalBackend, SimpleTerminal, TranscodeTerminal, TUITerminalBackend, ValidationTerminal};
+use crate::console::backends::{
+    BareTerminalBackend,
+    SimpleTerminal,
+    TUITerminalBackend,
+    TranscodeTerminal,
+    ValidationTerminal,
+};
+use crate::console::{LogBackend, LogToFileBackend, TerminalBackend};
 use crate::globals::VERBOSE;
 
-mod configuration;
-mod filesystem;
-mod commands;
 mod cached;
-mod globals;
+mod commands;
+mod configuration;
 mod console;
+mod filesystem;
+mod globals;
 
 
 #[derive(Subcommand, PartialEq, Eq)]
@@ -58,7 +64,7 @@ struct TranscodeAllArgs {
                 a constantly-updating terminal UI (e.g. for saving logs)."
     )]
     bare_terminal: bool,
-    
+
     #[arg(
         long = "log-to-file",
         help = "Path to the log file. If this is unset, no logs are saved."
@@ -125,12 +131,9 @@ fn get_configuration(args: &CLIArgs) -> Config {
 ///
 /// `TUITerminalBackend` has a better and dynamic terminal UI, but is harder to debug or properly log still down.
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console.
-fn get_transcode_terminal(
-    use_bare: bool
-) -> TranscodeTerminal {
+fn get_transcode_terminal(use_bare: bool) -> TranscodeTerminal {
     if use_bare {
-        BareTerminalBackend::new()
-            .into()
+        BareTerminalBackend::new().into()
     } else {
         TUITerminalBackend::new()
             .expect("Could not create TUI terminal backend.")
@@ -144,86 +147,92 @@ fn process_cli_command(
     config: &Config,
 ) -> std::result::Result<(), i32> {
     // TODO Fully test the new enum-dispatched backends.
-    
+
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
         // `transcode`/`transcode-all` has two available terminal backends:
         // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
         let mut terminal = get_transcode_terminal(transcode_args.bare_terminal);
-        terminal.setup()
+        terminal
+            .setup()
             .expect("Could not set up tui terminal backend.");
-        
+
         if let Some(log_file_path) = transcode_args.log_to_file {
-            terminal.enable_saving_logs_to_file(PathBuf::from(log_file_path))
+            terminal
+                .enable_saving_logs_to_file(PathBuf::from(log_file_path))
                 .map_err(|_| 1)?;
         }
-        
+
         match commands::cmd_transcode_all(config, &mut terminal) {
             Ok(final_message) => {
                 terminal.log_println(final_message);
-                terminal.destroy()
+                terminal
+                    .destroy()
                     .expect("Could not destroy tui terminal backend.");
-                
+
                 Ok(())
-            },
+            }
             Err(error) => {
                 terminal.log_println(error.to_string().red());
-                terminal.destroy()
+                terminal
+                    .destroy()
                     .expect("Could not destroy tui terminal backend.");
-                
+
                 Err(1)
             }
         }
     } else if let CLICommand::ValidateAll(args) = args.command {
         let mut terminal: ValidationTerminal = BareTerminalBackend::new().into();
-    
-        terminal.setup()
+
+        terminal
+            .setup()
             .expect("Could not set up bare console backend.");
-        
+
         if let Some(log_file_path) = args.log_to_file {
-            terminal.enable_saving_logs_to_file(PathBuf::from(log_file_path))
+            terminal
+                .enable_saving_logs_to_file(PathBuf::from(log_file_path))
                 .map_err(|_| 1)?;
         }
-        
+
         match commands::cmd_validate_all(config, &mut terminal) {
             Ok(_) => {}
             Err(error) => {
-                terminal.log_println(
-                    format!(
-                        "{}: {}",
-                        "Something went wrong while validating:".red(),
-                        error,
-                    ),
-                );
+                terminal.log_println(format!(
+                    "{}: {}",
+                    "Something went wrong while validating:".red(),
+                    error,
+                ));
             }
         };
-        terminal.destroy()
+        terminal
+            .destroy()
             .expect("Could not destroy bare console backend.");
-    
+
         Ok(())
-        
     } else if args.command == CLICommand::ShowConfig {
         let mut terminal: SimpleTerminal = BareTerminalBackend::new().into();
-    
-        terminal.setup()
+
+        terminal
+            .setup()
             .expect("Could not set up bare console backend.");
         commands::cmd_show_config(config, &mut terminal);
-        terminal.destroy()
+        terminal
+            .destroy()
             .expect("Could not destroy bare console backend.");
-        
+
         Ok(())
-        
     } else if args.command == CLICommand::ListLibraries {
         let mut terminal: SimpleTerminal = BareTerminalBackend::new().into();
-    
-        terminal.setup()
+
+        terminal
+            .setup()
             .expect("Could not set up bare console backend.");
         commands::cmd_list_libraries(config, &mut terminal);
-        terminal.destroy()
+        terminal
+            .destroy()
             .expect("Could not destroy bare console backend.");
-    
+
         Ok(())
-        
     } else {
         panic!("Unrecognized command!");
     }
@@ -235,15 +244,11 @@ fn main() -> Result<()> {
     // TODO .album.euphony should have a version lock inside it
     let args: CLIArgs = CLIArgs::parse();
     VERBOSE.set(args.verbose);
-    
+
     let configuration = get_configuration(&args);
-    
+
     match process_cli_command(args, &configuration) {
-        Ok(_) => {
-            exit(0)
-        },
-        Err(exit_code) => {
-            exit(exit_code)
-        }
+        Ok(_) => exit(0),
+        Err(exit_code) => exit(exit_code),
     };
 }
