@@ -34,7 +34,7 @@ mod overrides;
 mod packets;
 mod threadpool;
 
-/// A "file progress" message that worker threads send back to the main thread.
+/// A "file progress"/"log this to the console" message that worker threads send back to the main thread.
 enum WorkerMessage {
     StartingWithFile {
         queue_item: QueueItemID,
@@ -49,12 +49,16 @@ enum WorkerMessage {
 }
 
 /// A message from the main processing thread to individual worker threads.
+/// Currently the only possible message is for the worker threads to stop.
 enum MainThreadMessage {
     StopProcessing,
 }
 
-/// Given an array of tuples containing file packets and their queue IDs,
-/// execute each task inside the given thread pool, sending progress messages through the `Sender`.
+/// This function processes an entire album worth of `FileWorkPacket`s. Needs a reference
+/// to the current configuration, the `Sender` through which to send `WorkerMessage`s and
+/// the `Receiver` through which to receive `MainThreadMessage`s from the main thread.
+///
+/// Returns `Ok(())` upon completing the processing of the given album.
 fn process_album_files(
     album_file_packets: &Vec<(FileWorkPacket, QueueItemID)>,
     config: &Config,
@@ -205,8 +209,7 @@ fn process_album_files(
         progress_sender
             .send(WorkerMessage::WriteToLog {
                 content: format!(
-                    "Threadpool stopped, reason: {:?}",
-                    thread_pool_result
+                    "Threadpool stopped, reason: {thread_pool_result:?}"
                 ),
             })
             .into_diagnostic()?;
@@ -495,8 +498,7 @@ pub fn cmd_transcode_all(
 
                             if is_verbose_enabled() {
                                 terminal.log_println(format!(
-                                    "[VERBOSE] File finished, result: {:?}",
-                                    processing_result
+                                    "[VERBOSE] File finished, result: {processing_result:?}",
                                 ));
                             }
 
@@ -650,7 +652,6 @@ pub fn cmd_transcode_all(
     let processing_time_delta = processing_begin_time.elapsed().as_secs_f64();
 
     Ok(format!(
-        "Full library transcoding completed in {:.2} seconds.",
-        processing_time_delta,
+        "Full library transcoding completed in {processing_time_delta:.2} seconds.",
     ))
 }

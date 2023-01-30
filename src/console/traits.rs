@@ -6,6 +6,8 @@ use miette::Result;
 
 use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType};
 
+/// The way multiple UI backends are done in euphony is via a set of terminal backend traits.
+/// This is the base. All terminal backends must implement this.
 pub trait TerminalBackend {
     /// Initialize the terminal backend.
     fn setup(&mut self) -> Result<()>;
@@ -14,6 +16,7 @@ pub trait TerminalBackend {
     fn destroy(&mut self) -> Result<()>;
 }
 
+/// Allows backends to print out content and newlines.
 pub trait LogBackend {
     /// Print a new empty line into the log.
     fn log_newline(&self);
@@ -22,6 +25,8 @@ pub trait LogBackend {
     fn log_println<D: Display>(&self, content: D);
 }
 
+/// Allows backends to be used in transcoding process. This means the implementor
+/// must maintain some form of (purely visual) queue system and a way of monitoring progress.
 pub trait TranscodeBackend {
     /// Initialize the queue system. This should be called before any other `queue_*` methods.
     fn queue_begin(&mut self);
@@ -47,7 +52,7 @@ pub trait TranscodeBackend {
     ) -> Result<()>;
 
     /// Fetch a mutable reference to the given queue item, allowing you to modify its contents.
-    /// This is done by providing a function that will take the mutable reference and modify it.
+    /// This is done by providing a closure in the second argument that will take the mutable reference and modify it.
     fn queue_item_modify(
         &mut self,
         item_id: QueueItemID,
@@ -63,16 +68,23 @@ pub trait TranscodeBackend {
     /// Enable the progress bar. This must be called before any other progress bar-related methods.
     fn progress_begin(&mut self);
 
-    /// Disable the progress bar.
+    /// Disable the progress bar (potentially represented in the implementor as hiding the bar or greying it out).
     fn progress_end(&mut self);
 
     /// Set the total number of tasks to show in the progress bar.
-    fn progress_set_total(&mut self, total: usize) -> Result<()>;
+    fn progress_set_total(&mut self, num_total: usize) -> Result<()>;
 
     /// Set the currently completed number of tasks to show in the progress bar (should be less or equal to total).
-    fn progress_set_current(&mut self, finished: usize) -> Result<()>;
+    fn progress_set_current(&mut self, num_finished: usize) -> Result<()>;
 }
 
+/// Shared format for validation errors.
+/// Consists of:
+/// - a header that describes the general validation error and
+/// - a set of key-value attributes that further explain the details of this error.
+///
+/// For example, the header might be "Invalid file found in the album directory." and
+/// we could potentially have the following attributes: \[("Library": "Standard", "File": "./some/filepath.wav")]
 pub struct ValidationErrorInfo {
     pub header: String,
     pub attributes: Vec<(String, String)>,
@@ -90,21 +102,27 @@ impl ValidationErrorInfo {
     }
 }
 
+/// Allows backends to be used for displaying collection validation results.
 pub trait ValidationBackend {
     fn validation_add_error(&self, error: ValidationErrorInfo);
 }
 
+/// Describes all the possible user inputs that can be received from the backend.
 #[derive(Copy, Clone)]
 pub enum UserControlMessage {
     Exit,
 }
 
+/// Allows user input (whatever that means for the implementor - generally a key press)
+/// in the form of a `UserControlMessage` that describes the user's action.
+/// It is up to the backend to parse and kind of raw user input and parse it into a `UserControlMessage`.
 pub trait UserControllableBackend {
     fn get_user_control_receiver(
         &mut self,
     ) -> Result<Receiver<UserControlMessage>>;
 }
 
+/// Allows saving `LogBackend`'s log output to file (usually in addition to the terminal or whatever).
 pub trait LogToFileBackend {
     fn enable_saving_logs_to_file(
         &mut self,

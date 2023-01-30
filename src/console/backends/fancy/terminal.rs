@@ -313,11 +313,10 @@ impl TUITerminalBackend {
             }
 
             let file_queue_description = format!(
-                "({} waiting, {} working, {} finished, {} failed) ",
-                pending_item_count,
-                in_progress_item_count,
-                finished_ok_item_count,
-                finished_not_ok_item_count,
+                "({pending_item_count} waiting, \
+                {in_progress_item_count} working, \
+                {finished_ok_item_count} finished, \
+                {finished_not_ok_item_count} failed) ",
             );
 
             let file_queue = List::new(file_dynamic_queue_items).block(

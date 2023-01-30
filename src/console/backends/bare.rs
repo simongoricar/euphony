@@ -79,7 +79,7 @@ impl LogBackend for BareTerminalBackend {
     fn log_println<D: Display>(&self, content: D) {
         let content_string = content.to_string();
 
-        println!("{}", content_string);
+        println!("{content_string}");
 
         if let Some(writer) = self.log_file_output.as_ref() {
             let mut writer_locked =
@@ -246,7 +246,7 @@ impl TranscodeBackend for BareTerminalBackend {
         if let Some(queue) = &mut self.queue {
             queue.clear_queue_by_type(queue_type);
 
-            println!("Queue {:?} has been cleared.", queue_type);
+            println!("Queue {queue_type:?} has been cleared.");
 
             Ok(())
         } else {
@@ -309,8 +309,7 @@ impl ValidationBackend for BareTerminalBackend {
             .join("\n");
 
         self.log_println(Box::new(format!(
-            "{}\n{}",
-            formatted_header, formatted_attributes
+            "{formatted_header}\n{formatted_attributes}",
         )));
     }
 }

@@ -178,8 +178,7 @@ impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
 
         let canocalized_ffmpeg = dunce::canonicalize(ffmpeg.clone())
             .unwrap_or_else(|_| panic!(
-                "Could not canocalize ffmpeg binary path: \"{}\", make sure the path is valid.",
-                ffmpeg,
+                "Could not canocalize ffmpeg binary path: \"{ffmpeg}\", make sure the path is valid.",
             ));
 
         self.binary = canocalized_ffmpeg.to_string_lossy().to_string();

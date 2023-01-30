@@ -302,8 +302,7 @@ pub fn generate_dynamic_list_from_queue_items(
         dynamic_list.push(
             ListItem::new(Span::styled(
                 format!(
-                    "  ... ({} completed) ...",
-                    leading_items_completed_count
+                    "  ... ({leading_items_completed_count} completed) ...",
                 ),
                 Style::default().add_modifier(Modifier::ITALIC),
             ))
@@ -392,10 +391,7 @@ pub fn generate_dynamic_list_from_queue_items(
         dynamic_list.pop();
         dynamic_list.push(
             ListItem::new(Span::styled(
-                format!(
-                    "  ... ({} remaining) ...",
-                    hidden_pending_item_count
-                ),
+                format!("  ... ({hidden_pending_item_count} remaining) ...",),
                 Style::default().add_modifier(Modifier::ITALIC),
             ))
             .style(list_style_rules.trailing_hidden_pending_items_style),
