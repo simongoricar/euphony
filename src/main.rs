@@ -22,17 +22,16 @@ mod console;
 enum CLICommand {
     #[command(
         name = "transcode",
-        visible_aliases = ["transcode-collection"],
+        visible_aliases(["transcode-collection"]),
         about = "Transcode all libraries into the aggregated library."
     )]
     TranscodeAll(TranscodeAllArgs),
 
     #[command(
         name = "validate",
-        visible_aliases = ["validate-collection"],
-        about = "Validate all the available libraries for inconsistencies, such as \
-                 forbidden files, any inter-library collisions that would cause problems \
-                 when transcoding, etc."
+        visible_aliases(["validate-collection"]),
+        about = "Validate all the available libraries for inconsistencies, such as forbidden files, \
+                 any inter-library collisions that would cause problems when transcoding, etc."
     )]
     ValidateAll(ValidateAllArgs),
 
