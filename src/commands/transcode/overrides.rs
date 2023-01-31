@@ -36,7 +36,7 @@ impl AlbumOverride {
         file_path.is_file()
     }
 
-    /// Given a directory path, load its .album.euphony file, if it exists, into a LibraryMeta struct.
+    /// Given a directory path, load its `.album.euphony` file, if it exists, into a LibraryMeta struct.
     pub fn load<P: AsRef<Path>>(
         directory_path: P,
     ) -> Result<Option<AlbumOverride>> {

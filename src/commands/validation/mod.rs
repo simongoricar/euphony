@@ -8,7 +8,7 @@ use miette::{miette, Context, Result};
 use crate::configuration::{Config, ConfigLibrary};
 use crate::console::backends::ValidationTerminal;
 use crate::console::{LogBackend, ValidationBackend, ValidationErrorInfo};
-use crate::filesystem as efs;
+use crate::filesystem::DirectoryScan;
 
 pub trait ValidationErrorDisplay {
     /// This method should format and return the complete string that
@@ -419,6 +419,7 @@ fn validate_entire_collection(
             .contains(&file_extension)
     };
 
+    // TODO Refactor this code to avoid such deep nesting.
     for library in config.libraries.values() {
         let library_root_path = Path::new(&library.path);
 
@@ -462,11 +463,17 @@ fn validate_entire_collection(
         ////
         // Check for unexpected files in the root directory of each library.
         ////
-        let (root_files, root_subdirectories) = efs::list_directory_contents(library_root_path)
-            .wrap_err_with(|| miette!("Could not list files and directories in root library directory for {}", library.name))?;
+        let library_scan =
+            DirectoryScan::from_directory_path(library_root_path, 0)
+                .wrap_err_with(|| {
+                    miette!(
+                        "Could not scan library's root directory: {:?}",
+                        library_root_path
+                    )
+                })?;
 
         // All files in the root directory must match `allowed_other_file_extensions` or `allowed_other_files_by_name`.
-        for root_file in root_files {
+        for root_file in &library_scan.files {
             let file_path = root_file.path();
             if !is_valid_other_file(&file_path) {
                 // File did not match neither by extension nor by full name - it is invalid.
@@ -481,7 +488,7 @@ fn validate_entire_collection(
         ////
         // Check for unexpected files in each artist directory.
         ////
-        for artist_directory in root_subdirectories {
+        for artist_directory in &library_scan.directories {
             let artist_directory_name =
                 artist_directory.file_name().to_string_lossy().to_string();
 
@@ -494,11 +501,17 @@ fn validate_entire_collection(
                 }
             }
 
-            let (artist_dir_files, artist_dir_subdirectories) = efs::list_directory_contents(artist_directory.path())
-                .wrap_err_with(|| miette!("Could not list files and directories in artist directory for {:?}", artist_directory.path()))?;
+            let artist_directory_scan =
+                DirectoryScan::from_directory_entry(artist_directory, 0)
+                    .wrap_err_with(|| {
+                        miette!(
+                            "Could not scan artist directory: {:?}",
+                            artist_directory.path()
+                        )
+                    })?;
 
             // Check files directly in the artist directory.
-            for artist_dir_file in artist_dir_files {
+            for artist_dir_file in &artist_directory_scan.files {
                 let file_path = artist_dir_file.path();
                 if !is_valid_other_file(&file_path) {
                     // File did not match neither by extension nor by full name - it is invalid.
@@ -510,7 +523,7 @@ fn validate_entire_collection(
                 }
             }
 
-            for album_directory in artist_dir_subdirectories {
+            for album_directory in &artist_directory_scan.directories {
                 let album_directory_name =
                     album_directory.file_name().to_string_lossy().to_string();
 
@@ -522,11 +535,21 @@ fn validate_entire_collection(
                 )
                     .wrap_err_with(|| miette!("Bug: this exact library-album combination already exists!"))?;
 
-                // Iterate over files in each album, checking them for validity.
-                let (album_dir_files, _album_dir_subdirectories) = efs::list_directory_contents(album_directory.path())
-                    .wrap_err_with(|| miette!("Could not list files and directories in album directory for {:?}", album_directory.path()))?;
+                // FIXME Implement depth config that is available per-album.
+                //       At this moment it only matters in transcoding and is ignored during validation.
+                //       This can (and will) make validation miss nested files.
 
-                for album_dir_file in album_dir_files {
+                // Iterate over files in each album, checking them for validity.
+                let album_scan =
+                    DirectoryScan::from_directory_entry(album_directory, 0)
+                        .wrap_err_with(|| {
+                            miette!(
+                                "Could not scan album directory: {:?}",
+                                album_directory.path()
+                            )
+                        })?;
+
+                for album_dir_file in album_scan.files {
                     let file_path = album_dir_file.path();
 
                     let is_audio = is_audio_file(&file_path);
@@ -553,11 +576,6 @@ fn validate_entire_collection(
                         )
                     }
                 }
-
-                // TODO Implement depth config that is available per-album.
-                //      At this moment it only matters in transcoding and is ignored during validation. This can (and will) make validation miss nested files.
-
-                // TODO Refactor this code to avoid such deep nesting.
             }
         }
     }

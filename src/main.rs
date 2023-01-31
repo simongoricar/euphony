@@ -3,7 +3,7 @@ use std::process::exit;
 
 use clap::{Args, Parser, Subcommand};
 use crossterm::style::Stylize;
-use miette::Result;
+use miette::{miette, Context, Result};
 
 use crate::configuration::Config;
 use crate::console::backends::{
@@ -118,7 +118,7 @@ struct CLIArgs {
 
 /// Load and return the configuration, given the command line arguments
 /// (-c/--config can override configuration filepath).
-fn get_configuration(args: &CLIArgs) -> Config {
+fn get_configuration(args: &CLIArgs) -> Result<Config> {
     if args.config.is_some() {
         Config::load_from_path(args.config.clone().unwrap())
     } else {
@@ -245,7 +245,8 @@ fn main() -> Result<()> {
     let args: CLIArgs = CLIArgs::parse();
     VERBOSE.set(args.verbose);
 
-    let configuration = get_configuration(&args);
+    let configuration = get_configuration(&args)
+        .wrap_err_with(|| miette!("Could not load configuration."))?;
 
     match process_cli_command(args, &configuration) {
         Ok(_) => exit(0),

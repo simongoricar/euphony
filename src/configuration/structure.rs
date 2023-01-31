@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use miette::{miette, Context, Result};
 use serde::Deserialize;
 
 use crate::configuration::{
@@ -33,7 +34,7 @@ pub struct Config {
 impl Config {
     pub fn load_from_path<S: Into<PathBuf>>(
         configuration_filepath: S,
-    ) -> Config {
+    ) -> Result<Config> {
         let configuration_filepath = configuration_filepath.into();
 
         // Read the configuration file into memory.
@@ -49,23 +50,27 @@ impl Config {
 
         // Run init methods for all configuration subtables.
 
-        config.essentials.after_load_init();
-        config.validation.after_load_init();
+        config.essentials.after_load_init()?;
+        config.validation.after_load_init()?;
 
         for library in config.libraries.values_mut() {
-            library.after_load_init(&config.essentials);
+            library.after_load_init(&config.essentials)?;
         }
 
         config
             .aggregated_library
-            .after_load_init(&config.essentials);
-        config.tools.after_load_init(&config.essentials);
+            .after_load_init(&config.essentials)?;
+        config.tools.after_load_init(&config.essentials)?;
 
-        config
+        Ok(config)
     }
 
-    pub fn load_default_path() -> Config {
-        Config::load_from_path(get_default_configuration_file_path())
+    pub fn load_default_path() -> Result<Config> {
+        Config::load_from_path(
+            get_default_configuration_file_path().wrap_err_with(|| {
+                miette!("Could not get default configuration file path.")
+            })?,
+        )
     }
 
     pub fn is_library<P: AsRef<Path>>(&self, library_path: P) -> bool {
@@ -111,16 +116,18 @@ pub struct ConfigEssentials {
 }
 
 impl AfterLoadInitable for ConfigEssentials {
-    fn after_load_init(&mut self) {
+    fn after_load_init(&mut self) -> Result<()> {
         // Replaces any placeholders and validates the paths.
-        let executable_dir = get_running_executable_directory()
+        let executable_directory = get_running_executable_directory()?
             .to_string_lossy()
             .to_string();
 
-        self.base_library_path =
-            self.base_library_path.replace("{SELF}", &executable_dir);
-        self.base_tools_path =
-            self.base_tools_path.replace("{SELF}", &executable_dir);
+        self.base_library_path = self
+            .base_library_path
+            .replace("{SELF}", &executable_directory);
+        self.base_tools_path = self
+            .base_tools_path
+            .replace("{SELF}", &executable_directory);
 
         self.base_library_path = dunce::canonicalize(&self.base_library_path)
             .unwrap_or_else(|_| panic!(
@@ -137,6 +144,8 @@ impl AfterLoadInitable for ConfigEssentials {
             ))
             .to_string_lossy()
             .to_string();
+
+        Ok(())
     }
 }
 
@@ -146,10 +155,12 @@ pub struct ConfigValidation {
 }
 
 impl AfterLoadInitable for ConfigValidation {
-    fn after_load_init(&mut self) {
+    fn after_load_init(&mut self) -> Result<()> {
         for ext in &mut self.extensions_considered_audio_files {
             ext.make_ascii_lowercase();
         }
+
+        Ok(())
     }
 }
 
@@ -159,8 +170,10 @@ pub struct ConfigTools {
 }
 
 impl AfterLoadWithEssentialsInitable for ConfigTools {
-    fn after_load_init(&mut self, essentials: &ConfigEssentials) {
-        self.ffmpeg.after_load_init(essentials);
+    fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
+        self.ffmpeg.after_load_init(essentials)?;
+
+        Ok(())
     }
 }
 
@@ -171,7 +184,7 @@ pub struct ConfigToolsFFMPEG {
 }
 
 impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
-    fn after_load_init(&mut self, essentials: &ConfigEssentials) {
+    fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
         let ffmpeg = self
             .binary
             .replace("{TOOLS_BASE}", &essentials.base_tools_path);
@@ -186,6 +199,8 @@ impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
         if !canocalized_ffmpeg.is_file() {
             panic!("No file exists at this path: {}", self.binary);
         }
+
+        Ok(())
     }
 }
 
@@ -208,7 +223,7 @@ pub struct ConfigLibrary {
 }
 
 impl AfterLoadWithEssentialsInitable for ConfigLibrary {
-    fn after_load_init(&mut self, essentials: &ConfigEssentials) {
+    fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
         let parsed_path = self
             .path
             .replace("{LIBRARY_BASE}", &essentials.base_library_path);
@@ -231,8 +246,10 @@ impl AfterLoadWithEssentialsInitable for ConfigLibrary {
 
         self.path = canonicalized_path.to_string_lossy().to_string();
 
-        self.validation.after_load_init();
-        self.transcoding.after_load_init();
+        self.validation.after_load_init()?;
+        self.transcoding.after_load_init()?;
+
+        Ok(())
     }
 }
 
@@ -248,11 +265,13 @@ pub struct ConfigLibraryValidation {
 }
 
 impl AfterLoadInitable for ConfigLibraryValidation {
-    fn after_load_init(&mut self) {
+    fn after_load_init(&mut self) -> Result<()> {
         // Make extensions lowercase.
         for ext in &mut self.allowed_audio_file_extensions {
             ext.make_ascii_lowercase();
         }
+
+        Ok(())
     }
 }
 
@@ -273,7 +292,7 @@ pub struct ConfigLibraryTranscoding {
 }
 
 impl AfterLoadInitable for ConfigLibraryTranscoding {
-    fn after_load_init(&mut self) {
+    fn after_load_init(&mut self) -> Result<()> {
         // Make extensions lowercase.
         for ext in &mut self.audio_file_extensions {
             ext.make_ascii_lowercase();
@@ -287,6 +306,8 @@ impl AfterLoadInitable for ConfigLibraryTranscoding {
             .extend(self.audio_file_extensions.iter().cloned());
         self.all_tracked_extensions
             .extend(self.other_file_extensions.iter().cloned());
+
+        Ok(())
     }
 }
 
@@ -302,7 +323,7 @@ pub struct ConfigAggregated {
 }
 
 impl AfterLoadWithEssentialsInitable for ConfigAggregated {
-    fn after_load_init(&mut self, essentials: &ConfigEssentials) {
+    fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
         self.path = self
             .path
             .replace("{LIBRARY_BASE}", &essentials.base_library_path);
@@ -310,5 +331,7 @@ impl AfterLoadWithEssentialsInitable for ConfigAggregated {
         if self.transcode_threads == 0 {
             panic!("transcode_threads is set to 0! The minimum value is 1.");
         }
+
+        Ok(())
     }
 }

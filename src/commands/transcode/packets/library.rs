@@ -2,8 +2,12 @@ use miette::{miette, Context, Result};
 
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
 use crate::configuration::{Config, ConfigLibrary};
-use crate::filesystem;
+use crate::filesystem::DirectoryScan;
 
+/// Represents a music library's worth of processing work (all the albums).
+///
+/// NOTE: Any changes in the filesystem after this instantiation will not be visible
+/// in the album packets - this is a static scan.
 #[derive(Clone)]
 pub struct LibraryWorkPacket<'a> {
     pub name: String,
@@ -11,25 +15,30 @@ pub struct LibraryWorkPacket<'a> {
 }
 
 impl<'a> LibraryWorkPacket<'a> {
+    /// Instantiate a new `LibraryWorkPacket` by simply providing a reference to the configuration
+    /// and the library (`ConfigLibrary` instance) you want.
+    ///
+    /// The albums are automatically scanned given the information in the provided `ConfigLibrary`.
     pub fn from_library(
         config: &'a Config,
         library: &'a ConfigLibrary,
     ) -> Result<LibraryWorkPacket<'a>> {
         // Generate list of `AlbumWorkPacket` in this library that represent a way of processing each album individually.
+        // The initially-generated list of album packets will contain all albums, even those that haven't changed.
+        // Use `AlbumWorkPacket::needs_processing` to check for filesystem changes since last transcode.
         let mut album_packets: Vec<AlbumWorkPacket> = Vec::new();
 
-        // Iterate over artist directories, then album directories.
-        let (_, artist_directories) = filesystem::list_directory_contents(
-            &library.path,
-        )
-        .wrap_err_with(|| {
-            miette!(
-                "Error while listing artists for library: {}!",
-                library.name
-            )
-        })?;
+        let library_directory_scan =
+            DirectoryScan::from_directory_path(&library.path, 0).wrap_err_with(
+                || {
+                    miette!(
+                        "Errored while scanning library directory: {:?}",
+                        library.path
+                    )
+                },
+            )?;
 
-        for artist_directory in artist_directories {
+        for artist_directory in library_directory_scan.directories {
             let directory_name =
                 artist_directory.file_name().to_string_lossy().to_string();
 
@@ -42,16 +51,16 @@ impl<'a> LibraryWorkPacket<'a> {
                 }
             }
 
-            let (_, album_directories) =
-                filesystem::list_dir_entry_contents(&artist_directory)
+            let artist_directory_scan =
+                DirectoryScan::from_directory_entry(&artist_directory, 0)
                     .wrap_err_with(|| {
                         miette!(
-                            "Error while listing albums for artist: {}!",
-                            directory_name
+                            "Errored while scanning artist directory: {:?}",
+                            artist_directory.path()
                         )
                     })?;
 
-            for album_directory in album_directories {
+            for album_directory in artist_directory_scan.directories {
                 let album_packet = AlbumWorkPacket::from_album_path(
                     album_directory.path(),
                     config,

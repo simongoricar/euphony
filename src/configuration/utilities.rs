@@ -1,64 +1,89 @@
 use std::env::args;
 use std::path::{Path, PathBuf};
 
-use crate::filesystem;
+use miette::{miette, Context, IntoDiagnostic, Result};
 
-/// Inspect the first command line argument to extract the directory the program resides in.
-/// Automatically detects whether it is running inside a debug directory (target/debug) and escapes it.
-pub fn get_running_executable_directory() -> PathBuf {
-    let current_args = args().next().expect("Could not get first argument!");
+/// Inspect the first command line argument to find out the directory the program resides in.
+///
+/// **This contains an important escape detail:** it automatically detects whether it is running
+/// inside the cargo's debug target directory (`./target/debug`) and returns the grandparent directory.
+/// This only happens if the grandparent directory also contains `Cargo.toml`, signaling that it indeed
+/// is the root of a project.
+///
+/// Visual representation of
+///  <project directory>
+///  |-- target
+///  |   |-- debug
+///  |       |- euphony(.exe)
+///  |- Cargo.toml
+///  |- ...
+///
+/// In the above case, `get_running_executable_directory` will return `<project directory>`, NOT
+/// `<project directory>/target/debug`.
+///
+pub fn get_running_executable_directory() -> Result<PathBuf> {
+    let current_args = args()
+        .next()
+        .ok_or_else(|| miette!("Could not get first commandline argument!"))?;
 
     // might be "debug"
-    let full_path_directory = dunce::canonicalize(Path::new(&current_args))
-        .expect("Could not get running executable path!")
+    let executable_directory = dunce::canonicalize(current_args)
+        .into_diagnostic()
+        .wrap_err_with(|| {
+            miette!("Could not canonicalize running executable path.")
+        })?
         .parent()
-        .expect("Could not get running executable directory!")
+        .ok_or_else(|| miette!("Could not get executable's directory."))?
         .to_path_buf();
-    let full_path_directory_name = full_path_directory
+
+    let executable_directory_name = executable_directory
         .file_name()
-        .expect("Could not get running executable directory name!")
-        .to_string_lossy();
+        .ok_or_else(|| {
+            miette!("Could not get the name of the executable's directory.")
+        })?
+        .to_string_lossy()
+        .to_string();
 
     // Attempt to detect if we're in "debug/target" and the parent directory contains Cargo.toml".
-    if full_path_directory_name.eq("debug") {
-        // might be "target"
-        let full_path_parent = full_path_directory
+    if executable_directory_name.eq("debug") {
+        let executable_parent_dir = executable_directory
             .parent()
-            .expect("Could not get running executable parent directory!");
-        let full_path_parent_dir_name = full_path_parent
+            .ok_or_else(|| miette!("Could not get the parent directory."))?;
+
+        let executable_parent_dir_name = executable_parent_dir
             .file_name()
-            .expect("Could not get running executable parent directory name!")
-            .to_string_lossy();
+            .ok_or_else(|| {
+                miette!("Could not get the name of the parent directory.")
+            })?
+            .to_string_lossy()
+            .to_string();
 
-        if full_path_parent_dir_name.eq("target") {
-            // might be the real base directory
-            let full_path_grandparent = full_path_parent.parent().expect(
-                "Could not get running executable grandparent directory!",
-            );
+        // Might be "target", in which case we escape it (but only if the parent contains Cargo.toml).
+        if executable_parent_dir_name.eq("target") {
+            let grandparent_directory =
+                executable_parent_dir.parent().ok_or_else(|| {
+                    miette!("Could not get grandparent directory.")
+                })?;
 
-            // Check for Cargo.toml.
-            return match filesystem::list_directory_contents(
-                full_path_grandparent,
-            ) {
-                Ok((files, _)) => {
-                    for file in files {
-                        if file.file_name().to_string_lossy().eq("Cargo.toml") {
-                            return full_path_grandparent.to_path_buf();
-                        }
-                    }
+            let cargo_toml_path =
+                Path::new(grandparent_directory).join("Cargo.toml");
 
-                    full_path_directory
-                }
-                Err(_) => full_path_directory,
+            return if cargo_toml_path.exists() {
+                Ok(grandparent_directory.to_path_buf())
+            } else {
+                Ok(executable_directory)
             };
         }
     }
 
-    full_path_directory
+    Ok(executable_directory)
 }
 
-pub fn get_default_configuration_file_path() -> String {
-    let mut configuration_filepath = get_running_executable_directory();
+/// Returns the default configuration filepath. This is `./data/configuration.toml`, with (potentially)
+/// an additional `../../` escape if we're running inside the `./target/debug` directory of a cargo project.
+pub fn get_default_configuration_file_path() -> Result<String> {
+    let mut configuration_filepath = get_running_executable_directory()
+        .wrap_err_with(|| miette!("Could not get the executable directory."))?;
     configuration_filepath.push("./data/configuration.toml");
 
     if !configuration_filepath.exists() {
@@ -66,7 +91,10 @@ pub fn get_default_configuration_file_path() -> String {
     }
 
     let configuration_filepath = dunce::canonicalize(configuration_filepath)
-        .expect("Could not canonicalize configuration.toml file path!");
+        .into_diagnostic()
+        .wrap_err_with(|| {
+            miette!("Could not canonicalize the configuration.toml file path.",)
+        })?;
 
-    configuration_filepath.to_string_lossy().to_string()
+    Ok(configuration_filepath.to_string_lossy().to_string())
 }

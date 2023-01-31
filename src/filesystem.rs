@@ -4,206 +4,117 @@ use std::path::{Path, PathBuf};
 
 use miette::{miette, Context, IntoDiagnostic, Result};
 
-pub type DirectoryContents = (Vec<DirEntry>, Vec<DirEntry>);
-
-/// Given a `Path`, scan its contents and return a `Result` containing a tuple of
-/// two `Vec<DirEntry>` elements, the first one containing the files, the second one directories.
-pub fn list_directory_contents<P: AsRef<Path>>(
-    directory: P,
-) -> Result<DirectoryContents> {
-    let mut file_list: Vec<DirEntry> = Vec::new();
-    let mut directory_list: Vec<DirEntry> = Vec::new();
-
-    let directory_iterator = fs::read_dir(directory.as_ref())
-        .into_diagnostic()
-        .wrap_err_with(|| miette!("Could not read directory."))?;
-
-    for entry in directory_iterator {
-        let entry = entry
-            .into_diagnostic()
-            .wrap_err_with(|| miette!("Could not get directory entry."))?;
-
-        let entry_type =
-            entry.file_type().into_diagnostic().wrap_err_with(|| {
-                miette!("Could not get directory entry file type.")
-            })?;
-
-        if entry_type.is_file() {
-            file_list.push(entry);
-        } else if entry_type.is_dir() {
-            directory_list.push(entry);
-        } else {
-            // Skips other types (symlinks).
-            continue;
-        }
-    }
-
-    Ok((file_list, directory_list))
+pub struct DirectoryScan {
+    pub files: Vec<DirEntry>,
+    pub directories: Vec<DirEntry>,
 }
 
-/// A wrapper around `list_directory_contents` that takes `DirEntry` references instead.
-pub fn list_dir_entry_contents(
-    dir_entry: &DirEntry,
-) -> Result<DirectoryContents> {
-    let path = dir_entry.path();
+impl DirectoryScan {
+    /// Scan the given directory.
+    ///
+    /// If the `scan_depth` parameter equals `0`, only the immediate files and directories will be listed.
+    /// Any non-zero number will scan up to that subdirectory depth (e.g. `1` will result in the scan
+    /// containing direct files and all files directly in the directories one level down).
+    pub fn from_directory_path<P: AsRef<Path>>(
+        directory_path: P,
+        scan_depth: u16,
+    ) -> Result<Self> {
+        let directory_path = directory_path.as_ref();
 
-    return if !path.is_dir() {
-        Err(miette!("dir_entry is not a directory."))
-    } else {
-        list_directory_contents(path.as_path())
-            .wrap_err_with(|| miette!("Could not list DirEntry contents."))
-    };
-}
+        let mut file_list: Vec<DirEntry> = Vec::new();
+        let mut directory_list: Vec<DirEntry> = Vec::new();
 
-/// Given a directory `Path`, **recursively** scan its contents and return a `Result` containing
-/// `Vec<DirEntry>` - files inside the directory, up to the `maximum_recursion_depth` depth limit.
-#[allow(dead_code)]
-pub fn recursively_list_directory_files(
-    directory: &Path,
-    maximum_recursion_depth: usize,
-) -> Result<Vec<DirEntry>> {
-    let mut aggregated_files: Vec<DirEntry> = Vec::new();
+        // The scanning works by maintaining a queue of directories to search
 
-    // This function works non-recursively by having a stack of
-    // pending directories to search, along with their depth to ensure
-    // we don't exceed `maximum_recursion_depth`.
-    let mut pending_directories: Vec<(PathBuf, usize)> = Vec::with_capacity(1);
-    pending_directories.push((directory.to_path_buf(), 0));
+        // Meaning: Vec<(directory_to_search, directory's depth)>
+        let mut search_queue: Vec<(PathBuf, u16)> = Vec::new();
+        search_queue.push((directory_path.to_path_buf(), 0));
 
-    while !pending_directories.is_empty() {
-        let (current_dir, current_depth) = pending_directories.pop()
-            .expect("Could not pop directory off directory stack, even though !is_empty()");
+        while !search_queue.is_empty() {
+            let (directory_to_scan, directory_depth) = search_queue.pop()
+                .expect("BUG: Could not pop directory off search queue, even though is had elements.");
 
-        let (current_files, current_dirs) = list_directory_contents(
-            current_dir.as_path(),
-        )
-        .wrap_err_with(|| miette!("Could not list directory contents."))?;
+            let directory_iterator = fs::read_dir(directory_to_scan)
+                .into_diagnostic()
+                .wrap_err_with(|| miette!("Could not read directory."))?;
 
-        aggregated_files.extend(current_files);
+            // Split the directory iterator elements into files and directories.
+            for entry in directory_iterator {
+                let entry = entry.into_diagnostic().wrap_err_with(|| {
+                    miette!("Could not get directory entry.")
+                })?;
 
-        if current_depth < maximum_recursion_depth {
-            for sub_dir in current_dirs {
-                let sub_dir_path = sub_dir.path();
-                pending_directories.push((sub_dir_path, current_depth + 1));
-            }
-        }
-    }
+                let entry_type = entry
+                    .file_type()
+                    .into_diagnostic()
+                    .wrap_err_with(|| miette!("Could not get file type."))?;
 
-    Ok(aggregated_files)
-}
+                if entry_type.is_file() {
+                    file_list.push(entry);
+                } else if entry_type.is_dir() {
+                    // If we can go deeper, queue the directory we found for further search.
+                    if directory_depth < scan_depth {
+                        search_queue.push((entry.path(), directory_depth + 1));
+                    }
 
-/// Given a directory `Path`, **recursively** scan its contents and return a `Result` containing
-/// `Vec<DirEntry>` - files inside the directory, up to the `maximum_recursion_depth` depth limit.
-/// Additionally, the results are prefiltered to match a given set of `extensions`
-/// (provide them without dots, e.g. "txt", "zip").
-pub fn recursively_list_directory_files_filtered<P: Into<PathBuf>>(
-    directory: P,
-    maximum_recursion_depth: u16,
-    allowed_extensions: &[String],
-) -> Result<Vec<DirEntry>> {
-    let mut aggregated_files: Vec<DirEntry> = Vec::new();
-
-    // This function works non-recursively by having a stack of
-    // pending directories to search, along with their depth to ensure
-    // we don't exceed `maximum_recursion_depth`.
-    let mut pending_directories: Vec<(PathBuf, u16)> = Vec::with_capacity(1);
-    pending_directories.push((directory.into(), 0));
-
-    while !pending_directories.is_empty() {
-        let (current_dir, current_depth) = pending_directories.pop()
-            .expect("Could not pop directory off directory stack, even though pending_directories was not empty.");
-
-        let (current_files, current_dirs) = list_directory_contents(
-            current_dir.as_path(),
-        )
-        .wrap_err_with(|| miette!("Could not list directory contents."))?;
-
-        // Make sure only files with matching extensions are aggregated.
-        for file in current_files {
-            let file_path = file.path();
-            let file_ext = match file_path.extension() {
-                Some(ext) => ext
-                    .to_str()
-                    .ok_or_else(|| miette!("File contained invalid UTF-8."))?
-                    .to_string(),
-                None => continue,
-            };
-
-            if allowed_extensions.contains(&file_ext) {
-                aggregated_files.push(file);
-            }
-        }
-
-        // Extend the search by pushing directories inside the current one
-        // (that don't go too deep) onto the search stack.
-        if current_depth < maximum_recursion_depth {
-            for sub_directory in current_dirs {
-                pending_directories
-                    .push((sub_directory.path(), current_depth + 1));
-            }
-        }
-    }
-
-    Ok(aggregated_files)
-}
-
-/// Check whether the file is directly in the provided directory.
-#[allow(dead_code)]
-pub fn is_file_directly_in_dir<P1: AsRef<Path>, P2: AsRef<Path>>(
-    file_path: P1,
-    directory_path: P2,
-) -> bool {
-    match file_path.as_ref().parent() {
-        Some(parent) => parent.eq(directory_path.as_ref()),
-        None => false,
-    }
-}
-
-/// Check whether the file is a "descendant" (either directly inside or in a subdirectory)
-/// of a certain directory. If given, the `depth_limit` is respected, otherwise it defaults to 32.
-#[allow(dead_code)]
-pub fn is_file_inside_directory<P1: AsRef<Path>, P2: AsRef<Path>>(
-    file_path: P1,
-    directory_path: P2,
-    depth_limit: Option<u32>,
-) -> bool {
-    let depth_limit = depth_limit.unwrap_or(32);
-    let directory_path = directory_path.as_ref();
-
-    if depth_limit == 0 {
-        // We've reached the depth limit, give up.
-        false
-    } else {
-        // We've got some depth to search, go up to the parent directory and try to match it.
-        // Do this recursively until you reach the depth limit.
-        match file_path.as_ref().parent() {
-            Some(parent) => {
-                if parent.eq(directory_path) {
-                    true
+                    // But always store the directories we have found so far.
+                    directory_list.push(entry);
                 } else {
-                    is_file_inside_directory(
-                        parent,
-                        directory_path,
-                        Some(depth_limit - 1),
-                    )
+                    // FIXME: Implement a solution for symlinks (which are currently simply ignored).
+                    continue;
                 }
             }
-            None => false,
         }
+
+        Ok(Self {
+            files: file_list,
+            directories: directory_list,
+        })
+    }
+
+    /// Equal to `Self::from_directory_path`, but accepts a reference to `DirEntry` instead of the path.
+    pub fn from_directory_entry(
+        directory_entry: &DirEntry,
+        scan_depth: u16,
+    ) -> Result<Self> {
+        let directory_path = directory_entry.path();
+
+        if directory_path.is_dir() {
+            Self::from_directory_path(directory_path, scan_depth)
+        } else {
+            Err(miette!(
+                "Provided directory_entry is not a directory."
+            ))
+        }
+    }
+
+    /// Retrieve the list of scanned files, additionally filtered to specific extensions.
+    /// The extension list should contain lowercase names without dots (e.g. "txt").
+    pub fn files_with_extensions(
+        &self,
+        extensions: &[String],
+    ) -> Vec<&DirEntry> {
+        self.files
+            .iter()
+            .filter(|item| {
+                let extension = item
+                    .path()
+                    .extension()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+
+                extensions.contains(&extension)
+            })
+            .collect::<Vec<&DirEntry>>()
     }
 }
 
-/// Given a `Path` get its file extension, if any.
-pub fn get_path_file_extension(path: &Path) -> Result<String> {
-    match path.extension() {
-        Some(ext) => {
-            Ok(ext
-                .to_str()
-                .ok_or_else(|| miette!("Could not extract file extension: errored while converting to str."))?
-                .to_string())
-        },
-        None => {
-            Err(miette!("Could not extract file extension."))
-        }
+
+/// Get a file's extension, if any.
+pub fn get_path_file_extension<P: AsRef<Path>>(path: P) -> Result<String> {
+    match path.as_ref().extension() {
+        Some(extension) => Ok(extension.to_string_lossy().to_string()),
+        None => Err(miette!("File does not have an extension.")),
     }
 }

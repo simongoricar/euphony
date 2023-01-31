@@ -4,7 +4,7 @@ use crate::configuration::Config;
 use crate::console::backends::SimpleTerminal;
 use crate::console::LogBackend;
 
-/// Prints a "group header", for example: `|----- your header here -----|`.
+/// Prints a configuration group header, for example: `|----- your header here -----|`.
 fn terminal_print_group_header<S: AsRef<str>>(
     terminal: &SimpleTerminal,
     header: S,
@@ -23,13 +23,16 @@ fn terminal_print_group_header<S: AsRef<str>>(
     ));
 }
 
-/// Show the entire currently active configuration.
+/// Associated with the `show-config` command.
+///
+/// Prints the entire configuration.
 pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
     terminal.log_println(&format!(
         "Configuration file: {}",
         config.configuration_file_path.to_string_lossy(),
     ));
     terminal.log_newline();
+
 
     // Essentials
     terminal_print_group_header(terminal, "essentials");
@@ -135,7 +138,9 @@ pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
     ));
 }
 
-/// Show the registered music libraries from the current configuration.
+/// Associated with the `list-libraries` command.
+///
+/// Prints the registered music libraries from the current configuration.
 pub fn cmd_list_libraries(config: &Config, terminal: &mut SimpleTerminal) {
     terminal.log_println(format!(
         "Configuration file: {}",

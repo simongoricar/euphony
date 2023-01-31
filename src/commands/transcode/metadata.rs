@@ -83,34 +83,25 @@ impl AlbumMetadata {
     ) -> Result<AlbumMetadata> {
         let overrides = AlbumOverride::load(directory_path)?;
 
-        let maximum_tree_depth = match &overrides {
-            Some(overrides) => {
-                if overrides.scan.is_some() {
-                    let depth_setting = overrides.scan.clone().unwrap().depth;
-                    if let Some(depth_setting) = depth_setting {
-                        depth_setting
-                    } else {
-                        DEFAULT_MAX_DEPTH
-                    }
-                } else {
-                    DEFAULT_MAX_DEPTH
-                }
-            }
-            None => DEFAULT_MAX_DEPTH,
-        };
+        // Use `scan.depth` if the album has an `.album.euphony` override, otherwise use the default.
+        let maximum_tree_depth = overrides
+            .as_ref()
+            .and_then(|overrides| {
+                overrides.scan.as_ref().and_then(|scan| scan.depth)
+            })
+            .unwrap_or(DEFAULT_MAX_DEPTH);
 
         // Enumerate files (including subdirectories up to a limit).
-        let files = filesystem::recursively_list_directory_files_filtered(
+        let directory_scan = filesystem::DirectoryScan::from_directory_path(
             directory_path,
             maximum_tree_depth,
-            extensions,
         )?;
 
-        // Generate info about each file (limited to relevant extensions).
         let mut file_hashmap: HashMap<String, AlbumMetadataFile> =
             HashMap::new();
 
-        for file in files {
+        // Generate info about each file (limited to relevant extensions).
+        for file in directory_scan.files_with_extensions(extensions) {
             let file_metadata =
                 file.metadata().into_diagnostic().wrap_err_with(|| {
                     miette!("Could not retrieve file metadata.")
