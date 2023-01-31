@@ -117,7 +117,7 @@ struct CLIArgs {
 }
 
 /// Load and return the configuration, given the command line arguments
-/// (-c/--config can override configuration filepath).
+/// (`-c`/`--config` can override the load path).
 fn get_configuration(args: &CLIArgs) -> Result<Config> {
     if args.config.is_some() {
         Config::load_from_path(args.config.clone().unwrap())
@@ -126,11 +126,13 @@ fn get_configuration(args: &CLIArgs) -> Result<Config> {
     }
 }
 
-/// Initializes and returns a boxed terminal backend.
+/// Initializes and returns a terminal backend for transcoding.
 /// If `use_bare` is true, this will return `BareConsoleBackend`, otherwise `TUITerminalBackend`.
 ///
-/// `TUITerminalBackend` has a better and dynamic terminal UI, but is harder to debug or properly log still down.
-/// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console.
+/// `TUITerminalBackend` has a better and dynamic terminal UI, but is harder to debug non-UI bugs.
+///
+/// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console,
+/// making it much easier to track down bugs or parse output in some other program.
 fn get_transcode_terminal(use_bare: bool) -> TranscodeTerminal {
     if use_bare {
         BareTerminalBackend::new().into()
@@ -141,13 +143,11 @@ fn get_transcode_terminal(use_bare: bool) -> TranscodeTerminal {
     }
 }
 
-/// Initializes the required terminal backend and executes the given CLI subcommand.
-fn process_cli_command(
+/// Initializes the required terminal backend and executes the given CLI command.
+fn run_requested_cli_command(
     args: CLIArgs,
     config: &Config,
 ) -> std::result::Result<(), i32> {
-    // TODO Fully test the new enum-dispatched backends.
-
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
         // `transcode`/`transcode-all` has two available terminal backends:
         // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
@@ -238,8 +238,9 @@ fn process_cli_command(
     }
 }
 
-/// Entry function for `euphony`. Parses CLI arguments,
-/// loads the configuration file and starts executing the given subcommand.
+/// Entry function for `euphony`.
+///
+/// Parses CLI arguments, loads the configuration file and starts executing the requested command.
 fn main() -> Result<()> {
     // TODO .album.euphony should have a version lock inside it
     let args: CLIArgs = CLIArgs::parse();
@@ -248,7 +249,7 @@ fn main() -> Result<()> {
     let configuration = get_configuration(&args)
         .wrap_err_with(|| miette!("Could not load configuration."))?;
 
-    match process_cli_command(args, &configuration) {
+    match run_requested_cli_command(args, &configuration) {
         Ok(_) => exit(0),
         Err(exit_code) => exit(exit_code),
     };

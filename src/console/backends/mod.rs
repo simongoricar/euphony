@@ -1,3 +1,101 @@
+//! There are three variants/sets of functionality that can be implemented on terminal backends,
+//! which signal what commands they can be used for.
+//! All new backend implementations must be added as variants to each associated enum(s) (described below).
+//!
+//! ## Enums (types of backends)
+//!
+//! **The first is `SimpleTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend`).
+//! Backends that implement these three traits and are added as a variant to `SimpleTerminal` can
+//! be used for the following commands:
+//! - `show-config`
+//! - `list-libraries`
+//!
+//! Both `BareTerminalBackend` and `TUITerminalBackend` are available here.
+//!
+//! ---
+//!
+//! **The second is `ValidationTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend` + `ValidationBackend`).
+//! Backends that implement those four traits and are added as a variant to `ValidationTerminal` can be used
+//! for the following commands:
+//! - `validate`
+//!
+//! Only the `BareTerminalBackend` is available here for the moment.
+//!
+//! ---
+//!
+//! **The third and last is `TranscodeTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend` +
+//! `TranscodeBackend` + `UserControllableBackend`). Backends that implement those five traits and
+//! are added a variant to `TranscodeTerminal` can be used for the following commands:
+//! - `transcode`
+//!
+//! Both `BareTerminalBackend` and `TUITerminalBackend` are available here.
+//!
+//! ---
+//!
+//! ## Implementation details
+//!
+//! The technique in use here is enum dispatching, similar to what is used in the
+//! [enum_dispatch](https://docs.rs/enum_dispatch) crate. We basically add the concrete implementations
+//! of individual backends as enum variants, then implement the relevant traits they implement on the enum itself,
+//! forwarding the calls to each variant by using a `match` statement.
+//!
+//! To reduce code repetition, a set of `enumdispatch_*` macros are available below.
+//!
+//! ### Usage example
+//!
+//! Let's say we have the following enum:
+//!
+//! ```
+//! enum MyEnum {
+//!     VariantOne(SomeBackend),
+//!     VariantTwo(SomeBackendTwo),
+//! }
+//! ```
+//!
+//! where `SomeBackend` and `SomeBackendTwo` both implement `TerminalBackend`.
+//!
+//! Now `MyEnum` can only contain the implementors of `TerminalBackend`, but we can't call
+//! e.g. `setup()` on the enum instance itself. This is where enum dispatch and the macros come in.
+//!
+//! Calling `enumdispatch_impl_terminal!(MyEnum, MyEnum::VariantOne, MyEnum::VariantTwo)` will
+//! expand to the following:
+//!
+//! ```
+//! impl TerminalBackend for MyEnum {
+//!     fn setup(&mut self) -> Result<()> {
+//!         match self {
+//!              MyEnum::VariantOne(terminal) => terminal.setup(),
+//!              MyEnum::VariantTwo(terminal) => terminal.setup(),
+//!         }
+//!     }
+//!
+//!     fn destroy(&mut self) -> Result<()> {
+//!         match self {
+//!              MyEnum::VariantOne(terminal) => terminal.destroy(),
+//!              MyEnum::VariantTwo(terminal) => terminal.destroy(),
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! Now we can simply do:
+//!
+//! ```
+//! let backend = MyEnum::VariantOne(some_backend_instance);
+//!
+//! backend.setup()?;
+//! backend.destroy()?;
+//! ```
+//!
+//! and the calls will be passed onto the instance (and even at a performance boost, compared to `dyn` dispatch).
+//!
+//! *NOTE:* The macros are variadic, meaning that you can pass in any number of enum variants you have
+//! (in practice, pass in all of them, otherwise the code will not compile as the match won't be exhausted).
+//!  
+//!
+//!
+//!
+
 use std::fmt::Display;
 use std::path::PathBuf;
 
@@ -23,14 +121,69 @@ pub mod shared;
 
 
 /// This macro implements `From` on the given enum
-/// by constructing the given variant from the given terminal backend.
+/// by constructing the given variant(s) from the given terminal backend.
+///
+/// ## Usage
+///
+/// The first argument is the enum you want to implement this for.
+/// The rest are variadic (must be at least one). Each is delimited by a comma
+/// and the format is `StructType => EnumVariantItFitsIn`.
+///
+/// *I'd recommend reading the example below.*
+///
+/// ## Example
+///
+/// Let's say we have the following enum:
+///
+/// ```
+/// enum SimpleTerminal {
+///     Bare(BareTerminalBackend),
+///     Fancy(TUITerminalBackend),
+/// }
+/// ```
+///
+/// And we want to use this macro to be able to call `.into()` on a `BareTerminalBackend` and have it
+/// convert into a `SimpleTerminal`. We would call the macro like this:
+///
+/// ```
+/// terminal_impl_direct_from!(
+///     SimpleTerminal,
+///     BareTerminalBackend => SimpleTerminal::Bare,
+///     TUITerminalBackend => SimpleTerminal::Fancy
+/// );
+/// ```
+///
+/// which would expand to the following simple (but repetitive) implementation.
+///
+/// ```
+/// impl From<BareTerminalBackend> for SimpleTerminal {
+///     fn from(item: BareTerminalBackend) -> Self {
+///         SimpleTerminal::Bare(item)
+///     }
+/// }
+/// impl From<TUITerminalBackend> for SimpleTerminal {
+///     fn from(item: TUITerminalBackend) -> Self {
+///         SimpleTerminal::Fancy(item)
+///     }
+/// }
+/// ```
+///
+/// We can now perform simple `.into()`s in our code instead of manual conversion:
+///
+/// ```
+/// let simple_terminal: SimpleTerminal = BareTerminalBackend::new().into();
+/// ```
+///
+///
 macro_rules! terminal_impl_direct_from {
-    ($target: path, $source_backend: path, $target_variant: path) => {
-        impl From<$source_backend> for $target {
-            fn from(item: $source_backend) -> Self {
-                $target_variant(item)
+    ($target: path, $($source_backend: path => $target_variant: path),+) => {
+        $(
+            impl From<$source_backend> for $target {
+                fn from(item: $source_backend) -> Self {
+                    $target_variant(item)
+                }
             }
-        }
+        )+
     };
 }
 
@@ -217,13 +370,8 @@ pub enum SimpleTerminal {
 
 terminal_impl_direct_from!(
     SimpleTerminal,
-    BareTerminalBackend,
-    SimpleTerminal::Bare
-);
-terminal_impl_direct_from!(
-    SimpleTerminal,
-    TUITerminalBackend,
-    SimpleTerminal::Fancy
+    BareTerminalBackend => SimpleTerminal::Bare,
+    TUITerminalBackend => SimpleTerminal::Fancy
 );
 
 enumdispatch_impl_terminal!(
@@ -249,8 +397,7 @@ pub enum ValidationTerminal {
 
 terminal_impl_direct_from!(
     ValidationTerminal,
-    BareTerminalBackend,
-    ValidationTerminal::Bare
+    BareTerminalBackend => ValidationTerminal::Bare
 );
 
 enumdispatch_impl_terminal!(ValidationTerminal, ValidationTerminal::Bare);
@@ -267,13 +414,8 @@ pub enum TranscodeTerminal {
 
 terminal_impl_direct_from!(
     TranscodeTerminal,
-    BareTerminalBackend,
-    TranscodeTerminal::Bare
-);
-terminal_impl_direct_from!(
-    TranscodeTerminal,
-    TUITerminalBackend,
-    TranscodeTerminal::Fancy
+    BareTerminalBackend => TranscodeTerminal::Bare,
+    TUITerminalBackend => TranscodeTerminal::Fancy
 );
 
 enumdispatch_impl_terminal!(

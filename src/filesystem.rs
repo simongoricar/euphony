@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 
 use miette::{miette, Context, IntoDiagnostic, Result};
 
+/// A directory scan containing `files` and `directories`.
+///
+/// Depending on the initialization, the scan can contain just direct children (`scan_depth == 0`)
+/// or files and directories deeper in the tree (`scan_depth >= 1`).
 pub struct DirectoryScan {
     pub files: Vec<DirEntry>,
     pub directories: Vec<DirEntry>,

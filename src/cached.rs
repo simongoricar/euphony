@@ -1,5 +1,7 @@
 /// Represents a value that is initially empty, but might become cached at some point
 /// after it is requested once. This is a generic wrapper around a "cached value" concept.
+///
+/// TODO Perhaps it's time to re-evaluate how things are cached, panicking on `get` seems like a bad idea.
 pub struct CachedValue<T> {
     value: Option<T>,
 }

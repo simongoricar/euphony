@@ -7,7 +7,9 @@ use miette::Result;
 use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType};
 
 /// The way multiple UI backends are done in euphony is via a set of terminal backend traits.
-/// This is the base. All terminal backends must implement this.
+/// **This is the base. All terminal backends must implement this.**
+///
+/// For further information details see `src/console/backends/mod.rs`.
 pub trait TerminalBackend {
     /// Initialize the terminal backend.
     fn setup(&mut self) -> Result<()>;
