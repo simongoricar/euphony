@@ -1,10 +1,15 @@
-//! There are three variants/sets of functionality that can be implemented on terminal backends,
-//! which signal what commands they can be used for.
-//! All new backend implementations must be added as variants to each associated enum(s) (described below).
+//! There are three sets of functionality that can be implemented for terminal backends,
+//! each of which makes them available for different commands (e.g. a UI backend that implements
+//! everything we need for transcoding might not have everything we need for validation).
+//!
+//! All new backend implementations must be added as variants to each of the associated enum(s) (described below).
+//!
+//!
 //!
 //! ## Enums (types of backends)
 //!
-//! **The first is `SimpleTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend`).
+//! **The first is `SimpleTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend` traits).
+//!
 //! Backends that implement these three traits and are added as a variant to `SimpleTerminal` can
 //! be used for the following commands:
 //! - `show-config`
@@ -14,7 +19,9 @@
 //!
 //! ---
 //!
-//! **The second is `ValidationTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend` + `ValidationBackend`).
+//! **The second is `ValidationTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend`
+//! + `ValidationBackend` traits).
+//!
 //! Backends that implement those four traits and are added as a variant to `ValidationTerminal` can be used
 //! for the following commands:
 //! - `validate`
@@ -24,20 +31,26 @@
 //! ---
 //!
 //! **The third and last is `TranscodeTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend` +
-//! `TranscodeBackend` + `UserControllableBackend`). Backends that implement those five traits and
+//! `TranscodeBackend` + `UserControllableBackend` traits).
+//!
+//! Backends that implement those five traits and
 //! are added a variant to `TranscodeTerminal` can be used for the following commands:
 //! - `transcode`
 //!
 //! Both `BareTerminalBackend` and `TUITerminalBackend` are available here.
 //!
-//! ---
+//!
 //!
 //! ## Implementation details
 //!
-//! The technique in use here is enum dispatching, similar to what is used in the
-//! [enum_dispatch](https://docs.rs/enum_dispatch) crate. We basically add the concrete implementations
-//! of individual backends as enum variants, then implement the relevant traits they implement on the enum itself,
-//! forwarding the calls to each variant by using a `match` statement.
+//! > *The previous approach to this was to use `dyn` dispatching / trait objects. This is a limited
+//! (can't use generics and many other things) and slow performance-wise.*
+//!
+//! The technique in use here is **enum dispatching**, similar to what is used in the
+//! [enum_dispatch](https://docs.rs/enum_dispatch) crate.
+//! We basically add the concrete implementations of individual backends as one enum variant each,
+//! then implement the relevant traits they implement on the enum itself. In those implementations
+//! we forward the calls to each variant by using a `match` statement.
 //!
 //! To reduce code repetition, a set of `enumdispatch_*` macros are available below.
 //!
@@ -52,10 +65,14 @@
 //! }
 //! ```
 //!
-//! where `SomeBackend` and `SomeBackendTwo` both implement `TerminalBackend`.
+//! where `SomeBackend` and `SomeBackendTwo` are structs that both implement `TerminalBackend`,
+//! which is a base building block for the terminal backend system.
 //!
 //! Now `MyEnum` can only contain the implementors of `TerminalBackend`, but we can't call
-//! e.g. `setup()` on the enum instance itself. This is where enum dispatch and the macros come in.
+//! e.g. `setup()` on the enum instance itself, because it doesn't implement it (yet). We could
+//! implement each trait by hand, add all match statements, ..., but that would be a lot of repetition.
+//!
+//! This is where enum dispatch and the macros come in.
 //!
 //! Calling `enumdispatch_impl_terminal!(MyEnum, MyEnum::VariantOne, MyEnum::VariantTwo)` will
 //! expand to the following:
@@ -78,22 +95,23 @@
 //! }
 //! ```
 //!
-//! Now we can simply do:
+//! And that's it! Now we can simply do:
 //!
 //! ```
+//! // Puts `SomeBackend` into the enum (in practice this could be one of many backend implementations
+//! // being put into one of many enum variants). See `terminal_impl_direct_from` for a better approach.
 //! let backend = MyEnum::VariantOne(some_backend_instance);
 //!
 //! backend.setup()?;
+//! // ... use backend ...
 //! backend.destroy()?;
 //! ```
 //!
-//! and the calls will be passed onto the instance (and even at a performance boost, compared to `dyn` dispatch).
+//! and the `setup()` and `destroy()` calls will be passed onto the relevant struct inside
+//! (and even at a performance boost, compared to `dyn` dispatch).
 //!
 //! *NOTE:* The macros are variadic, meaning that you can pass in any number of enum variants you have
 //! (in practice, pass in all of them, otherwise the code will not compile as the match won't be exhausted).
-//!  
-//!
-//!
 //!
 
 use std::fmt::Display;
@@ -121,13 +139,13 @@ pub mod shared;
 
 
 /// This macro implements `From` on the given enum
-/// by constructing the given variant(s) from the given terminal backend.
+/// by directly constructing the given variant(s) from the given terminal backend.
 ///
 /// ## Usage
 ///
 /// The first argument is the enum you want to implement this for.
 /// The rest are variadic (must be at least one). Each is delimited by a comma
-/// and the format is `StructType => EnumVariantItFitsIn`.
+/// and the format is `YourStruct => EnumVariantItFitsIn`.
 ///
 /// *I'd recommend reading the example below.*
 ///
