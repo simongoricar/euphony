@@ -30,11 +30,18 @@ use crate::console::{
     UserControlMessage,
 };
 
+/// A simple non-dynamic terminal backend implementation.
+///
+/// Any log output simply goes to stdout. More complex features, such as queues, are not displayed
+/// dynamically as a UI, but with simple one-line status updates about the queue (e.g. "New item in queue: ...").
 pub struct BareTerminalBackend {
+    /// When the queue is active, this contains the queue state.
     queue: Option<QueueState>,
 
+    /// When the progress bar is active, this contains the progress bar state.
     progress: Option<ProgressState>,
 
+    /// If log file output is enabled, this contains the mutex in front of the file writer.
     log_file_output: Option<Mutex<BufWriter<Writer<File>>>>,
 }
 

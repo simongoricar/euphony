@@ -1,4 +1,4 @@
-/// Tiny progress bar abstraction.
+/// A small progress bar abstration that contains just two fields: `current` out of `total` progress.
 #[derive(Default)]
 pub struct ProgressState {
     pub current: usize,
@@ -6,6 +6,7 @@ pub struct ProgressState {
 }
 
 impl ProgressState {
+    /// Get the progress bar completion percentage.
     pub fn get_percent(&self) -> u16 {
         if self.total == 0 {
             0

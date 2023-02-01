@@ -8,7 +8,7 @@ use tui::widgets::ListItem;
 
 use crate::console::backends::shared::{AnimatedSpinner, SpinnerStyle};
 
-/// Queue item type.
+/// Enum representing a queue type.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum QueueType {
     Library,

@@ -194,7 +194,7 @@ fn run_requested_cli_command(
                 .map_err(|_| 1)?;
         }
 
-        match commands::cmd_validate_all(config, &mut terminal) {
+        match commands::cmd_validate(config, &mut terminal) {
             Ok(_) => {}
             Err(error) => {
                 terminal.log_println(format!(

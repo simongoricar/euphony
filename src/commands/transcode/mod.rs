@@ -228,8 +228,12 @@ pub fn cmd_transcode_all(
 ) -> Result<String> {
     let processing_begin_time = Instant::now();
 
-    terminal.log_println("Mode: transcode all libraries.".cyan().bold());
-    terminal.log_println("Scanning all libraries for changes...");
+    terminal.log_println(
+        "Command: transcode entire collection (skip unchanged)."
+            .cyan()
+            .bold(),
+    );
+    terminal.log_println("Scanning albums for changes...");
 
     // The user may send control messages through the selected backend (such as a stop message).
     // We can receive such messages through this receiver.

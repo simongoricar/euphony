@@ -10,18 +10,21 @@ use crate::console::backends::ValidationTerminal;
 use crate::console::{LogBackend, ValidationBackend, ValidationErrorInfo};
 use crate::filesystem::DirectoryScan;
 
+/// Implemented by concrete validation errors to allow a standardised way of displaying the error.
 pub trait ValidationErrorDisplay {
     /// This method should format and return the complete string that
     /// describes the implementor's error.
     fn get_error_info(&self) -> Result<ValidationErrorInfo>;
 }
 
+/// Describes all possible validation errors.
 pub enum ValidationError<'a> {
     UnexpectedFile(UnexpectedFile<'a>),
     AlbumCollision(AlbumCollision<'a>),
 }
 
 impl<'a> ValidationError<'a> {
+    /// Initialize a new validation error: an unexpected file.
     pub fn new_unexpected_file<P: Into<PathBuf>>(
         file_path: P,
         library: &'a ConfigLibrary,
@@ -30,6 +33,7 @@ impl<'a> ValidationError<'a> {
         Self::UnexpectedFile(UnexpectedFile::new(file_path, library, reason))
     }
 
+    /// Initialize a new validation error: an album collision.
     #[allow(dead_code)]
     pub fn new_album_collision(
         colliding_albums: Vec<&'a ValidationAlbumEntry<'a>>,
@@ -39,6 +43,7 @@ impl<'a> ValidationError<'a> {
         )?))
     }
 
+    /// Consume the enum instance and return the `ValidationErrorInfo` that its variant returns.
     pub fn into_validation_error_info(self) -> Result<ValidationErrorInfo> {
         match self {
             ValidationError::UnexpectedFile(unexpected_file) => {
@@ -51,6 +56,7 @@ impl<'a> ValidationError<'a> {
     }
 }
 
+/// Describes the type of the "unexpected file type" validation error.
 pub enum UnexpectedFileType {
     LibraryRoot,
     ArtistDirectory,
@@ -58,9 +64,16 @@ pub enum UnexpectedFileType {
     AlbumDirectoryOther,
 }
 
+/// This validation error happens when the contents of a library do not match what is configured
+/// in the library configuration table in `configuration.toml`.
 pub struct UnexpectedFile<'a> {
+    /// Unexpected file path.
     file_path: PathBuf,
+
+    /// What library the unexpected file is part of.
     library: &'a ConfigLibrary,
+
+    /// Specific reason for why this is unexpected.
     reason: UnexpectedFileType,
 }
 
@@ -91,7 +104,7 @@ impl<'a> ValidationErrorDisplay for UnexpectedFile<'a> {
         // |-- Aindulmedir (album directory)
         // |   |-> some_unexpected_file.zip
 
-        // TODO File tree as in the example above.
+        // TODO Render a shortened file tree as in the example above.
 
         let relative_file_path =
             pathdiff::diff_paths(&self.file_path, &self.library.path)
@@ -171,13 +184,14 @@ impl<'a> Hash for ValidationAlbumEntry<'a> {
 
 
 /// Represents a single album collision containing two or more colliding album entries
-/// (each from a different library).
+/// (each from a different library) - were the user to try and `transcode`, this would cause issues
+/// with overwriting existing files in the transcoded collection.
 pub struct AlbumCollision<'a> {
     colliding_albums: Vec<&'a ValidationAlbumEntry<'a>>,
 }
 
 impl<'a> AlbumCollision<'a> {
-    /// Create a new `AlbumCollision` by providing a set of colliding album entries.
+    /// Initialize a new `AlbumCollision` by providing a set of colliding album entries.
     pub fn new(
         colliding_albums: Vec<&'a ValidationAlbumEntry<'a>>,
     ) -> Result<Self> {
@@ -199,14 +213,14 @@ impl<'a> AlbumCollision<'a> {
     }
 
     /// Get the artist name of the colliding entry.
-    pub fn get_artist_name(&self) -> String {
+    pub fn artist_name(&self) -> String {
         // Because we did a sanity check that there are at least two entries and that they
         // actually collide (are the same), we can just take the first entry and return its details.
         self.colliding_albums[0].artist_name.clone()
     }
 
     /// Get the album title of the colliding entry.
-    pub fn get_album_title(&self) -> String {
+    pub fn album_title(&self) -> String {
         // Because we did a sanity check that there are at least two entries and that they
         // actually collide (are the same), we can just take the first entry and return its details.
         self.colliding_albums[0].album_title.clone()
@@ -214,7 +228,7 @@ impl<'a> AlbumCollision<'a> {
 
     /// Returns the list of colliding libraries.
     /// The returned `Vec` is guaranteed to have at least two elements.
-    pub fn get_colliding_library_names(&self) -> Vec<String> {
+    pub fn colliding_library_names(&self) -> Vec<String> {
         self.colliding_albums
             .iter()
             .map(|entry| entry.library.name.clone())
@@ -232,15 +246,15 @@ impl<'a> ValidationErrorDisplay for AlbumCollision<'a> {
         // Artist: Aindulmedir
         // Album: The Lunar Lexicon
 
-        let colliding_libraries = self.get_colliding_library_names().join(", ");
+        let colliding_libraries = self.colliding_library_names().join(", ");
 
         let attributes = vec![
             (
                 "Colliding libraries".to_string(),
                 colliding_libraries,
             ),
-            ("Artist".to_string(), self.get_artist_name()),
-            ("Album".to_string(), self.get_album_title()),
+            ("Artist".to_string(), self.artist_name()),
+            ("Album".to_string(), self.album_title()),
         ];
 
         Ok(ValidationErrorInfo::new(
@@ -251,6 +265,12 @@ impl<'a> ValidationErrorDisplay for AlbumCollision<'a> {
 }
 
 
+/// A high-level validator for inter-library album collisions.
+///
+/// The process is as follows:
+/// - instantiate an empty `CollectionCollisionValidator`,
+/// - call `add_album_entry` with all your albums from all your libraries,
+/// - when finished, call `find_collisions` to receive information about potential collisions.
 struct CollectionCollisionValidator<'a> {
     /// A nested map from artist names to album names to sets of individual (colliding) albums.
     artist_to_albums:
@@ -301,7 +321,7 @@ impl<'a> CollectionCollisionValidator<'a> {
 
     /// Get a list of album collisions in this validator. A single collision represents two or more
     /// of the same album colliding in multiple different libraries.
-    pub fn get_collisions(&'a self) -> Result<Vec<AlbumCollision<'a>>> {
+    pub fn find_collisions(&'a self) -> Result<Vec<AlbumCollision<'a>>> {
         self.artist_to_albums
             .values()
             .flatten()
@@ -322,6 +342,7 @@ impl<'a> CollectionCollisionValidator<'a> {
     }
 }
 
+/// Runs the validation process over the entire collection (all registered libraries).
 fn validate_entire_collection(
     config: &Config,
     terminal: &mut ValidationTerminal,
@@ -583,7 +604,7 @@ fn validate_entire_collection(
     // Get the collision results from the collision validator.
     validation_errors.extend(
         collision_validator
-            .get_collisions()?
+            .find_collisions()?
             .into_iter()
             .map(ValidationError::AlbumCollision),
     );
@@ -616,11 +637,14 @@ fn validate_entire_collection(
     Ok(())
 }
 
-pub fn cmd_validate_all(
+/// Associated with the `validate` command.
+///
+/// Validates the entire collection for unexpected files and album collisions.
+pub fn cmd_validate(
     config: &Config,
     terminal: &mut ValidationTerminal,
 ) -> Result<()> {
-    terminal.log_println("Mode: validate all libraries.".cyan().bold());
+    terminal.log_println("Command: validate entire collection.".cyan().bold());
 
     validate_entire_collection(config, terminal)?;
     Ok(())
