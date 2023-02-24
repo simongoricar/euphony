@@ -9,8 +9,8 @@ use std::time::UNIX_EPOCH;
 use miette::{miette, Context, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::commands::transcode::album_configuration::AlbumConfiguration;
 use crate::commands::transcode::dirs::AlbumDirectoryInfo;
-use crate::commands::transcode::overrides::AlbumOverride;
 use crate::commands::transcode::packets::file::{
     FilePacketAction,
     FileWorkPacket,
@@ -49,7 +49,9 @@ fn f64_approximate_eq(first: f64, second: f64, max_distance: f64) -> bool {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AlbumMetadata {
     pub files: HashMap<String, AlbumMetadataFile>,
-    pub overrides: Option<AlbumOverride>,
+
+    #[serde(skip)]
+    pub overrides: Option<AlbumConfiguration>,
 
     #[serde(skip)]
     pub base_directory: String,
@@ -81,7 +83,7 @@ impl AlbumMetadata {
         directory_path: &Path,
         extensions: &[String],
     ) -> Result<AlbumMetadata> {
-        let overrides = AlbumOverride::load(directory_path)?;
+        let overrides = AlbumConfiguration::load(directory_path)?;
 
         // Use `scan.depth` if the album has an `.album.euphony` override, otherwise use the default.
         let maximum_tree_depth = overrides

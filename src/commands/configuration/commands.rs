@@ -63,8 +63,12 @@ pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
         config.tools.ffmpeg.binary,
     ));
     terminal.log_println(&format!(
-        "    to_mp3_v0_args = {:?}",
-        config.tools.ffmpeg.to_mp3_v0_args,
+        "    audio_transcoding_args = {:?}",
+        config.tools.ffmpeg.audio_transcoding_args,
+    ));
+    terminal.log_println(&format!(
+        "    audio_transcoding_output_extension = {:?}",
+        config.tools.ffmpeg.audio_transcoding_output_extension,
     ));
     terminal.log_newline();
 

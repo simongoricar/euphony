@@ -24,6 +24,7 @@ pub struct Config {
 
     pub libraries: BTreeMap<String, ConfigLibrary>,
 
+    // TODO Rename "aggregated library" to something else, like "transcoded library".
     pub aggregated_library: ConfigAggregated,
 
     #[serde(skip)]
@@ -179,8 +180,17 @@ impl AfterLoadWithEssentialsInitable for ConfigTools {
 
 #[derive(Deserialize, Clone)]
 pub struct ConfigToolsFFMPEG {
+    /// Configures the ffmpeg binary location.
+    /// The {TOOLS_BASE} placeholder is available (see `base_tools_path` in the `essentials` table)
     pub binary: String,
-    pub to_mp3_v0_args: Vec<String>,
+
+    /// These are the arguments passed to ffmpeg when converting an audio file into MP3 V0.
+    /// The placeholders {INPUT_FILE} and {OUTPUT_FILE} will be replaced with the absolute path to those files.
+    pub audio_transcoding_args: Vec<String>,
+
+    /// This setting should be the extension of the audio files after transcoding.
+    /// The default conversion is to MP3, but the user may set any ffmpeg conversion above, which is why this exists.
+    pub audio_transcoding_output_extension: String,
 }
 
 impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {

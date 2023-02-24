@@ -28,11 +28,14 @@ use crate::console::{
 };
 use crate::globals::is_verbose_enabled;
 
+mod album_configuration;
+mod album_state_v2;
 mod directories;
+mod jobs;
 mod metadata;
-mod overrides;
 mod packets;
 mod threadpool;
+mod views;
 
 /// A "file progress"/"log this to the console" message that worker threads send back to the main thread.
 enum WorkerMessage {
@@ -226,6 +229,9 @@ pub fn cmd_transcode_all(
     config: &Config,
     terminal: &mut TranscodeTerminal,
 ) -> Result<String> {
+    // FIXME: Current change detection does not delete an entire transcoded album if it is removed
+    //        from the source library. Rework the detection so a persistent album list is available
+    //        at the library root (in e.g. ".albumlist.euphony").
     let processing_begin_time = Instant::now();
 
     terminal.log_println(
