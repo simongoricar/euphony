@@ -2,5 +2,6 @@ pub use terminal::TUITerminalBackend;
 
 pub use self::state::TerminalUIState;
 
-mod state;
-mod terminal;
+pub mod queue;
+pub mod state;
+pub mod terminal;

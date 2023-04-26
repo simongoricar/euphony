@@ -3,6 +3,7 @@ pub use queue::*;
 
 pub use self::progress::*;
 
-mod animation;
-mod progress;
-mod queue;
+pub mod animation;
+pub mod progress;
+pub mod queue;
+pub mod queue_v2;

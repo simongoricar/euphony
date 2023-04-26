@@ -4,7 +4,13 @@ use std::path::PathBuf;
 use crossbeam::channel::Receiver;
 use miette::Result;
 
-use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType};
+use crate::console::backends::shared::queue_v2::{
+    AlbumItem,
+    AlbumItemFinishedResult,
+    FileItem,
+    FileItemFinishedResult,
+    QueueItemID,
+};
 
 /// The way multiple UI backends are done in euphony is via a set of terminal backend traits.
 /// **This is the base. All terminal backends must implement this.**
@@ -29,49 +35,87 @@ pub trait LogBackend {
 
 /// Allows backends to be used in transcoding process. This means the implementor
 /// must maintain some form of (purely visual) queue system and a way of monitoring progress.
-pub trait TranscodeBackend {
-    /// Initialize the queue system. This should be called before any other `queue_*` methods.
-    fn queue_begin(&mut self);
+pub trait TranscodeBackend<'a> {
+    /*
+     * Album queue
+     */
+    /// Initialize the album queue system.
+    /// This should be called before any other `queue_album_*` methods.
+    fn queue_album_enable(&mut self);
 
-    /// Clean up the queue system.
-    fn queue_end(&mut self);
+    /// Clean up and disable the album queue system.
+    fn queue_album_disable(&mut self);
 
-    /// Add an item to the queue.
-    fn queue_item_add(
+    /// Clear the whole album queue.
+    fn queue_album_clear(&mut self) -> Result<()>;
+
+    /// Add an album to the album queue. This will give it the `AlbumItemState::Queued` state.
+    fn queue_album_item_add(
         &mut self,
-        item: String,
-        item_type: QueueType,
+        item: AlbumItem<'a>,
     ) -> Result<QueueItemID>;
 
-    /// Mark the item in queue as "in-progress".
-    fn queue_item_start(&mut self, item_id: QueueItemID) -> Result<()>;
+    /// Mark the given album in the album queue as "in-progress".
+    /// This will give it the `AlbumItemState::InProgress` state.
+    fn queue_album_item_start(&mut self, item_id: QueueItemID) -> Result<()>;
 
-    /// Mark the item in queue as "finished", with additional result context provided by `was_ok`.
-    fn queue_item_finish(
+    /// Mark the given album in the album queue as "finished".
+    /// This will give it the `AlbumItemState:Finished` state and the given `result`.
+    fn queue_album_item_finish(
         &mut self,
         item_id: QueueItemID,
-        was_ok: bool,
+        result: AlbumItemFinishedResult,
     ) -> Result<()>;
 
-    /// Fetch a mutable reference to the given queue item, allowing you to modify its contents.
-    /// This is done by providing a closure in the second argument that will take the mutable reference and modify it.
-    fn queue_item_modify(
+    /// Remove an album from the album queue.
+    fn queue_album_item_remove(
         &mut self,
         item_id: QueueItemID,
-        function: Box<dyn FnOnce(&mut QueueItem)>,
+    ) -> Result<AlbumItem<'a>>;
+
+    /*
+     * File queue
+     */
+    /// Initialize the file queue system.
+    /// This should be called before any other `queue_file_*` methods.
+    fn queue_file_enable(&mut self);
+
+    /// Clean up and disable the file queue system.
+    fn queue_file_disable(&mut self);
+
+    /// Clear the whole file queue.
+    fn queue_file_clear(&mut self) -> Result<()>;
+
+    /// Add a file to the file queue. This will give it the `FileItemState::Queued` state.
+    fn queue_file_item_add(&mut self, item: FileItem<'a>)
+        -> Result<QueueItemID>;
+
+    /// Mark the given file in the file queue as "in-progress".
+    /// This will give it the `FileItemState::InProgress` state.
+    fn queue_file_item_start(&mut self, item_id: QueueItemID) -> Result<()>;
+
+    /// Mark the given file in the file queue as "finished".
+    /// This will give it the `FileItemState:Finished` state and the given `result`.
+    fn queue_file_item_finish(
+        &mut self,
+        item_id: QueueItemID,
+        result: FileItemFinishedResult,
     ) -> Result<()>;
 
-    /// Remove the item from the queue.
-    fn queue_item_remove(&mut self, item_id: QueueItemID) -> Result<()>;
+    /// Remove a file from the file queue.
+    fn queue_file_item_remove(
+        &mut self,
+        item_id: QueueItemID,
+    ) -> Result<FileItem<'a>>;
 
-    /// Clear the entire queue (of the given type).
-    fn queue_clear(&mut self, queue_type: QueueType) -> Result<()>;
-
-    /// Enable the progress bar. This must be called before any other progress bar-related methods.
-    fn progress_begin(&mut self);
+    /*
+     * Progress bar
+     */
+    /// Enable the progress bar. This must be called before any other `progress_*` methods.
+    fn progress_enable(&mut self);
 
     /// Disable the progress bar (potentially represented in the implementor as hiding the bar or greying it out).
-    fn progress_end(&mut self);
+    fn progress_disable(&mut self);
 
     /// Set the total number of tasks to show in the progress bar.
     fn progress_set_total(&mut self, num_total: usize) -> Result<()>;

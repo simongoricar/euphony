@@ -11,6 +11,7 @@ use crate::configuration::{
     AfterLoadInitable,
     AfterLoadWithEssentialsInitable,
 };
+use crate::filesystem::get_path_extension_or_empty;
 
 /// This struct contains the entire `euphony` configuration,
 /// from tool paths to libraries and so forth.
@@ -193,6 +194,20 @@ pub struct ConfigToolsFFMPEG {
     pub audio_transcoding_output_extension: String,
 }
 
+impl ConfigToolsFFMPEG {
+    /// Returns `Ok(true)` if the given path's extension matches the ffmpeg transcoding
+    /// output path.
+    /// Returns `Err` if the extension is not valid UTF-8.
+    pub fn is_path_transcoding_output_by_extension<P: AsRef<Path>>(
+        &self,
+        file_path: P,
+    ) -> Result<bool> {
+        let extension = get_path_extension_or_empty(file_path)?;
+
+        Ok(self.audio_transcoding_output_extension.eq(&extension))
+    }
+}
+
 impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
     fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
         let ffmpeg = self
@@ -209,6 +224,9 @@ impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
         if !canocalized_ffmpeg.is_file() {
             panic!("No file exists at this path: {}", self.binary);
         }
+
+        self.audio_transcoding_output_extension
+            .make_ascii_lowercase();
 
         Ok(())
     }
@@ -299,6 +317,30 @@ pub struct ConfigLibraryTranscoding {
     /// Dynamically contains extensions from both `audio_file_extensions` and `other_file_extensions`.
     #[serde(skip)]
     pub all_tracked_extensions: Vec<String>,
+}
+
+impl ConfigLibraryTranscoding {
+    /// Returns `Ok(true)` when the given file path's extension is considered an audio file.
+    /// Returns `Err` if the extension is invalid UTF-8.
+    pub fn is_path_audio_file_by_extension<P: AsRef<Path>>(
+        &self,
+        file_path: P,
+    ) -> Result<bool> {
+        let extension = get_path_extension_or_empty(file_path)?;
+
+        Ok(self.audio_file_extensions.contains(&extension))
+    }
+
+    /// Returns `Ok(true)` when the given file path's extension is considered a data file.
+    /// Returns `Err` if the extension is invalid UTF-8.
+    pub fn is_path_data_file_by_extension<P: AsRef<Path>>(
+        &self,
+        file_path: P,
+    ) -> Result<bool> {
+        let extension = get_path_extension_or_empty(file_path)?;
+
+        Ok(self.other_file_extensions.contains(&extension))
+    }
 }
 
 impl AfterLoadInitable for ConfigLibraryTranscoding {

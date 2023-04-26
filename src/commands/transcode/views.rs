@@ -1,17 +1,52 @@
 //! TODO: This is a work-in-progress rewrite of the way albums are processed.
 
 use std::collections::HashMap;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 
 use miette::{miette, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::transcode::album_configuration::AlbumConfiguration;
+use crate::commands::transcode::album_state_v2::{
+    AlbumFileChangesV2,
+    SourceAlbumState,
+    TranscodedAlbumState,
+};
 use crate::configuration::{Config, ConfigLibrary};
 use crate::filesystem::DirectoryScan;
 
+/*
+In order to allow the code to share the library, artist and album views, we wrap them
+in an `Arc` (and its `Weak` reference variant, when stored).
+
+`Shared*` types are essentially `RwLock`ed library/artist/album views under an `Arc`.
+`Weak*` types are `Weak` references to the same views - call `upgrade` to obtain the corresponding `Shared*` type.
+*/
+
+pub type ArcRwLock<T> = Arc<RwLock<T>>;
+pub type WeakRwLock<T> = Weak<RwLock<T>>;
+
+pub type SharedLibraryView<'a> = ArcRwLock<LibraryView<'a>>;
+pub type WeakLibraryView<'a> = WeakRwLock<LibraryView<'a>>;
+
+pub type SharedArtistView<'a> = ArcRwLock<ArtistView<'a>>;
+pub type WeakArtistView<'a> = WeakRwLock<ArtistView<'a>>;
+
+pub type SharedAlbumView<'a> = ArcRwLock<AlbumView<'a>>;
+pub type WeakAlbumView<'a> = WeakRwLock<AlbumView<'a>>;
+
+
+pub type ChangedAlbumsMap<'a> =
+    HashMap<String, (SharedAlbumView<'a>, AlbumFileChangesV2<'a>)>;
+pub type ArtistsWithChangedAlbumsMap<'a> =
+    HashMap<String, (SharedArtistView<'a>, ChangedAlbumsMap<'a>)>;
+
+
 pub struct LibraryView<'a> {
+    weak_self: WeakRwLock<Self>,
+
     pub euphony_configuration: &'a Config,
 
     /// The associated `ConfigLibrary` instance.
@@ -23,11 +58,14 @@ impl<'a> LibraryView<'a> {
     pub fn from_library_configuration(
         config: &'a Config,
         library_config: &'a ConfigLibrary,
-    ) -> Self {
-        Self {
-            euphony_configuration: config,
-            library_configuration: library_config,
-        }
+    ) -> SharedLibraryView<'a> {
+        Arc::new_cyclic(|weak| {
+            RwLock::new(Self {
+                weak_self: weak.clone(),
+                euphony_configuration: config,
+                library_configuration: library_config,
+            })
+        })
     }
 
     /// Get the library's name.
@@ -51,11 +89,24 @@ impl<'a> LibraryView<'a> {
     /// NOTE: In euphony, *"artist name" is understood as the artist's directory name*. This is because
     /// euphony does not scan the artist's albums and extract the common album artist tags from the file tags,
     /// but instead relies on the directory tree to tell artist names and album titles apart.  
-    pub fn artist(&self, artist_name: String) -> Result<Option<ArtistView>> {
-        let instance = ArtistView::new(self, artist_name)?;
+    pub fn artist(
+        &'a self,
+        artist_name: String,
+    ) -> Result<Option<SharedArtistView<'a>>> {
+        let self_arc: SharedLibraryView = self
+            .weak_self
+            .upgrade()
+            .ok_or_else(|| miette!("Could not upgrade weak reference."))?;
 
-        if !instance.artist_directory_in_source_library().is_dir() {
-            return Ok(None);
+        let instance = ArtistView::new(self_arc, artist_name)?;
+
+        {
+            let instance_lock = instance.read()
+                .expect("ArtistView instance RwLock poisoned immediately after creation!?");
+
+            if !instance_lock.artist_directory_in_source_library().is_dir() {
+                return Ok(None);
+            }
         }
 
         Ok(Some(instance))
@@ -66,10 +117,15 @@ impl<'a> LibraryView<'a> {
     /// NOTE: In euphony, *"artist name" is understood as the artist's directory name*. This is because
     /// euphony does not scan the artist's albums and extract the common album artist tags from the file tags,
     /// but instead relies on the directory tree to tell artist names and album titles apart.
-    pub fn artists(&self) -> Result<HashMap<String, ArtistView>> {
+    pub fn artists(&self) -> Result<HashMap<String, SharedArtistView<'a>>> {
+        let self_arc: SharedLibraryView = self
+            .weak_self
+            .upgrade()
+            .ok_or_else(|| miette!("Could not upgrade weak reference."))?;
+
         let library_directory_scan = self.scan_root_directory()?;
 
-        let mut artist_map: HashMap<String, ArtistView> =
+        let mut artist_map: HashMap<String, SharedArtistView> =
             HashMap::with_capacity(library_directory_scan.directories.len());
 
         for directory in library_directory_scan.directories {
@@ -92,11 +148,50 @@ impl<'a> LibraryView<'a> {
 
             artist_map.insert(
                 artist_directory_name.clone(),
-                ArtistView::new(self, artist_directory_name)?,
+                ArtistView::new(self_arc.clone(), artist_directory_name)?,
             );
         }
 
         Ok(artist_map)
+    }
+
+    /// Get all artist in this library whose albums have changes (or haven't been transcoded yet).
+    ///
+    /// Returns a HashMap that maps from the artist name to a tuple
+    /// containing the artist view and another HashMap from the album title to
+    /// a tuple containing its view and its changes.
+    ///
+    /// The above is very verbose, you might better off reading the following two types:
+    /// `AlbumsWithChangesMap` and `ArtistWithChangesMap`.
+    ///
+    /// For more information, see the `artists` method.
+    pub fn scan_for_artists_with_changed_albums(
+        &self,
+    ) -> Result<ArtistsWithChangedAlbumsMap<'a>> {
+        let all_artists: HashMap<String, SharedArtistView<'a>> =
+            self.artists()?;
+
+        all_artists
+            .into_iter()
+            .filter_map(|(name, artist)| {
+                let locked_artist =
+                    artist.read().expect("ArtistView RwLock poisoned!");
+
+                let albums: ChangedAlbumsMap<'a> =
+                    match locked_artist.scan_for_albums_with_changes() {
+                        Ok(albums) => albums,
+                        Err(error) => return Some(Err(error)),
+                    };
+
+                drop(locked_artist);
+
+                if albums.is_empty() {
+                    None
+                } else {
+                    Some(Ok((name, (artist, albums))))
+                }
+            })
+            .collect()
     }
 
     /// Scan the root directory of the library and return a list of files at the root
@@ -123,11 +218,29 @@ impl<'a> LibraryView<'a> {
     }
 }
 
+impl<'a> Hash for LibraryView<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.library_configuration.name.hash(state);
+    }
+}
+
+impl<'a> PartialEq for LibraryView<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.library_configuration
+            .name
+            .eq(&other.library_configuration.name)
+    }
+}
+
+impl<'a> Eq for LibraryView<'a> {}
+
 /// A filesystem abstraction that enables the user to scan and fetch specific or
 /// all available albums by the artist it is about.
 pub struct ArtistView<'a> {
+    weak_self: WeakRwLock<Self>,
+
     /// Backreference to the `Library` this `LibraryArtists` instance is from.
-    pub library: &'a LibraryView<'a>,
+    pub library: SharedLibraryView<'a>,
 
     /// Artist name.
     pub name: String,
@@ -135,32 +248,44 @@ pub struct ArtistView<'a> {
 
 impl<'a> ArtistView<'a> {
     /// Instantiate a new `ArtistView` from the library reference and an artist's name and directory.
-    pub fn new(library: &'a LibraryView, artist_name: String) -> Result<Self> {
-        let instance = Self {
-            library,
-            name: artist_name,
-        };
+    pub fn new(
+        library: SharedLibraryView<'a>,
+        artist_name: String,
+    ) -> Result<SharedArtistView> {
+        let self_arc = Arc::new_cyclic(|weak| {
+            RwLock::new(Self {
+                weak_self: weak.clone(),
+                library,
+                name: artist_name,
+            })
+        });
 
-        if !instance.artist_directory_in_source_library().is_dir() {
-            return Err(miette!(
-                "Provided artist directory does not exist: {:?}",
-                instance.artist_directory_in_source_library()
-            ));
+        {
+            let self_locked = self_arc
+                .write()
+                .expect("Just-created ArtistView Arc has been poisoned?!");
+
+            if !self_locked.artist_directory_in_source_library().is_dir() {
+                return Err(miette!(
+                    "Provided artist directory does not exist: {:?}",
+                    self_locked.artist_directory_in_source_library()
+                ));
+            }
         }
 
-        Ok(instance)
+        Ok(self_arc)
     }
 
     /// Get the artist directory in the original (untranscoded) library.
     pub fn artist_directory_in_source_library(&self) -> PathBuf {
-        self.library
+        self.read_lock_library()
             .root_directory_in_source_library()
             .join(self.name.clone())
     }
 
     /// Get the mapped artist directory - an artist directory path inside the transcoded library.
     pub fn artist_directory_in_transcoded_library(&self) -> PathBuf {
-        self.library
+        self.read_lock_library()
             .root_directory_in_transcoded_library()
             .join(self.name.clone())
     }
@@ -170,11 +295,24 @@ impl<'a> ArtistView<'a> {
     /// NOTE: In euphony, *"album title" is understood as the album's directory name*. This is because
     /// euphony does not scan the album contents and extract the common album title from the tags in the file,
     /// but instead relies on the directory tree to tell artist names and album titles apart.  
-    pub fn album(&self, album_title: String) -> Result<Option<AlbumView>> {
-        let instance = AlbumView::new(self, album_title)?;
+    pub fn album(
+        &'a self,
+        album_title: String,
+    ) -> Result<Option<SharedAlbumView<'a>>> {
+        let self_arc = self.weak_self.upgrade().ok_or_else(|| {
+            miette!("Could not upgrade ArtistView weak reference.")
+        })?;
 
-        if !instance.album_directory_in_source_library().is_dir() {
-            return Ok(None);
+        let instance = AlbumView::new(self_arc, album_title)?;
+
+        {
+            let instance_locked = instance
+                .read()
+                .expect("Just-created AlbumView RwLock poisoned!?");
+
+            if !instance_locked.album_directory_in_source_library().is_dir() {
+                return Ok(None);
+            }
         }
 
         Ok(Some(instance))
@@ -185,10 +323,14 @@ impl<'a> ArtistView<'a> {
     /// NOTE: In euphony, *"album title" is understood as the album's directory name*. This is because
     /// euphony does not scan the album contents and extract the common album title from the tags in the file,
     /// but instead relies on the directory tree to tell artist names and album titles apart.  
-    pub fn albums(&self) -> Result<HashMap<String, AlbumView>> {
+    pub fn albums(&self) -> Result<HashMap<String, SharedAlbumView<'a>>> {
+        let self_arc = self.weak_self.upgrade().ok_or_else(|| {
+            miette!("Could not upgrade ArtistView weak reference.")
+        })?;
+
         let artist_directory_scan = self.scan_artist_directory()?;
 
-        let mut album_map: HashMap<String, AlbumView> =
+        let mut album_map: HashMap<String, SharedAlbumView<'a>> =
             HashMap::with_capacity(artist_directory_scan.directories.len());
 
         for directory in artist_directory_scan.directories {
@@ -200,11 +342,43 @@ impl<'a> ArtistView<'a> {
 
             album_map.insert(
                 album_directory_name.clone(),
-                AlbumView::new(self, album_directory_name)?,
+                AlbumView::new(self_arc.clone(), album_directory_name)?,
             );
         }
 
         Ok(album_map)
+    }
+
+    /// Get all albums by this artist that have changed (or haven't been transcoded at all yet).
+    /// Returns a HashMap that maps from the album title to a tuple
+    /// containing the album view and the detected changes.
+    ///
+    /// For more information, see the `albums` method.
+    pub fn scan_for_albums_with_changes(&self) -> Result<ChangedAlbumsMap<'a>> {
+        let all_albums: HashMap<String, SharedAlbumView<'a>> = self.albums()?;
+
+        all_albums
+            .into_iter()
+            .filter_map(|(title, album)| {
+                let changes = {
+                    let album_locked =
+                        album.read().expect("AlbumView RwLock poisoned!");
+
+                    album_locked.scan_for_changes()
+                };
+
+                let changes = match changes {
+                    Ok(changes) => changes,
+                    Err(error) => return Some(Err(error)),
+                };
+
+                if changes.has_changes() {
+                    Some(Ok((title, (album, changes))))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Scan the artist source directory and return a list of files
@@ -219,6 +393,10 @@ impl<'a> ArtistView<'a> {
             .collect())
     }
 
+    /*
+     * Private methods
+     */
+
     /// Perform a zero-depth directory scan of the artist directory.
     fn scan_artist_directory(&self) -> Result<DirectoryScan> {
         DirectoryScan::from_directory_path(
@@ -232,11 +410,25 @@ impl<'a> ArtistView<'a> {
             )
         })
     }
+
+    pub fn read_lock_library(&self) -> RwLockReadGuard<'_, LibraryView<'a>> {
+        self.library
+            .read()
+            .expect("ArtistView's library RwLock has been poisoned!")
+    }
+
+    pub fn write_lock_library(&self) -> RwLockWriteGuard<'_, LibraryView<'a>> {
+        self.library
+            .write()
+            .expect("ArtistView's library RwLock has been poisoned!")
+    }
 }
 
 pub struct AlbumView<'a> {
+    weak_self: WeakRwLock<Self>,
+
     /// Reference back to the `ArtistView` this album belongs to.
-    pub artist: &'a ArtistView<'a>,
+    pub artist: SharedArtistView<'a>,
 
     /// Per-album configuration for euphony.
     pub configuration: AlbumConfiguration,
@@ -246,10 +438,18 @@ pub struct AlbumView<'a> {
 }
 
 impl<'a> AlbumView<'a> {
-    pub fn new(artist: &'a ArtistView<'a>, album_title: String) -> Result<Self> {
-        let album_directory = artist
-            .artist_directory_in_source_library()
-            .join(album_title.clone());
+    pub fn new(
+        artist: SharedArtistView<'a>,
+        album_title: String,
+    ) -> Result<SharedAlbumView> {
+        let album_directory = {
+            let artist_lock =
+                artist.read().expect("ArtistView RwLock poisoned!");
+
+            artist_lock
+                .artist_directory_in_source_library()
+                .join(album_title.clone())
+        };
 
         if !album_directory.is_dir() {
             return Err(miette!(
@@ -261,23 +461,48 @@ impl<'a> AlbumView<'a> {
         let album_configuration =
             AlbumConfiguration::load(album_directory.clone())?;
 
-        Ok(Self {
-            artist,
-            configuration: album_configuration,
-            title: album_title,
-        })
+        Ok(Arc::new_cyclic(|weak| {
+            RwLock::new(Self {
+                weak_self: weak.clone(),
+                artist,
+                configuration: album_configuration,
+                title: album_title,
+            })
+        }))
+    }
+
+    pub fn read_lock_artist(&self) -> RwLockReadGuard<'_, ArtistView<'a>> {
+        self.artist.read().expect("ArtistView RwLock poisoned!")
+    }
+
+    pub fn write_lock_artist(&self) -> RwLockWriteGuard<'_, ArtistView<'a>> {
+        self.artist.write().expect("ArtistView RwLock poisoned!")
+    }
+
+    /// Return the relevant `Config` (euphony's global configuration).
+    pub fn euphony_configuration(&self) -> &Config {
+        self.read_lock_artist()
+            .read_lock_library()
+            .euphony_configuration
+    }
+
+    /// Return the relevant `ConfigLibrary` (configuration for the specific library).
+    pub fn library_configuration(&self) -> &ConfigLibrary {
+        self.read_lock_artist()
+            .read_lock_library()
+            .library_configuration
     }
 
     /// Get the album directory in the original (untranscoded) library.
     pub fn album_directory_in_source_library(&self) -> PathBuf {
-        self.artist
+        self.read_lock_artist()
             .artist_directory_in_source_library()
             .join(self.title.clone())
     }
 
     /// Get the mapped album directory - an album path inside the transcoded library.
     pub fn album_directory_in_transcoded_library(&self) -> PathBuf {
-        self.artist
+        self.read_lock_artist()
             .artist_directory_in_transcoded_library()
             .join(self.title.clone())
     }
@@ -309,19 +534,75 @@ impl<'a> AlbumView<'a> {
         })
     }
 
+    /// This method returns an `AlbumSourceFileList`,
+    /// which is a collection of tracked audio and data files.
+    ///
+    /// This *does* scan the disk for files.
     fn tracked_source_files(&self) -> Result<AlbumSourceFileList<'a>> {
-        AlbumSourceFileList::from_album_view(self)
+        let self_arc = self.weak_self.upgrade().ok_or_else(|| {
+            miette!("Could not upgrade AlbumView weak reference.")
+        })?;
+
+        AlbumSourceFileList::from_album_view(self_arc)
     }
 
-    // TODO: Reimplement things like `needs_processing`, `get_work_packets`.
+    /// Compare several filesystem snapshots (`.album.source-state.euphony`,
+    /// `.album.transcode-state.euphony`, fresh files in the source and album directories)
+    /// to generate a set of changes since the last transcoding.
+    ///
+    /// If no transcoding has been done previously, this will mean all files will be marked as new
+    /// (see `added_in_source_since_last_transcode`).
+    ///
+    /// **This is a relatively expensive IO operation as it requires quite a bit of disk access.
+    /// Reuse the results as much as possible to maintain good performance.**
+    pub fn scan_for_changes(&self) -> Result<AlbumFileChangesV2<'a>> {
+        // TODO Implement caching via internal mutability for this costly scan operation.
+        let source_album_directory_path =
+            self.album_directory_in_source_library();
+        let transcoded_album_directory_path =
+            self.album_directory_in_transcoded_library();
+
+        let tracked_source_files: AlbumSourceFileList<'a> =
+            self.tracked_source_files()?;
+
+        // Load states from disk (if they exist) and generate fresh filesystem states as well.
+        let saved_source_album_state =
+            SourceAlbumState::load_from_directory(&source_album_directory_path)?;
+        let fresh_source_album_state =
+            SourceAlbumState::generate_from_tracked_files(
+                &tracked_source_files,
+                &source_album_directory_path,
+            )?;
+
+        let saved_transcoded_album_state =
+            TranscodedAlbumState::load_from_directory(
+                &transcoded_album_directory_path,
+            )?;
+        let fresh_transcoded_album_state =
+            TranscodedAlbumState::generate_from_tracked_files(
+                &tracked_source_files,
+                transcoded_album_directory_path,
+            )?;
+
+        // Let `AlbumFileChangesV2` compare all the snapshots and generate a unified way
+        // of detecting and listing changes (i.e. required work for transcoding).
+        let full_changes: AlbumFileChangesV2<'a> =
+            AlbumFileChangesV2::generate_from_source_and_transcoded_state(
+                saved_source_album_state,
+                fresh_source_album_state.tracked_files,
+                saved_transcoded_album_state,
+                fresh_transcoded_album_state.transcoded_files,
+                self.weak_self.upgrade().ok_or_else(|| {
+                    miette!("Could not upgarde AlbumView's weak_self!")
+                })?,
+                tracked_source_files,
+            )?;
+
+        Ok(full_changes)
+    }
 }
 
-// TODO: Figure out how to model transcoding file lists and jobs. Most other stuff is ready - the
-//  input data for transcoding is basically `AlbumFileChangesV2`, so build some sort of abstraction
-//  for cancellable jobs and implement three: transcode audio file, copy data file, delete file.
-//  Handle removing dead code at the very end.
-//  Also: it might be best to try and recreate the transcode command and see what's missing, because
-//  this is turning out to be quite a rewrite.
+// TODO: Remove all the dead code at the very end.
 
 /// Represents a double `HashMap`: one for audio files, the other for data files.
 /// TODO Move to some utility module.
@@ -396,7 +677,7 @@ impl<K: Eq + Hash + Clone, V: Eq + Hash + Clone> SortedFileMap<K, V> {
 /// File paths are relative to the source album directory.
 pub struct AlbumSourceFileList<'a> {
     /// The `AlbumView` this file list is based on.
-    pub album: &'a AlbumView<'a>,
+    pub album: SharedAlbumView<'a>,
 
     /// Audio file paths associated with the album.
     /// Paths are relative to the album source directory.
@@ -408,25 +689,20 @@ pub struct AlbumSourceFileList<'a> {
 }
 
 impl<'a> AlbumSourceFileList<'a> {
-    pub fn from_album_view(album_view: &'a AlbumView<'a>) -> Result<Self> {
-        let audio_file_extensions = &album_view
-            .artist
-            .library
-            .library_configuration
-            .transcoding
-            .audio_file_extensions;
-        let other_file_extensions = &album_view
-            .artist
-            .library
-            .library_configuration
-            .transcoding
-            .other_file_extensions;
+    pub fn from_album_view(album_view: SharedAlbumView<'a>) -> Result<Self> {
+        let locked_album_view = album_view.read().expect(
+            "AlbumSourceFileList's album_view RwLock has been poisoned!",
+        );
 
-        let album_directory = album_view.album_directory_in_source_library();
+        let transcoding_configuration =
+            &locked_album_view.library_configuration().transcoding;
+
+        let album_directory =
+            locked_album_view.album_directory_in_source_library();
 
         let album_scan = DirectoryScan::from_directory_path(
             &album_directory,
-            album_view.configuration.scan.depth,
+            locked_album_view.configuration.scan.depth,
         )?;
 
         let mut audio_files: Vec<PathBuf> = Vec::new();
@@ -441,32 +717,24 @@ impl<'a> AlbumSourceFileList<'a> {
                         miette!("Could not generate relative path.")
                     })?;
 
-            let file_extension = file_absolute_path
-                .extension()
-                .unwrap_or_default()
-                .to_str()
-                .ok_or_else(|| {
-                    miette!("Could not convert file extension to string.")
-                })?
-                .to_string();
-
-            if audio_file_extensions.contains(&file_extension) {
+            if transcoding_configuration
+                .is_path_audio_file_by_extension(&file_relative_path)?
+            {
                 audio_files.push(file_relative_path);
-            } else if other_file_extensions.contains(&file_extension) {
+            } else if transcoding_configuration
+                .is_path_data_file_by_extension(&file_relative_path)?
+            {
                 data_files.push(file_relative_path);
             }
         }
+
+        drop(locked_album_view);
 
         Ok(Self {
             album: album_view,
             audio_files,
             data_files,
         })
-    }
-
-    /// Returns the path to the album source directory.
-    pub fn album_source_directory_path(&self) -> PathBuf {
-        self.album.album_directory_in_source_library().clone()
     }
 
     /// Returns a list of references to both audio and data file paths in this scan.
@@ -485,18 +753,16 @@ impl<'a> AlbumSourceFileList<'a> {
     /// Generate a HashMap that maps from relative paths in the source album directory
     /// to the relative paths of each of those files in the transcoded album directory.
     ///
+    /// On the surface it might make sense that the relative paths would stay the same,
+    /// *but that isn't always true* (e.g. extension changes when transcoding, etc.).
+    ///
     /// *Paths are still relative.*
-    pub fn map_source_paths_to_transcoded_paths(
+    pub fn map_source_file_paths_to_transcoded_file_paths(
         &self,
     ) -> SortedFileMap<PathBuf, PathBuf> {
-        let source_directory_path = self.album_source_directory_path();
-
-        // Oh my.
-        let transcoded_audio_file_extension = &self
-            .album
-            .artist
-            .library
-            .euphony_configuration
+        let album = self.album_ref();
+        let transcoded_audio_file_extension = &album
+            .euphony_configuration()
             .tools
             .ffmpeg
             .audio_transcoding_output_extension;
@@ -541,7 +807,23 @@ impl<'a> AlbumSourceFileList<'a> {
     pub fn map_transcoded_paths_to_source_paths(
         &self,
     ) -> SortedFileMap<PathBuf, PathBuf> {
-        self.map_source_paths_to_transcoded_paths()
+        self.map_source_file_paths_to_transcoded_file_paths()
             .to_inverted_map()
+    }
+
+    /*
+     * Private methods
+     */
+
+    fn album_ref(&self) -> RwLockReadGuard<'_, AlbumView<'a>> {
+        self.album
+            .read()
+            .expect("AlbumSourceFileList's album RwLock has been poisoned!")
+    }
+
+    fn album_mut_ref(&self) -> RwLockWriteGuard<'_, AlbumView<'a>> {
+        self.album
+            .write()
+            .expect("AlbumSourceFileList's album RwLock has been poisoned!")
     }
 }

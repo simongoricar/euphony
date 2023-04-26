@@ -133,7 +133,7 @@ fn get_configuration(args: &CLIArgs) -> Result<Config> {
 ///
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console,
 /// making it much easier to track down bugs or parse output in some other program.
-fn get_transcode_terminal(use_bare: bool) -> TranscodeTerminal {
+fn get_transcode_terminal<'a>(use_bare: bool) -> TranscodeTerminal<'a> {
     if use_bare {
         BareTerminalBackend::new().into()
     } else {
@@ -164,8 +164,7 @@ fn run_requested_cli_command(
         }
 
         match commands::cmd_transcode_all(config, &mut terminal) {
-            Ok(final_message) => {
-                terminal.log_println(final_message);
+            Ok(_) => {
                 terminal
                     .destroy()
                     .expect("Could not destroy tui terminal backend.");

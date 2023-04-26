@@ -1,3 +1,4 @@
+/*
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -12,6 +13,9 @@ use crate::configuration::{Config, ConfigLibrary};
 use crate::filesystem;
 use crate::globals::is_verbose_enabled;
 
+ */
+
+/*
 const PROCESSING_THREAD_CANCELLATION_TICK_SLEEP_TIME: Duration =
     Duration::from_millis(50);
 
@@ -107,6 +111,9 @@ impl FileProcessingResult {
 }
 
 
+ */
+
+/*
 /// Represents the smallest unit of work we can generate - a single file.
 /// It contains all the information it needs to process the file.
 #[derive(Clone)]
@@ -482,3 +489,5 @@ impl Debug for FileWorkPacket {
         )
     }
 }
+
+ */

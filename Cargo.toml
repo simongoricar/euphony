@@ -26,3 +26,6 @@ ansi-to-tui = "2.0.0"
 ctrlc = "3.2.4"
 crossbeam = "0.8.2"
 strip-ansi-escapes = "0.1.1"
+oneshot = { version = "0.1.5", default-features = false, features = ["std"] }
+closure = "0.3.0"
+linked-hash-map = "0.5.6"

@@ -68,7 +68,7 @@ to have the following exact structure in each library:
   |-- <artist directory>
   |   |
   |   |  [possibly some album-related README, logs, whatever else, etc.]
-  |   |  (settings for other files (see below) apply here as well)
+  |   |  (settings for other files apply here as well (see "other files" section below))
   |   |
   |   |-- <album directory>
   |   |   |
@@ -77,7 +77,7 @@ to have the following exact structure in each library:
   |   |   |
   |   |   | ... [cover art]
   |   |   | ... [some album-related README, logs, whatever else, etc.]
-  |   |   |     (settings for other files (see below) apply here as well)
+  |   |   |     (settings for other files apply here as well (see "other files" section below))
   |   |   |
   |   |   | ... <possibly other directories that don't really matter for transcoding>s
   |   |   |     (album subdirectories are ignored by default, see `depth` in per-album configuration)
@@ -90,10 +90,11 @@ to have the following exact structure in each library:
   | ... [other files]
   |     (of whatever type or name you allow in the configuration, see
   |      `allowed_other_files_by_extension` and `allowed_other_files_by_name` - these settings
-  |      apply also to artist and album directories below)
+  |      also apply to artist and album directories above)
 ```  
 
-Take this example:
+### 1.1 Example
+Look at the following directory structure: 
 ```markdown
   LosslessLibrary
   |
@@ -109,22 +110,35 @@ Take this example:
   |   |   | 06 Aindulmedir - Snow Above Blue Fire.flac
   |   |   | 07 Aindulmedir - Sleep-Form.flac
   |   |   | cover.jpg
+  |   |   | Aindulmedir - The Lunar Lexicon.log
+  |
+  |-- Dakota
+  |   |-- Leda
+  |   |   | 01 Dakota - Automatic.mp3
+  |   |   | 02 Dakota - Icon.mp3
+  |   |   | 03 Dakota - Easier.mp3
+  |   |   | 04 Dakota - Leave Me Out.mp3
+  |   |   | 05 Dakota - Bare Hands.mp3
+  |   |   | 06 Dakota - Tension.mp3
+  |   |   | cover.jpg
+  |
   |
   |-- _other
   |   | some_other_metadata_or_something.db
+  |   | ... other files we don't want to validate or transcode
 ```
 
-In the example above, there exists a lossless library by the name of LosslessLibrary.
-For this to validate correctly, this library would require the following configuration:
-- its `allowed_audio_files_by_extension` should be set to `["flac"]`,
+In this example there exists a lossless library in a directory `LosslessLibrary`. We'll call it `Lossless`.
+For this library to *validate* correctly it would require the following configuration:
+- its `allowed_audio_files_by_extension` should be set to `["flac", "mp3"]`,
 - its `ignored_directories_in_base_dir` should be set to `["_other"]`,
-- the global setting `allowed_other_files_by_extension` should include `txt` (which it does by default).
+- the global setting `allowed_other_files_by_extension` should include `txt` and `log` (which it does by default).
 
 Visually (ignoring the last global setting) this would mean the following library configuration:
 ```toml
 [libraries.lossless_private]
 name = "Losless"
-path = "..../LosslessLibrary"
+path = ".. absolute path ../LosslessLibrary"
 allowed_audio_files_by_extension = ["flac"]
 ignored_directories_in_base_dir = ["_other"]
 ```

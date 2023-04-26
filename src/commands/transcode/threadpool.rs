@@ -8,8 +8,7 @@ use std::time::Duration;
 
 use miette::{miette, Result};
 
-const THREAD_POOL_COORDINATOR_TICK_SLEEP_TIME: Duration =
-    Duration::from_millis(7);
+const THREAD_POOL_COORDINATOR_TICK_DURATION: Duration = Duration::from_millis(7);
 
 fn run_threadpool_coordinator(
     max_num_threads: usize,
@@ -94,13 +93,16 @@ fn run_threadpool_coordinator(
             }
         }
 
-        thread::sleep(THREAD_POOL_COORDINATOR_TICK_SLEEP_TIME);
+        thread::sleep(THREAD_POOL_COORDINATOR_TICK_DURATION);
     }
 }
 
-/// Reprsents a cancellable task - a closure that takes a single argument: a reference to an `AtomicBool`
-/// that acts as a cancellation flag (`true` means task has been cancelled). **It is completely up to the
-/// specific implementation inside the task closure to willingly quit when this flag is set.**
+/// Reprsents a single cancellable task - a closure that takes a single argument: a reference
+/// to an `AtomicBool` that acts as a cancellation flag (`true` means task has been cancelled).
+///
+/// **NOTE: It is completely up to the specific implementation inside the task closure to
+/// willingly quit when the cancellation flag is set.** This mechanism allows the task to
+/// complete gracefully.
 pub struct CancellableTask {
     name: Option<String>,
 
@@ -149,10 +151,14 @@ pub enum ThreadPoolStopReason {
     CancellationFlagSet,
 }
 
-/// An implementation of a thread pool with an additional feature: a cancellation flag.
-/// This cancellation flag is shared among all the worker threads, who are themselves essentialy
-/// just `CancellableTask`s. **It is up to the implementation of each task to read the cancellation flag
-/// and quit accordingly, `CancellableThreadPool`'s job is thread pool organization (task and flag distribution).**
+/// A basic thread pool implementation with a cancellation mechanism.
+///
+/// The cancellation flag is shared among all the worker threads, who are themselves essentialy
+/// just `CancellableTask`s.
+///
+/// **It is up to the implementation of each task to read the cancellation flag and quit
+/// accordingly.** `CancellableThreadPool`'s job is only thread pool organization
+/// (task and flag distribution).
 pub struct CancellableThreadPool {
     has_started: bool,
 
@@ -169,7 +175,7 @@ pub struct CancellableThreadPool {
 
 impl CancellableThreadPool {
     /// Initialize a new `CancellableThreadPool` with the given user cancellation flag
-    /// `AtomicBool` wrapped in an `Arc`. If `start` is true, the `CancellableThreadPool::start`
+    /// (`AtomicBool` wrapped in an `Arc`). If `start` is true, the `CancellableThreadPool::start`
     /// method is immediately called, activating the thread pool.
     pub fn new_with_user_flag(
         num_threads: usize,
@@ -192,9 +198,9 @@ impl CancellableThreadPool {
         pool
     }
 
-    /// This is a once-off method that initializes a coordinator thread which oversees all task delegation.
-    /// Essentially, you can call `queue_task` before or after calling this method, but the threads will
-    /// only be created and start executing after you call this method.
+    /// This is a one-off method that initializes a coordinator thread which oversees all
+    /// task delegation. Essentially, you can call `queue_task` before or after calling this method,
+    /// but the threads will only be created and start executing after you call this method.
     fn start(&mut self) {
         if self.has_started {
             return;
@@ -254,11 +260,14 @@ impl CancellableThreadPool {
         })
     }
 
-    /// Queue a new task by providing a closure that takes a single argument: an `AtomicBool` reference.
-    /// This `AtomicBool` is called a *cancellation flag* - when it is true (see `AtomicBool::load`),
-    /// it means that the owner of the thread pool has requested all workers to stop working and exit.
-    /// **It is up to the implementation in your closure to check this flag
-    /// and exit accordingly (potentially after some cleanup).**
+    /// Queue a new task by providing a closure that takes a single argument: an `AtomicBool`
+    /// reference. This `AtomicBool` is called a *cancellation flag* - when it is true
+    /// (see `AtomicBool::load`), it means that the owner of the thread pool has requested
+    /// all workers to stop working and exit.
+    ///
+    /// **NOTE: It is up to the implementation in your closure to check this flag
+    /// and exit accordingly (potentially after some cleanup or other code). If the closure does
+    /// not respond to the flag, the thread pool will NOT stop the worker itself.**
     pub fn queue_task<F, S: Into<String>>(
         &mut self,
         title: Option<S>,

@@ -1,9 +1,13 @@
+/*
 use miette::{miette, Context, Result};
 
 use crate::commands::transcode::packets::album::AlbumWorkPacket;
 use crate::configuration::{Config, ConfigLibrary};
 use crate::filesystem::DirectoryScan;
 
+
+ */
+/*
 /// Represents a music library's worth of processing work (all the albums).
 ///
 /// NOTE: Any changes in the filesystem after this instantiation will not be visible
@@ -91,3 +95,6 @@ impl<'a> LibraryWorkPacket<'a> {
         Ok(filtered_album_packets)
     }
 }
+
+
+ */

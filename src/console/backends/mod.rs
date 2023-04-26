@@ -120,8 +120,14 @@ use std::path::PathBuf;
 pub use bare::*;
 use crossbeam::channel::Receiver;
 pub use fancy::*;
+use shared::queue_v2::{
+    AlbumItem,
+    AlbumItemFinishedResult,
+    FileItem,
+    FileItemFinishedResult,
+    QueueItemID,
+};
 
-use crate::console::backends::shared::{QueueItem, QueueItemID, QueueType};
 use crate::console::{
     LogBackend,
     LogToFileBackend,
@@ -193,10 +199,10 @@ pub mod shared;
 /// ```
 ///
 ///
-macro_rules! terminal_impl_direct_from {
-    ($target: path, $($source_backend: path => $target_variant: path),+) => {
+macro_rules! terminal_impl_direct_from_with_lifetime {
+    ($lifetime: lifetime, $target: ty, $($source_backend: ty => $target_variant: path),+) => {
         $(
-            impl From<$source_backend> for $target {
+            impl<$lifetime> From<$source_backend> for $target {
                 fn from(item: $source_backend) -> Self {
                     $target_variant(item)
                 }
@@ -211,8 +217,8 @@ macro_rules! terminal_impl_direct_from {
 ///
 /// This macro implements the `TerminalBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_terminal {
-    ($t: path, $($variant: path),+) => {
-        impl TerminalBackend for $t {
+    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
+        impl<$lifetime> TerminalBackend for $t {
             fn setup(&mut self) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.setup()),+
@@ -233,8 +239,8 @@ macro_rules! enumdispatch_impl_terminal {
 ///
 /// This macro implements the `LogBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_log {
-    ($t: path, $($variant: path),+) => {
-        impl LogBackend for $t {
+    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
+        impl<$lifetime> LogBackend for $t {
             fn log_newline(&self) {
                 match self {
                     $($variant(terminal) => terminal.log_newline()),+
@@ -255,8 +261,8 @@ macro_rules! enumdispatch_impl_log {
 ///
 /// This macro implements the `LogToFileBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_log_to_file {
-    ($t: path, $($variant: path),+) => {
-        impl LogToFileBackend for $t {
+    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
+        impl<$lifetime> LogToFileBackend for $t {
             fn enable_saving_logs_to_file(&mut self, log_file_path: PathBuf) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.enable_saving_logs_to_file(log_file_path)),+
@@ -277,8 +283,8 @@ macro_rules! enumdispatch_impl_log_to_file {
 ///
 /// This macro implements the `ValidationBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_validation {
-    ($t: path, $($variant: path),+) => {
-        impl ValidationBackend for $t {
+    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
+        impl<$lifetime> ValidationBackend for $t {
             fn validation_add_error(&self, error: ValidationErrorInfo) {
                 match self {
                     $($variant(terminal) => terminal.validation_add_error(error)),+
@@ -293,65 +299,118 @@ macro_rules! enumdispatch_impl_validation {
 ///
 /// This macro implements the `TranscodeBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_transcode {
-    ($t: path, $($variant: path),+) => {
-        impl TranscodeBackend for $t {
-            fn queue_begin(&mut self) {
+    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
+        impl<$lifetime> TranscodeBackend<$lifetime> for $t {
+            /*
+             * Album queue
+             */
+            fn queue_album_enable(&mut self) {
                 match self {
-                    $($variant(terminal) => terminal.queue_begin()),+
+                    $($variant(terminal) => terminal.queue_album_enable()),+
                 }
             }
 
-            fn queue_end(&mut self) {
+            fn queue_album_disable(&mut self) {
                 match self {
-                    $($variant(terminal) => terminal.queue_end()),+
+                    $($variant(terminal) => terminal.queue_album_disable()),+
                 }
             }
 
-            fn queue_item_add(&mut self, item: String, item_type: QueueType) -> miette::Result<QueueItemID> {
+            fn queue_album_clear(&mut self) -> miette::Result<()> {
                 match self {
-                    $($variant(terminal) => terminal.queue_item_add(item, item_type)),+
+                    $($variant(terminal) => terminal.queue_album_clear()),+
                 }
             }
 
-            fn queue_item_start(&mut self, item_id: QueueItemID) -> miette::Result<()> {
+            fn queue_album_item_add(&mut self, item: AlbumItem<$lifetime>) -> miette::Result<QueueItemID> {
                 match self {
-                    $($variant(terminal) => terminal.queue_item_start(item_id)),+
+                    $($variant(terminal) => terminal.queue_album_item_add(item)),+
                 }
             }
 
-            fn queue_item_finish(&mut self, item_id: QueueItemID, was_ok: bool) -> miette::Result<()> {
+            fn queue_album_item_start(&mut self, item_id: QueueItemID) -> miette::Result<()> {
                 match self {
-                    $($variant(terminal) => terminal.queue_item_finish(item_id, was_ok)),+
+                    $($variant(terminal) => terminal.queue_album_item_start(item_id)),+
                 }
             }
 
-            fn queue_item_modify(&mut self, item_id: QueueItemID, function: Box<dyn FnOnce(&mut QueueItem)>) -> miette::Result<()> {
+            fn queue_album_item_finish(
+                &mut self,
+                item_id: QueueItemID,
+                result: AlbumItemFinishedResult,
+            ) -> miette::Result<()> {
                 match self {
-                    $($variant(terminal) => terminal.queue_item_modify(item_id, function)),+
+                    $($variant(terminal) => terminal.queue_album_item_finish(item_id, result)),+
                 }
             }
 
-            fn queue_item_remove(&mut self, item_id: QueueItemID) -> miette::Result<()> {
+            fn queue_album_item_remove(&mut self, item_id: QueueItemID) -> miette::Result<AlbumItem<$lifetime>> {
                 match self {
-                    $($variant(terminal) => terminal.queue_item_remove(item_id)),+
+                    $($variant(terminal) => terminal.queue_album_item_remove(item_id)),+
                 }
             }
 
-            fn queue_clear(&mut self, queue_type: QueueType) -> miette::Result<()> {
+            /*
+             * File queue
+             */
+            fn queue_file_enable(&mut self) {
                 match self {
-                    $($variant(terminal) => terminal.queue_clear(queue_type)),+
+                    $($variant(terminal) => terminal.queue_file_enable()),+
                 }
             }
 
-            fn progress_begin(&mut self) {
+            fn queue_file_disable(&mut self) {
                 match self {
-                    $($variant(terminal) => terminal.progress_begin()),+
+                    $($variant(terminal) => terminal.queue_file_disable()),+
                 }
             }
 
-            fn progress_end(&mut self) {
+            fn queue_file_clear(&mut self) -> miette::Result<()> {
                 match self {
-                    $($variant(terminal) => terminal.progress_end()),+
+                    $($variant(terminal) => terminal.queue_file_clear()),+
+                }
+            }
+
+            fn queue_file_item_add(&mut self, item: FileItem<'a>) -> miette::Result<QueueItemID> {
+                match self {
+                    $($variant(terminal) => terminal.queue_file_item_add(item)),+
+                }
+            }
+
+            fn queue_file_item_start(&mut self, item_id: QueueItemID) -> miette::Result<()> {
+                match self {
+                    $($variant(terminal) => terminal.queue_file_item_start(item_id)),+
+                }
+            }
+
+            fn queue_file_item_finish(
+                &mut self,
+                item_id: QueueItemID,
+                result: FileItemFinishedResult,
+            ) -> miette::Result<()> {
+                match self {
+                    $($variant(terminal) => terminal.queue_file_item_finish(item_id, result)),+
+                }
+            }
+
+            fn queue_file_item_remove(&mut self, item_id: QueueItemID) -> miette::Result<FileItem<'a>> {
+                match self {
+                    $($variant(terminal) => terminal.queue_file_item_remove(item_id)),+
+                }
+            }
+
+            /*
+             * Progress
+             */
+            fn progress_enable(&mut self) {
+                match self {
+                    $($variant(terminal) => terminal.progress_enable()),+
+                }
+            }
+
+            fn progress_disable(&mut self) {
+                match self {
+                    $($variant(terminal) => terminal.progress_disable()),+
                 }
             }
 
@@ -375,8 +434,8 @@ macro_rules! enumdispatch_impl_transcode {
 ///
 /// This macro implements the `UserControllableBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_user_controllable {
-    ($t: path, $($variant: path),+) => {
-        impl UserControllableBackend for $t {
+    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
+        impl<$lifetime> UserControllableBackend for $t {
             fn get_user_control_receiver(&mut self) -> miette::Result<Receiver<UserControlMessage>> {
                 match self {
                     $($variant(terminal) => terminal.get_user_control_receiver()),+
@@ -387,83 +446,94 @@ macro_rules! enumdispatch_impl_user_controllable {
 }
 
 #[allow(clippy::large_enum_variant)]
-pub enum SimpleTerminal {
-    Bare(BareTerminalBackend),
-    Fancy(TUITerminalBackend),
+pub enum SimpleTerminal<'a> {
+    Bare(BareTerminalBackend<'a>),
+    Fancy(TUITerminalBackend<'a>),
 }
 
-terminal_impl_direct_from!(
-    SimpleTerminal,
-    BareTerminalBackend => SimpleTerminal::Bare,
-    TUITerminalBackend => SimpleTerminal::Fancy
+terminal_impl_direct_from_with_lifetime!(
+    'a,
+    SimpleTerminal<'a>,
+    BareTerminalBackend<'a> => SimpleTerminal::Bare,
+    TUITerminalBackend<'a> => SimpleTerminal::Fancy
 );
 
 enumdispatch_impl_terminal!(
-    SimpleTerminal,
+    'a,
+    SimpleTerminal<'a>,
     SimpleTerminal::Bare,
     SimpleTerminal::Fancy
 );
 enumdispatch_impl_log!(
-    SimpleTerminal,
+    'a,
+    SimpleTerminal<'a>,
     SimpleTerminal::Bare,
     SimpleTerminal::Fancy
 );
 enumdispatch_impl_log_to_file!(
-    SimpleTerminal,
+    'a,
+    SimpleTerminal<'a>,
     SimpleTerminal::Bare,
     SimpleTerminal::Fancy
 );
 
 
-pub enum ValidationTerminal {
-    Bare(BareTerminalBackend),
+pub enum ValidationTerminal<'a> {
+    Bare(BareTerminalBackend<'a>),
 }
 
-terminal_impl_direct_from!(
-    ValidationTerminal,
-    BareTerminalBackend => ValidationTerminal::Bare
+terminal_impl_direct_from_with_lifetime!(
+    'a,
+    ValidationTerminal<'a>,
+    BareTerminalBackend<'a> => ValidationTerminal::Bare
 );
 
-enumdispatch_impl_terminal!(ValidationTerminal, ValidationTerminal::Bare);
-enumdispatch_impl_log!(ValidationTerminal, ValidationTerminal::Bare);
-enumdispatch_impl_log_to_file!(ValidationTerminal, ValidationTerminal::Bare);
-enumdispatch_impl_validation!(ValidationTerminal, ValidationTerminal::Bare);
+enumdispatch_impl_terminal!('a, ValidationTerminal<'a>, ValidationTerminal::Bare);
+enumdispatch_impl_log!('a, ValidationTerminal<'a>, ValidationTerminal::Bare);
+enumdispatch_impl_log_to_file!('a, ValidationTerminal<'a>, ValidationTerminal::Bare);
+enumdispatch_impl_validation!('a, ValidationTerminal<'a>, ValidationTerminal::Bare);
 
 
 #[allow(clippy::large_enum_variant)]
-pub enum TranscodeTerminal {
-    Bare(BareTerminalBackend),
-    Fancy(TUITerminalBackend),
+pub enum TranscodeTerminal<'a> {
+    Bare(BareTerminalBackend<'a>),
+    Fancy(TUITerminalBackend<'a>),
 }
 
-terminal_impl_direct_from!(
-    TranscodeTerminal,
-    BareTerminalBackend => TranscodeTerminal::Bare,
-    TUITerminalBackend => TranscodeTerminal::Fancy
+terminal_impl_direct_from_with_lifetime!(
+    'a,
+    TranscodeTerminal<'a>,
+    BareTerminalBackend<'a> => TranscodeTerminal::Bare,
+    TUITerminalBackend<'a> => TranscodeTerminal::Fancy
 );
 
 enumdispatch_impl_terminal!(
-    TranscodeTerminal,
+    'a,
+    TranscodeTerminal<'a>,
     TranscodeTerminal::Bare,
     TranscodeTerminal::Fancy
 );
 enumdispatch_impl_log!(
-    TranscodeTerminal,
+    'a,
+    TranscodeTerminal<'a>,
     TranscodeTerminal::Bare,
     TranscodeTerminal::Fancy
 );
 enumdispatch_impl_log_to_file!(
-    TranscodeTerminal,
+    'a,
+    TranscodeTerminal<'a>,
     TranscodeTerminal::Bare,
     TranscodeTerminal::Fancy
 );
 enumdispatch_impl_user_controllable!(
-    TranscodeTerminal,
+    'a,
+    TranscodeTerminal<'a>,
     TranscodeTerminal::Bare,
     TranscodeTerminal::Fancy
 );
 enumdispatch_impl_transcode!(
-    TranscodeTerminal,
+    'a,
+    TranscodeTerminal<'a>,
     TranscodeTerminal::Bare,
     TranscodeTerminal::Fancy
 );
