@@ -14,14 +14,14 @@ use crate::console::backends::shared::ProgressState;
 
 /// Container of entire fancy terminal UI state, and precisely the state required
 /// for a render pass.
-pub struct TerminalUIState<'a> {
+pub struct TerminalUIState<'config> {
     /// Album queue, if any (`None` if disabled).
     pub album_queue:
-        Option<Queue<FancyAlbumQueueItem<'a>, AlbumItemFinishedResult>>,
+        Option<Queue<FancyAlbumQueueItem<'config>, AlbumItemFinishedResult>>,
 
     /// File queue, if any (`None` if disabled).
     pub file_queue:
-        Option<Queue<FancyFileQueueItem<'a>, FileItemFinishedResult>>,
+        Option<Queue<FancyFileQueueItem<'config>, FileItemFinishedResult>>,
 
     /// When the progress bar is enabled, this contains the progress bar state.
     pub progress: Option<ProgressState>,
@@ -30,7 +30,7 @@ pub struct TerminalUIState<'a> {
     pub log_journal: VecDeque<String>,
 }
 
-impl<'a> TerminalUIState<'a> {
+impl<'config> TerminalUIState<'config> {
     pub fn new() -> Self {
         Self {
             album_queue: None,

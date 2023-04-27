@@ -70,7 +70,7 @@ pub enum ThreadPoolV2StopReason {
 ///   (when `true` the task has been cancelled).
 /// - A message sender (`Sender<C>`) that the worker can use to relay messages back to the main
 ///   thread. The message type is generic (`C`), but it must be `Send`.
-pub struct CancellableThreadPoolV2<C: Send> {
+pub struct CancellableThreadPoolV2<WorkerMessage: Send + 'static> {
     /// Maximum amount of tasks (threads) that can be running concurrently.
     max_num_threads: usize,
 
@@ -82,26 +82,26 @@ pub struct CancellableThreadPoolV2<C: Send> {
     /// A multi-producer single-consumer Sender. Ditributed across workers who can send
     /// messages back to the user-provided channel's `Receiver`. The data sent can be anything
     /// that can be safely sent across threads (`Send`).
-    worker_message_sender: Sender<C>,
+    worker_message_sender: Sender<WorkerMessage>,
 
     /// If `Some`, a handle to the pool coordinator (handles spawning and cleaning up tasks).
     pool_coordination_thread: Option<JoinHandle<ThreadPoolV2StopReason>>,
 
     /// A vector of pending tasks.
-    pending_tasks: Arc<Mutex<Vec<CancellableTaskV2<C>>>>,
+    pending_tasks: Arc<Mutex<Vec<CancellableTaskV2<WorkerMessage>>>>,
 
     /// A vector of currently-running tasks. Never larger than `max_num_threads`.
     running_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
-impl<C> CancellableThreadPoolV2<C>
+impl<WorkerMessage> CancellableThreadPoolV2<WorkerMessage>
 where
-    C: Send,
+    WorkerMessage: Send + 'static,
 {
     /// Create a new cancellable thread pool.
     pub fn new(
         thread_pool_size: usize,
-        worker_message_sender: Sender<C>,
+        worker_message_sender: Sender<WorkerMessage>,
     ) -> Self {
         Self {
             max_num_threads: thread_pool_size,
@@ -130,7 +130,7 @@ where
 
         // TODO Fix this and the rest of the errors, then finally test the new rewrite.
         let coordinator_thread_handle = thread::spawn(move || {
-            CancellableThreadPoolV2::<C>::run_coordinator(
+            CancellableThreadPoolV2::run_coordinator(
                 max_num_threads,
                 cancellation_flag,
                 worker_message_sender,
@@ -147,7 +147,10 @@ where
     /// Enter the given cancellable task into the threadpool task queue.
     ///
     /// The cancellable task's message sender type must match the threadpool's messager sender.
-    pub fn queue_task(&mut self, cancellable_task: CancellableTaskV2<C>) {
+    pub fn queue_task(
+        &mut self,
+        cancellable_task: CancellableTaskV2<WorkerMessage>,
+    ) {
         let mut exclusive_queue_lock = self.get_locked_pending_tasks();
         exclusive_queue_lock.push(cancellable_task);
     }
@@ -204,7 +207,9 @@ where
     }
 
     /// Lock and return the list of pending tasks.
-    fn get_locked_pending_tasks(&self) -> MutexGuard<Vec<CancellableTaskV2<C>>> {
+    fn get_locked_pending_tasks(
+        &self,
+    ) -> MutexGuard<Vec<CancellableTaskV2<WorkerMessage>>> {
         self.pending_tasks
             .lock()
             .expect("pending_tasks job queue lock has been poisoned!")
@@ -225,8 +230,8 @@ where
     fn run_coordinator(
         max_num_threads: usize,
         cancellation_flag: Arc<AtomicBool>,
-        worker_message_sender: Sender<C>,
-        pending_tasks: Arc<Mutex<Vec<CancellableTaskV2<C>>>>,
+        worker_message_sender: Sender<WorkerMessage>,
+        pending_tasks: Arc<Mutex<Vec<CancellableTaskV2<WorkerMessage>>>>,
         running_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) -> ThreadPoolV2StopReason {
         loop {
@@ -283,7 +288,7 @@ where
                 let threads_to_limit =
                     max_num_threads - running_tasks_locked.len();
                 if threads_to_limit > 0 {
-                    let tasks_to_run: Vec<CancellableTaskV2<C>> = {
+                    let tasks_to_run: Vec<CancellableTaskV2<WorkerMessage>> = {
                         let mut pending_tasks_locked =
                             pending_tasks.lock().expect(
                                 "pending_tasks mutex lock has been poisoned!",
@@ -370,9 +375,9 @@ trait FileJob {
 
 /// Blanket implementation of the `into_cancellable_task` method for all `FileJob`s.
 /// The generated `task_id` is 8 random ASCII characters.
-impl<J> IntoCancellableTaskV2<FileJobMessage> for J
+impl<Job> IntoCancellableTaskV2<FileJobMessage> for Job
 where
-    J: FileJob + Send,
+    Job: FileJob + Send + 'static,
 {
     fn into_cancellable_task(mut self) -> CancellableTaskV2<FileJobMessage> {
         // Random 8-character ASCII id.

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::exit;
 
 use clap::{Args, Parser, Subcommand};
+use crossbeam::thread::Scope;
 use crossterm::style::Stylize;
 use miette::{miette, Context, Result};
 
@@ -133,7 +134,9 @@ fn get_configuration(args: &CLIArgs) -> Result<Config> {
 ///
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console,
 /// making it much easier to track down bugs or parse output in some other program.
-fn get_transcode_terminal<'a>(use_bare: bool) -> TranscodeTerminal<'a> {
+fn get_transcode_terminal<'config: 'threadscope, 'threadscope>(
+    use_bare: bool,
+) -> TranscodeTerminal<'config, 'threadscope> {
     if use_bare {
         BareTerminalBackend::new().into()
     } else {
@@ -144,17 +147,21 @@ fn get_transcode_terminal<'a>(use_bare: bool) -> TranscodeTerminal<'a> {
 }
 
 /// Initializes the required terminal backend and executes the given CLI command.
-fn run_requested_cli_command(
+fn run_requested_cli_command<'threadscope>(
     args: CLIArgs,
-    config: &Config,
+    config: Config,
+    scope: &'threadscope Scope<'threadscope>,
 ) -> std::result::Result<(), i32> {
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
         // `transcode`/`transcode-all` has two available terminal backends:
         // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
-        let mut terminal = get_transcode_terminal(transcode_args.bare_terminal);
+        // TODO Fix this lifetime issue
+        let mut terminal: TranscodeTerminal<'_, 'threadscope> =
+            get_transcode_terminal(transcode_args.bare_terminal);
+
         terminal
-            .setup()
+            .setup(scope)
             .expect("Could not set up tui terminal backend.");
 
         if let Some(log_file_path) = transcode_args.log_to_file {
@@ -163,28 +170,33 @@ fn run_requested_cli_command(
                 .map_err(|_| 1)?;
         }
 
-        match commands::cmd_transcode_all(config, &mut terminal) {
-            Ok(_) => {
-                terminal
-                    .destroy()
-                    .expect("Could not destroy tui terminal backend.");
+        commands::cmd_transcode_all(&config, &mut terminal).map_err(|_| 1)?;
 
-                Ok(())
-            }
-            Err(error) => {
-                terminal.log_println(error.to_string().red());
-                terminal
-                    .destroy()
-                    .expect("Could not destroy tui terminal backend.");
+        terminal.destroy().map_err(|_| 1)?;
 
-                Err(1)
-            }
-        }
+        // match transcode_result {
+        //     Ok(_) => {
+        //         terminal
+        //             .destroy()
+        //             .expect("Could not destroy tui terminal backend.");
+        //
+        //         Ok(())
+        //     }
+        //     Err(error) => {
+        //         terminal.log_println(error.to_string().red());
+        //         terminal
+        //             .destroy()
+        //             .expect("Could not destroy tui terminal backend.");
+        //
+        //         Err(1)
+        //     }
+        // }
+        Ok(())
     } else if let CLICommand::ValidateAll(args) = args.command {
         let mut terminal: ValidationTerminal = BareTerminalBackend::new().into();
 
         terminal
-            .setup()
+            .setup(scope)
             .expect("Could not set up bare console backend.");
 
         if let Some(log_file_path) = args.log_to_file {
@@ -193,7 +205,7 @@ fn run_requested_cli_command(
                 .map_err(|_| 1)?;
         }
 
-        match commands::cmd_validate(config, &mut terminal) {
+        match commands::cmd_validate(&config, &mut terminal) {
             Ok(_) => {}
             Err(error) => {
                 terminal.log_println(format!(
@@ -212,9 +224,9 @@ fn run_requested_cli_command(
         let mut terminal: SimpleTerminal = BareTerminalBackend::new().into();
 
         terminal
-            .setup()
+            .setup(scope)
             .expect("Could not set up bare console backend.");
-        commands::cmd_show_config(config, &mut terminal);
+        commands::cmd_show_config(&config, &mut terminal);
         terminal
             .destroy()
             .expect("Could not destroy bare console backend.");
@@ -224,9 +236,9 @@ fn run_requested_cli_command(
         let mut terminal: SimpleTerminal = BareTerminalBackend::new().into();
 
         terminal
-            .setup()
+            .setup(scope)
             .expect("Could not set up bare console backend.");
-        commands::cmd_list_libraries(config, &mut terminal);
+        commands::cmd_list_libraries(&config, &mut terminal);
         terminal
             .destroy()
             .expect("Could not destroy bare console backend.");
@@ -242,14 +254,18 @@ fn run_requested_cli_command(
 /// Parses CLI arguments, loads the configuration file and starts executing the requested command.
 fn main() -> Result<()> {
     // TODO .album.euphony should have a version lock inside it
-    let args: CLIArgs = CLIArgs::parse();
+    let args = CLIArgs::parse();
     VERBOSE.set(args.verbose);
 
     let configuration = get_configuration(&args)
         .wrap_err_with(|| miette!("Could not load configuration."))?;
 
-    match run_requested_cli_command(args, &configuration) {
-        Ok(_) => exit(0),
-        Err(exit_code) => exit(exit_code),
-    };
+    let cli_result = crossbeam::scope(|scope| {
+        match run_requested_cli_command(args, configuration, scope) {
+            Ok(_) => exit(0),
+            Err(exit_code) => exit(exit_code),
+        };
+    });
+
+    cli_result.map_err(|_| miette!("Failed!"))
 }

@@ -4,12 +4,11 @@ use std::fs::File;
 use std::io::{stdout, BufWriter, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread;
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use ansi_to_tui::IntoText;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
+use crossbeam::thread::{Scope, ScopedJoinHandle};
 use crossterm::event::{Event, KeyCode};
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -59,7 +58,7 @@ const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
 /// `tui`-based terminal UI implementation of a terminal backend.
 /// Supports all available terminal backend "extensions", meaning it can be used as a backend
 /// for transcoding.
-pub struct TUITerminalBackend<'a> {
+pub struct TUITerminalBackend<'config: 'threadscope, 'threadscope> {
     /// `tui::Terminal`, which is how we interact with the terminal and build a terminal UI.
     terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
 
@@ -76,7 +75,7 @@ pub struct TUITerminalBackend<'a> {
     has_been_set_up: bool,
 
     /// When `has_been_set_up` is true, `render_thread` contains a handle to the render thread.
-    render_thread: Option<JoinHandle<Result<()>>>,
+    render_thread: Option<ScopedJoinHandle<'threadscope, Result<()>>>,
 
     /// When `has_been_set_up` is true, `render_thread_channel` contains a sender with which to
     /// signal to the render thread that it should stop.
@@ -88,10 +87,10 @@ pub struct TUITerminalBackend<'a> {
 
     /// Houses non-terminal-organisation related data - this is precisely
     /// the data required for a render pass.
-    state: Arc<Mutex<TerminalUIState<'a>>>,
+    state: Arc<Mutex<TerminalUIState<'config>>>,
 }
 
-impl<'a> TUITerminalBackend<'a> {
+impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
     /// Initialize a new `tui`-based terminal backend.
     /// If an error occurs while initializing `tui::Terminal`, `Err` is returned.
     pub fn new() -> Result<Self> {
@@ -111,7 +110,7 @@ impl<'a> TUITerminalBackend<'a> {
     }
 
     /// A private method for locking the terminal state and returning the locked data.
-    fn lock_state(&self) -> MutexGuard<TerminalUIState<'a>> {
+    fn lock_state(&self) -> MutexGuard<TerminalUIState<'config>> {
         self.state.lock().unwrap()
     }
 
@@ -134,7 +133,7 @@ impl<'a> TUITerminalBackend<'a> {
     /// - `frame_size_height_offset` is an optional argument that can be used to
     ///   increase or decrease the height of the drawing area (this is used in the last render pass).
     fn perform_render(
-        state: MutexGuard<TerminalUIState>,
+        state: MutexGuard<TerminalUIState<'config>>,
         frame: &mut Frame<CrosstermBackend<Stdout>>,
         frame_size_height_offset: Option<isize>,
     ) {
@@ -413,8 +412,104 @@ impl<'a> TUITerminalBackend<'a> {
     }
 }
 
-impl<'a> TerminalBackend for TUITerminalBackend<'a> {
-    fn setup(&mut self) -> Result<()> {
+
+fn run_render_loop(
+    terminal_arc_mutex: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
+    state_arc_mutex: Arc<Mutex<TerminalUIState>>,
+    user_control_message_sender: Sender<UserControlMessage>,
+    stop_signal_receiver: Receiver<()>,
+) -> Result<()> {
+    // Continiously render terminal UI (until stop signal is received via channel).
+    loop {
+        let time_tick_begin = Instant::now();
+
+        // We might get a signal (via a multiproducer-singleconsumer channel) to stop rendering,
+        // which is why we check our Receiver every iteration. If there is a message, we stop rendering
+        // and exit the thread.
+        match stop_signal_receiver.try_recv() {
+            Ok(_) => {
+                // Main thread signaled us to stop, exit by returning Ok(()).
+                break;
+            }
+            Err(error) => match error {
+                TryRecvError::Empty => {
+                    // Nothing should be done - main thread simply hasn't sent us a request to stop.
+                }
+                TryRecvError::Disconnected => {
+                    // Something went very wrong, panic (main thread somehow died or dropped Sender).
+                    panic!("Main thread has disconnected.");
+                }
+            },
+        }
+
+        // Perform drawing and thread sleeping.
+        // (subtracts drawing time from tick rate to preserve a consistent update rate)
+        {
+            let mut terminal = terminal_arc_mutex.lock().unwrap();
+            let state = state_arc_mutex.lock().unwrap();
+
+            terminal
+                .draw(|f| TUITerminalBackend::perform_render(state, f, None))
+                .into_diagnostic()?;
+        }
+
+        // Keep waiting and forwarding user input until the new frame should be drawn.
+        loop {
+            let used_tick_time_delta = time_tick_begin.elapsed().as_secs_f64();
+            let adjusted_sleep_time =
+                if used_tick_time_delta >= TERMINAL_REFRESH_RATE_SECONDS {
+                    0.0
+                } else {
+                    TERMINAL_REFRESH_RATE_SECONDS - used_tick_time_delta
+                };
+
+            // When less than 0.01 ms away from time to next frame, we simply stop waiting for input.
+            if adjusted_sleep_time < 0.00001 {
+                break;
+            }
+
+            // Check for any keyboard events and pass them forward through the user control Sender.
+            if crossterm::event::poll(Duration::from_secs_f64(
+                adjusted_sleep_time,
+            ))
+            .into_diagnostic()?
+            {
+                // Keyboard event is available, check its content and potentially forward it in the form
+                // of a `UserControlMessage`.
+                if let Event::Key(key) =
+                    crossterm::event::read().into_diagnostic()?
+                {
+                    if let KeyCode::Char(char) = key.code {
+                        if char == 'q' {
+                            user_control_message_sender
+                                .send(UserControlMessage::Exit)
+                                .into_diagnostic()?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // One last draw call before exiting.
+    // IMPORTANT: In this last render we manually decrease the height of the UI by 1, so
+    // after the program exits and a normal terminal prompt is shown, the entire UI is still in view.
+    {
+        let mut terminal = terminal_arc_mutex.lock().unwrap();
+        let state = state_arc_mutex.lock().unwrap();
+
+        terminal
+            .draw(|f| TUITerminalBackend::perform_render(state, f, Some(-1)))
+            .into_diagnostic()?;
+    }
+
+    Ok(())
+}
+
+impl<'config: 'scope, 'scope> TerminalBackend<'scope>
+    for TUITerminalBackend<'config, 'scope>
+{
+    fn setup(&mut self, thread_scope: &'scope Scope<'scope>) -> Result<()> {
         enable_raw_mode().into_diagnostic()?;
 
         let mut terminal = self.terminal.lock().unwrap();
@@ -443,111 +538,26 @@ impl<'a> TerminalBackend for TUITerminalBackend<'a> {
         let (stop_tx, stop_rx) = crossbeam::channel::unbounded::<()>();
 
         let terminal_render_thread_clone = self.terminal.clone();
-        let state_render_thread_clone = self.state.clone();
+        let state_render_thread_clone: Arc<Mutex<TerminalUIState>> =
+            self.state.clone();
 
-        let render_thread: JoinHandle<Result<()>> = thread::spawn(move || {
-            // Continiously render terminal UI (until stop signal is received via channel).
-            loop {
-                let time_tick_begin = Instant::now();
-
-                // We might get a signal (via a multiproducer-singleconsumer channel) to stop rendering,
-                // which is why we check our Receiver every iteration. If there is a message, we stop rendering
-                // and exit the thread.
-                match stop_rx.try_recv() {
-                    Ok(_) => {
-                        // Main thread signaled us to stop, exit by returning Ok(()).
-                        break;
-                    }
-                    Err(error) => match error {
-                        TryRecvError::Empty => {
-                            // Nothing should be done - main thread simply hasn't sent us a request to stop.
-                        }
-                        TryRecvError::Disconnected => {
-                            // Something went very wrong, panic (main thread somehow died or dropped Sender).
-                            panic!("Main thread has disconnected.");
-                        }
-                    },
-                }
-
-                // Perform drawing and thread sleeping.
-                // (subtracts drawing time from tick rate to preserve a consistent update rate)
-                {
-                    let mut terminal =
-                        terminal_render_thread_clone.lock().unwrap();
-                    let state = state_render_thread_clone.lock().unwrap();
-
-                    terminal
-                        .draw(|f| {
-                            TUITerminalBackend::perform_render(state, f, None)
-                        })
-                        .into_diagnostic()?;
-                }
-
-                // Keep waiting and forwarding user input until the new frame should be drawn.
-                loop {
-                    let used_tick_time_delta =
-                        time_tick_begin.elapsed().as_secs_f64();
-                    let adjusted_sleep_time = if used_tick_time_delta
-                        >= TERMINAL_REFRESH_RATE_SECONDS
-                    {
-                        0.0
-                    } else {
-                        TERMINAL_REFRESH_RATE_SECONDS - used_tick_time_delta
-                    };
-
-                    // When less than 0.01 ms away from time to next frame, we simply stop waiting for input.
-                    if adjusted_sleep_time < 0.00001 {
-                        break;
-                    }
-
-                    // Check for any keyboard events and pass them forward through the user control Sender.
-                    if crossterm::event::poll(Duration::from_secs_f64(
-                        adjusted_sleep_time,
-                    ))
-                    .into_diagnostic()?
-                    {
-                        // Keyboard event is available, check its content and potentially forward it in the form
-                        // of a `UserControlMessage`.
-                        if let Event::Key(key) =
-                            crossterm::event::read().into_diagnostic()?
-                        {
-                            if let KeyCode::Char(char) = key.code {
-                                if char == 'q' {
-                                    user_control_tx
-                                        .send(UserControlMessage::Exit)
-                                        .into_diagnostic()?;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // One last draw call before exiting.
-            // IMPORTANT: In this last render we manually decrease the height of the UI by 1, so
-            // after the program exits and a normal terminal prompt is shown, the entire UI is still in view.
-            {
-                let mut terminal = terminal_render_thread_clone.lock().unwrap();
-                let state = state_render_thread_clone.lock().unwrap();
-
-                terminal
-                    .draw(|f| {
-                        TUITerminalBackend::perform_render(state, f, Some(-1))
-                    })
-                    .into_diagnostic()?;
-            }
-
-            Ok(())
+        let render_thread_join_handle = thread_scope.spawn(move |_| {
+            run_render_loop(
+                terminal_render_thread_clone,
+                state_render_thread_clone,
+                user_control_tx,
+                stop_rx,
+            )
         });
 
-        self.render_thread = Some(render_thread);
+        self.render_thread = Some(render_thread_join_handle);
         self.render_thread_channel = Some(stop_tx);
         self.has_been_set_up = true;
 
         Ok(())
     }
 
-    fn destroy(&mut self) -> Result<()> {
+    fn destroy(mut self) -> Result<()> {
         if !self.has_been_set_up {
             return Ok(());
         }
@@ -605,7 +615,9 @@ impl<'a> TerminalBackend for TUITerminalBackend<'a> {
     }
 }
 
-impl<'a> LogBackend for TUITerminalBackend<'a> {
+impl<'config: 'scope, 'scope> LogBackend
+    for TUITerminalBackend<'config, 'scope>
+{
     fn log_newline(&self) {
         // Part 1: add log line to terminal UI.
         {
@@ -682,7 +694,9 @@ impl<'a> LogBackend for TUITerminalBackend<'a> {
     }
 }
 
-impl<'a> TranscodeBackend<'a> for TUITerminalBackend<'a> {
+impl<'config: 'scope, 'scope> TranscodeBackend<'config>
+    for TUITerminalBackend<'config, 'scope>
+{
     /*
      * Album queue
      */
@@ -709,7 +723,7 @@ impl<'a> TranscodeBackend<'a> for TUITerminalBackend<'a> {
 
     fn queue_album_item_add(
         &mut self,
-        item: AlbumItem<'a>,
+        item: AlbumItem<'config>,
     ) -> Result<QueueItemID> {
         let wrapped_item = FancyAlbumQueueItem::new(item);
         let item_id = wrapped_item.get_id();
@@ -755,7 +769,7 @@ impl<'a> TranscodeBackend<'a> for TUITerminalBackend<'a> {
     fn queue_album_item_remove(
         &mut self,
         item_id: QueueItemID,
-    ) -> Result<AlbumItem<'a>> {
+    ) -> Result<AlbumItem<'config>> {
         let mut state = self.lock_state();
 
         let queue = state.album_queue.as_mut().ok_or_else(|| {
@@ -792,7 +806,7 @@ impl<'a> TranscodeBackend<'a> for TUITerminalBackend<'a> {
 
     fn queue_file_item_add(
         &mut self,
-        item: FileItem<'a>,
+        item: FileItem<'config>,
     ) -> Result<QueueItemID> {
         let wrapped_item = FancyFileQueueItem::new(item);
         let item_id = wrapped_item.get_id();
@@ -836,7 +850,7 @@ impl<'a> TranscodeBackend<'a> for TUITerminalBackend<'a> {
     fn queue_file_item_remove(
         &mut self,
         item_id: QueueItemID,
-    ) -> Result<FileItem<'a>> {
+    ) -> Result<FileItem<'config>> {
         let mut state = self.lock_state();
 
         let queue = state.file_queue.as_mut().ok_or_else(|| {
@@ -883,7 +897,9 @@ impl<'a> TranscodeBackend<'a> for TUITerminalBackend<'a> {
     }
 }
 
-impl<'a> UserControllableBackend for TUITerminalBackend<'a> {
+impl<'config: 'scope, 'scope> UserControllableBackend
+    for TUITerminalBackend<'config, 'scope>
+{
     fn get_user_control_receiver(
         &mut self,
     ) -> Result<Receiver<UserControlMessage>> {
@@ -899,7 +915,9 @@ impl<'a> UserControllableBackend for TUITerminalBackend<'a> {
     }
 }
 
-impl<'a> LogToFileBackend for TUITerminalBackend<'a> {
+impl<'config: 'scope, 'scope> LogToFileBackend
+    for TUITerminalBackend<'config, 'scope>
+{
     fn enable_saving_logs_to_file(
         &mut self,
         log_file_path: PathBuf,

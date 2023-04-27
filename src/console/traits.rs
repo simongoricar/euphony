@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 use crossbeam::channel::Receiver;
+use crossbeam::thread::Scope;
 use miette::Result;
 
 use crate::console::backends::shared::queue_v2::{
@@ -16,12 +17,12 @@ use crate::console::backends::shared::queue_v2::{
 /// **This is the base. All terminal backends must implement this.**
 ///
 /// For further information details see `src/console/backends/mod.rs`.
-pub trait TerminalBackend {
+pub trait TerminalBackend<'scope> {
     /// Initialize the terminal backend.
-    fn setup(&mut self) -> Result<()>;
+    fn setup(&mut self, thread_scope: &'scope Scope<'scope>) -> Result<()>;
 
     /// Clean up the terminal backend.
-    fn destroy(&mut self) -> Result<()>;
+    fn destroy(self) -> Result<()>;
 }
 
 /// Allows backends to print out content and newlines.
@@ -35,7 +36,7 @@ pub trait LogBackend {
 
 /// Allows backends to be used in transcoding process. This means the implementor
 /// must maintain some form of (purely visual) queue system and a way of monitoring progress.
-pub trait TranscodeBackend<'a> {
+pub trait TranscodeBackend<'config> {
     /*
      * Album queue
      */
@@ -52,7 +53,7 @@ pub trait TranscodeBackend<'a> {
     /// Add an album to the album queue. This will give it the `AlbumItemState::Queued` state.
     fn queue_album_item_add(
         &mut self,
-        item: AlbumItem<'a>,
+        item: AlbumItem<'config>,
     ) -> Result<QueueItemID>;
 
     /// Mark the given album in the album queue as "in-progress".
@@ -71,7 +72,7 @@ pub trait TranscodeBackend<'a> {
     fn queue_album_item_remove(
         &mut self,
         item_id: QueueItemID,
-    ) -> Result<AlbumItem<'a>>;
+    ) -> Result<AlbumItem<'config>>;
 
     /*
      * File queue
@@ -87,8 +88,10 @@ pub trait TranscodeBackend<'a> {
     fn queue_file_clear(&mut self) -> Result<()>;
 
     /// Add a file to the file queue. This will give it the `FileItemState::Queued` state.
-    fn queue_file_item_add(&mut self, item: FileItem<'a>)
-        -> Result<QueueItemID>;
+    fn queue_file_item_add(
+        &mut self,
+        item: FileItem<'config>,
+    ) -> Result<QueueItemID>;
 
     /// Mark the given file in the file queue as "in-progress".
     /// This will give it the `FileItemState::InProgress` state.
@@ -106,7 +109,7 @@ pub trait TranscodeBackend<'a> {
     fn queue_file_item_remove(
         &mut self,
         item_id: QueueItemID,
-    ) -> Result<FileItem<'a>>;
+    ) -> Result<FileItem<'config>>;
 
     /*
      * Progress bar

@@ -18,8 +18,8 @@ use crate::console::backends::shared::{AnimatedSpinner, SpinnerStyle};
 /*
  * ALBUM QUEUE ITEM implementation (fancy backend-specific)
  */
-pub struct FancyAlbumQueueItem<'a> {
-    pub item: AlbumItem<'a>,
+pub struct FancyAlbumQueueItem<'config> {
+    pub item: AlbumItem<'config>,
 
     pub spinner: Option<AnimatedSpinner>,
 
@@ -115,8 +115,8 @@ impl<'a, 'b> RenderableQueueItem<Text<'b>> for FancyAlbumQueueItem<'a> {
 /*
  * FILE QUEUE ITEM implementation (fancy backend-specific)
  */
-pub struct FancyFileQueueItem<'a> {
-    pub item: FileItem<'a>,
+pub struct FancyFileQueueItem<'item> {
+    pub item: FileItem<'item>,
 
     pub spinner: Option<AnimatedSpinner>,
 

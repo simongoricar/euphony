@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crossbeam::channel::{never, Receiver};
+use crossbeam::thread::Scope;
 use crossterm::style::{Color, Stylize};
 use miette::{miette, IntoDiagnostic, Result};
 use strip_ansi_escapes::Writer;
@@ -37,12 +38,12 @@ use crate::console::{
 ///
 /// Any log output simply goes to stdout. More complex features, such as queues, are not displayed
 /// dynamically as a UI, but with simple one-line status updates about the queue (e.g. "New item in queue: ...").
-pub struct BareTerminalBackend<'a> {
+pub struct BareTerminalBackend<'config> {
     /// The album queue, when enabled.
-    album_queue: Option<Queue<AlbumItem<'a>, AlbumItemFinishedResult>>,
+    album_queue: Option<Queue<AlbumItem<'config>, AlbumItemFinishedResult>>,
 
     /// The file queue, when enabled.
-    file_queue: Option<Queue<FileItem<'a>, FileItemFinishedResult>>,
+    file_queue: Option<Queue<FileItem<'config>, FileItemFinishedResult>>,
 
     /// When the progress bar is active, this contains the progress bar state.
     progress: Option<ProgressState>,
@@ -51,7 +52,7 @@ pub struct BareTerminalBackend<'a> {
     log_file_output: Option<Mutex<BufWriter<Writer<File>>>>,
 }
 
-impl<'a> BareTerminalBackend<'a> {
+impl<'config> BareTerminalBackend<'config> {
     pub fn new() -> Self {
         Self {
             album_queue: None,
@@ -62,12 +63,14 @@ impl<'a> BareTerminalBackend<'a> {
     }
 }
 
-impl<'a> TerminalBackend for BareTerminalBackend<'a> {
-    fn setup(&mut self) -> Result<()> {
+impl<'config: 'scope, 'scope> TerminalBackend<'scope>
+    for BareTerminalBackend<'config>
+{
+    fn setup(&mut self, _thread_scope: &'scope Scope<'scope>) -> Result<()> {
         Ok(())
     }
 
-    fn destroy(&mut self) -> Result<()> {
+    fn destroy(mut self) -> Result<()> {
         // If logging to file was enabled, we should disable it before this backend is dropped,
         // otherwise we risk failing to flush to file.
         self.disable_saving_logs_to_file()?;
@@ -76,7 +79,7 @@ impl<'a> TerminalBackend for BareTerminalBackend<'a> {
     }
 }
 
-impl<'a> LogBackend for BareTerminalBackend<'a> {
+impl<'config> LogBackend for BareTerminalBackend<'config> {
     fn log_newline(&self) {
         println!();
 
@@ -109,7 +112,7 @@ impl<'a> LogBackend for BareTerminalBackend<'a> {
     }
 }
 
-impl<'a> TranscodeBackend<'a> for BareTerminalBackend<'a> {
+impl<'config> TranscodeBackend<'config> for BareTerminalBackend<'config> {
     /*
      * Album queue
      */
@@ -137,7 +140,7 @@ impl<'a> TranscodeBackend<'a> for BareTerminalBackend<'a> {
 
     fn queue_album_item_add(
         &mut self,
-        item: AlbumItem<'a>,
+        item: AlbumItem<'config>,
     ) -> Result<QueueItemID> {
         let item_id = item.get_id();
 
@@ -196,7 +199,7 @@ impl<'a> TranscodeBackend<'a> for BareTerminalBackend<'a> {
     fn queue_album_item_remove(
         &mut self,
         item_id: QueueItemID,
-    ) -> Result<AlbumItem<'a>> {
+    ) -> Result<AlbumItem<'config>> {
         let queue = self.album_queue.as_mut().ok_or_else(|| {
             miette!("Album queue is disabled, can't remove item.")
         })?;
@@ -231,7 +234,7 @@ impl<'a> TranscodeBackend<'a> for BareTerminalBackend<'a> {
 
     fn queue_file_item_add(
         &mut self,
-        item: FileItem<'a>,
+        item: FileItem<'config>,
     ) -> Result<QueueItemID> {
         let queue = self
             .file_queue
@@ -295,7 +298,7 @@ impl<'a> TranscodeBackend<'a> for BareTerminalBackend<'a> {
     fn queue_file_item_remove(
         &mut self,
         item_id: QueueItemID,
-    ) -> Result<FileItem<'a>> {
+    ) -> Result<FileItem<'config>> {
         let queue = self.file_queue.as_mut().ok_or_else(|| {
             miette!("File queue is disabled, can't remove item.")
         })?;
@@ -339,7 +342,7 @@ impl<'a> TranscodeBackend<'a> for BareTerminalBackend<'a> {
     }
 }
 
-impl<'a> ValidationBackend for BareTerminalBackend<'a> {
+impl<'config> ValidationBackend for BareTerminalBackend<'config> {
     fn validation_add_error(&self, error: ValidationErrorInfo) {
         self.log_newline();
         self.log_newline();
@@ -364,7 +367,7 @@ impl<'a> ValidationBackend for BareTerminalBackend<'a> {
     }
 }
 
-impl<'a> UserControllableBackend for BareTerminalBackend<'a> {
+impl<'config> UserControllableBackend for BareTerminalBackend<'config> {
     fn get_user_control_receiver(
         &mut self,
     ) -> Result<Receiver<UserControlMessage>> {
@@ -372,7 +375,7 @@ impl<'a> UserControllableBackend for BareTerminalBackend<'a> {
     }
 }
 
-impl<'a> LogToFileBackend for BareTerminalBackend<'a> {
+impl<'config> LogToFileBackend for BareTerminalBackend<'config> {
     fn enable_saving_logs_to_file(
         &mut self,
         log_file_path: PathBuf,

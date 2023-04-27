@@ -682,12 +682,12 @@ pub enum FileType {
 ///
 /// This is part of the transcoding scanning process - this information is basically the last step.
 /// If we have this, we know what files need to be transcoded, copied, removed, etc.
-pub struct AlbumFileChangesV2<'a> {
+pub struct AlbumFileChangesV2<'view> {
     /// `AlbumView` these changes were generated from.
-    pub album_view: SharedAlbumView<'a>,
+    pub album_view: SharedAlbumView<'view>,
 
     // List of tracked files.
-    pub tracked_files: AlbumSourceFileList<'a>,
+    pub tracked_files: AlbumSourceFileList<'view>,
 
     /// Files in the source album directory that are new (haven't been processed yet).
     ///

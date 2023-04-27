@@ -135,10 +135,10 @@ pub enum AlbumItemState {
     Finished { ok: bool },
 }
 
-pub struct AlbumItem<'a> {
+pub struct AlbumItem<'config> {
     pub id: QueueItemID,
 
-    pub album_view: SharedAlbumView<'a>,
+    pub album_view: SharedAlbumView<'config>,
 
     pub num_changed_files: usize,
 
@@ -252,10 +252,10 @@ pub enum FileItemFinishedResult {
     Failed(FileItemErrorType),
 }
 
-pub struct FileItem<'a> {
+pub struct FileItem<'config> {
     pub id: QueueItemID,
 
-    pub album_view: SharedAlbumView<'a>,
+    pub album_view: SharedAlbumView<'config>,
 
     pub file_type: FileItemType,
 
@@ -264,9 +264,9 @@ pub struct FileItem<'a> {
     pub state: FileItemState,
 }
 
-impl<'a> FileItem<'a> {
+impl<'config> FileItem<'config> {
     pub fn new(
-        album: SharedAlbumView<'a>,
+        album: SharedAlbumView<'config>,
         file_type: FileItemType,
         file_name: String,
     ) -> Self {
@@ -282,7 +282,7 @@ impl<'a> FileItem<'a> {
     }
 }
 
-impl<'a> QueueItem<FileItemFinishedResult> for FileItem<'a> {
+impl<'config> QueueItem<FileItemFinishedResult> for FileItem<'config> {
     #[inline]
     fn get_id(&self) -> QueueItemID {
         self.id
@@ -315,7 +315,7 @@ impl<'a> QueueItem<FileItemFinishedResult> for FileItem<'a> {
     }
 }
 
-impl<'a> RenderableQueueItem<String> for FileItem<'a> {
+impl<'config> RenderableQueueItem<String> for FileItem<'config> {
     fn render(&self) -> String {
         // This is just a placeholder implementation as concrete backend implementations
         // are expected to "subclass" (enclose) this struct with their specific implementation.

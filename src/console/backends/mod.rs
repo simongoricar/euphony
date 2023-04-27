@@ -114,11 +114,12 @@
 //! (in practice, pass in all of them, otherwise the code will not compile as the match won't be exhausted).
 //!
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 
 pub use bare::*;
 use crossbeam::channel::Receiver;
+use crossbeam::thread::Scope;
 pub use fancy::*;
 use shared::queue_v2::{
     AlbumItem,
@@ -150,10 +151,12 @@ pub mod shared;
 /// ## Usage
 ///
 /// The first argument is the enum you want to implement this for.
-/// The rest are variadic (must be at least one). Each is delimited by a comma
+/// The rest are variadic (but there must be at least one). Each is delimited by a comma
 /// and the format is `YourStruct => EnumVariantItFitsIn`.
 ///
-/// *I'd recommend reading the example below.*
+/// `'config` and `'scope` lifetimes are available.
+///
+/// *Read the example below.*
 ///
 /// ## Example
 ///
@@ -170,24 +173,27 @@ pub mod shared;
 /// convert into a `SimpleTerminal`. We would call the macro like this:
 ///
 /// ```
-/// terminal_impl_direct_from!(
-///     SimpleTerminal,
-///     BareTerminalBackend => SimpleTerminal::Bare,
-///     TUITerminalBackend => SimpleTerminal::Fancy
+/// terminal_impl_direct_from_with_lifetime!(
+///     on
+///         SimpleTerminal<'config, 'scope>,
+///     dispatch
+///         BareTerminalBackend<'config> => SimpleTerminal::Bare,
+///         TUITerminalBackend<'config, 'scope> => SimpleTerminal::Fancy
 /// );
 /// ```
 ///
-/// which would expand to the following simple (but repetitive) implementation.
+/// which would expand to the following simple (but repetitive if we'd done it by hand) implementation:
 ///
 /// ```
-/// impl From<BareTerminalBackend> for SimpleTerminal {
-///     fn from(item: BareTerminalBackend) -> Self {
+/// impl<'config, 'scope> From<BareTerminalBackend<'config>> for SimpleTerminal<'config, 'scope> {
+///     fn from(item: BareTerminalBackend<'config>) -> Self {
 ///         SimpleTerminal::Bare(item)
 ///     }
 /// }
-/// impl From<TUITerminalBackend> for SimpleTerminal {
-///     fn from(item: TUITerminalBackend) -> Self {
-///         SimpleTerminal::Fancy(item)
+/// impl<'config, 'scope> From<TUITerminalBackend<'config, 'scope>> for SimpleTerminal<'config, 'scope> {
+///     fn from(item: TUITerminalBackend<'config, 'scope>) -> Self {
+///         SimpleTerminal::Fancy
+///             (item)
 ///     }
 /// }
 /// ```
@@ -199,11 +205,14 @@ pub mod shared;
 /// ```
 ///
 ///
-macro_rules! terminal_impl_direct_from_with_lifetime {
-    ($lifetime: lifetime, $target: ty, $($source_backend: ty => $target_variant: path),+) => {
+macro_rules! terminal_impl_direct_from {
+    (
+        on $implementation_target: ty,
+        do conversions $($backend: ty => $target_variant: path),+
+    ) => {
         $(
-            impl<$lifetime> From<$source_backend> for $target {
-                fn from(item: $source_backend) -> Self {
+            impl<'config, 'scope> From<$backend> for $implementation_target {
+                fn from(item: $backend) -> Self {
                     $target_variant(item)
                 }
             }
@@ -217,15 +226,23 @@ macro_rules! terminal_impl_direct_from_with_lifetime {
 ///
 /// This macro implements the `TerminalBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_terminal {
-    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
-        impl<$lifetime> TerminalBackend for $t {
-            fn setup(&mut self) -> miette::Result<()> {
+    (
+        lifetimes are $($lifetime: lifetime $(: $lifetime_bound: lifetime)?),+,
+        TerminalBackend lifetime is $terminal_lifetime: lifetime,
+        on $t: ty,
+        implement variants $($variant: path),+
+    ) => {
+        impl<$($lifetime $(: $lifetime_bound)?),+> TerminalBackend<$terminal_lifetime> for $t {
+            fn setup(
+                &mut self,
+                thread_scope: &$terminal_lifetime Scope<$terminal_lifetime>,
+            ) -> miette::Result<()> {
                 match self {
-                    $($variant(terminal) => terminal.setup()),+
+                    $($variant(terminal) => terminal.setup(thread_scope)),+
                 }
             }
 
-            fn destroy(&mut self) -> miette::Result<()> {
+            fn destroy(self) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.destroy()),+
                 }
@@ -239,8 +256,12 @@ macro_rules! enumdispatch_impl_terminal {
 ///
 /// This macro implements the `LogBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_log {
-    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
-        impl<$lifetime> LogBackend for $t {
+    (
+        lifetimes are $($lifetime: lifetime),+,
+        on $t: ty,
+        implement variants $($variant: path),+
+    ) => {
+        impl<$($lifetime),+> LogBackend for $t {
             fn log_newline(&self) {
                 match self {
                     $($variant(terminal) => terminal.log_newline()),+
@@ -261,8 +282,12 @@ macro_rules! enumdispatch_impl_log {
 ///
 /// This macro implements the `LogToFileBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_log_to_file {
-    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
-        impl<$lifetime> LogToFileBackend for $t {
+    (
+        lifetimes are $($lifetime: lifetime),+,
+        on $t: ty,
+        implement variants $($variant: path),+
+    ) => {
+        impl<$($lifetime),+> LogToFileBackend for $t {
             fn enable_saving_logs_to_file(&mut self, log_file_path: PathBuf) -> miette::Result<()> {
                 match self {
                     $($variant(terminal) => terminal.enable_saving_logs_to_file(log_file_path)),+
@@ -283,8 +308,12 @@ macro_rules! enumdispatch_impl_log_to_file {
 ///
 /// This macro implements the `ValidationBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_validation {
-    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
-        impl<$lifetime> ValidationBackend for $t {
+    (
+        lifetimes are $($lifetime: lifetime),+,
+        on $t: ty,
+        implement variants $($variant: path),+
+    ) => {
+        impl<$($lifetime),+> ValidationBackend for $t {
             fn validation_add_error(&self, error: ValidationErrorInfo) {
                 match self {
                     $($variant(terminal) => terminal.validation_add_error(error)),+
@@ -299,8 +328,13 @@ macro_rules! enumdispatch_impl_validation {
 ///
 /// This macro implements the `TranscodeBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_transcode {
-    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
-        impl<$lifetime> TranscodeBackend<$lifetime> for $t {
+    (
+        lifetimes are $($lifetime: lifetime),+,
+        TranscodeBackend lifetime is $transcode_lifetime: lifetime,
+        on $t: ty,
+        implement variants $($variant: path),+
+    ) => {
+        impl<$($lifetime),+> TranscodeBackend<$transcode_lifetime> for $t {
             /*
              * Album queue
              */
@@ -322,7 +356,7 @@ macro_rules! enumdispatch_impl_transcode {
                 }
             }
 
-            fn queue_album_item_add(&mut self, item: AlbumItem<$lifetime>) -> miette::Result<QueueItemID> {
+            fn queue_album_item_add(&mut self, item: AlbumItem<$transcode_lifetime>) -> miette::Result<QueueItemID> {
                 match self {
                     $($variant(terminal) => terminal.queue_album_item_add(item)),+
                 }
@@ -344,7 +378,7 @@ macro_rules! enumdispatch_impl_transcode {
                 }
             }
 
-            fn queue_album_item_remove(&mut self, item_id: QueueItemID) -> miette::Result<AlbumItem<$lifetime>> {
+            fn queue_album_item_remove(&mut self, item_id: QueueItemID) -> miette::Result<AlbumItem<$transcode_lifetime>> {
                 match self {
                     $($variant(terminal) => terminal.queue_album_item_remove(item_id)),+
                 }
@@ -371,7 +405,7 @@ macro_rules! enumdispatch_impl_transcode {
                 }
             }
 
-            fn queue_file_item_add(&mut self, item: FileItem<'a>) -> miette::Result<QueueItemID> {
+            fn queue_file_item_add(&mut self, item: FileItem<$transcode_lifetime>) -> miette::Result<QueueItemID> {
                 match self {
                     $($variant(terminal) => terminal.queue_file_item_add(item)),+
                 }
@@ -393,7 +427,7 @@ macro_rules! enumdispatch_impl_transcode {
                 }
             }
 
-            fn queue_file_item_remove(&mut self, item_id: QueueItemID) -> miette::Result<FileItem<'a>> {
+            fn queue_file_item_remove(&mut self, item_id: QueueItemID) -> miette::Result<FileItem<$transcode_lifetime>> {
                 match self {
                     $($variant(terminal) => terminal.queue_file_item_remove(item_id)),+
                 }
@@ -434,8 +468,12 @@ macro_rules! enumdispatch_impl_transcode {
 ///
 /// This macro implements the `UserControllableBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_user_controllable {
-    ($lifetime: lifetime, $t: ty, $($variant: path),+) => {
-        impl<$lifetime> UserControllableBackend for $t {
+    (
+        lifetimes are $($lifetime: lifetime),+,
+        on $t: ty,
+        implement variants $($variant: path),+
+    ) => {
+        impl<$($lifetime),+> UserControllableBackend for $t {
             fn get_user_control_receiver(&mut self) -> miette::Result<Receiver<UserControlMessage>> {
                 match self {
                     $($variant(terminal) => terminal.get_user_control_receiver()),+
@@ -446,94 +484,146 @@ macro_rules! enumdispatch_impl_user_controllable {
 }
 
 #[allow(clippy::large_enum_variant)]
-pub enum SimpleTerminal<'a> {
-    Bare(BareTerminalBackend<'a>),
-    Fancy(TUITerminalBackend<'a>),
+pub enum SimpleTerminal<'config: 'scope, 'scope> {
+    Bare(BareTerminalBackend<'config>),
+    Fancy(TUITerminalBackend<'config, 'scope>),
 }
 
-terminal_impl_direct_from_with_lifetime!(
-    'a,
-    SimpleTerminal<'a>,
-    BareTerminalBackend<'a> => SimpleTerminal::Bare,
-    TUITerminalBackend<'a> => SimpleTerminal::Fancy
+terminal_impl_direct_from!(
+    on
+        SimpleTerminal<'config, 'scope>,
+    do conversions
+        BareTerminalBackend<'config> => SimpleTerminal::Bare,
+        TUITerminalBackend<'config, 'scope> => SimpleTerminal::Fancy
 );
 
 enumdispatch_impl_terminal!(
-    'a,
-    SimpleTerminal<'a>,
-    SimpleTerminal::Bare,
-    SimpleTerminal::Fancy
+    lifetimes are 'config: 'scope, 'scope,
+    TerminalBackend lifetime is 'scope,
+    on
+        SimpleTerminal<'config, 'scope>,
+    implement variants
+        SimpleTerminal::Bare,
+        SimpleTerminal::Fancy
 );
 enumdispatch_impl_log!(
-    'a,
-    SimpleTerminal<'a>,
-    SimpleTerminal::Bare,
-    SimpleTerminal::Fancy
+    lifetimes are 'config, 'scope,
+    on
+        SimpleTerminal<'config, 'scope>,
+    implement variants
+        SimpleTerminal::Bare,
+        SimpleTerminal::Fancy
 );
 enumdispatch_impl_log_to_file!(
-    'a,
-    SimpleTerminal<'a>,
-    SimpleTerminal::Bare,
-    SimpleTerminal::Fancy
+    lifetimes are 'config, 'scope,
+    on
+        SimpleTerminal<'config, 'scope>,
+    implement variants
+        SimpleTerminal::Bare,
+        SimpleTerminal::Fancy
 );
 
 
-pub enum ValidationTerminal<'a> {
-    Bare(BareTerminalBackend<'a>),
+pub enum ValidationTerminal<'config> {
+    Bare(BareTerminalBackend<'config>),
 }
 
-terminal_impl_direct_from_with_lifetime!(
-    'a,
-    ValidationTerminal<'a>,
-    BareTerminalBackend<'a> => ValidationTerminal::Bare
-);
-
-enumdispatch_impl_terminal!('a, ValidationTerminal<'a>, ValidationTerminal::Bare);
-enumdispatch_impl_log!('a, ValidationTerminal<'a>, ValidationTerminal::Bare);
-enumdispatch_impl_log_to_file!('a, ValidationTerminal<'a>, ValidationTerminal::Bare);
-enumdispatch_impl_validation!('a, ValidationTerminal<'a>, ValidationTerminal::Bare);
-
-
-#[allow(clippy::large_enum_variant)]
-pub enum TranscodeTerminal<'a> {
-    Bare(BareTerminalBackend<'a>),
-    Fancy(TUITerminalBackend<'a>),
-}
-
-terminal_impl_direct_from_with_lifetime!(
-    'a,
-    TranscodeTerminal<'a>,
-    BareTerminalBackend<'a> => TranscodeTerminal::Bare,
-    TUITerminalBackend<'a> => TranscodeTerminal::Fancy
+terminal_impl_direct_from!(
+    on
+        ValidationTerminal<'config>,
+    do conversions
+        BareTerminalBackend<'config> => ValidationTerminal::Bare
 );
 
 enumdispatch_impl_terminal!(
-    'a,
-    TranscodeTerminal<'a>,
-    TranscodeTerminal::Bare,
-    TranscodeTerminal::Fancy
+    lifetimes are 'config: 'scope, 'scope,
+    TerminalBackend lifetime is 'scope,
+    on
+        ValidationTerminal<'config>,
+    implement variants
+        ValidationTerminal::Bare
 );
 enumdispatch_impl_log!(
-    'a,
-    TranscodeTerminal<'a>,
-    TranscodeTerminal::Bare,
-    TranscodeTerminal::Fancy
+    lifetimes are 'config,
+    on
+        ValidationTerminal<'config>,
+    implement variants
+        ValidationTerminal::Bare
 );
 enumdispatch_impl_log_to_file!(
-    'a,
-    TranscodeTerminal<'a>,
-    TranscodeTerminal::Bare,
-    TranscodeTerminal::Fancy
+    lifetimes are 'config,
+    on
+        ValidationTerminal<'config>,
+    implement variants
+        ValidationTerminal::Bare
+);
+enumdispatch_impl_validation!(
+    lifetimes are 'config,
+    on
+        ValidationTerminal<'config>,
+    implement variants
+        ValidationTerminal::Bare
+);
+
+
+pub enum TranscodeTerminal<'config: 'threadscope, 'threadscope> {
+    Bare(BareTerminalBackend<'config>),
+    Fancy(TUITerminalBackend<'config, 'threadscope>),
+}
+
+impl<'config: 'scope, 'scope> Debug for TranscodeTerminal<'config, 'scope> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TranscodeTerminal")
+    }
+}
+
+terminal_impl_direct_from!(
+    on
+        TranscodeTerminal<'config, 'scope>,
+    do conversions
+        BareTerminalBackend<'config> => TranscodeTerminal::Bare,
+        TUITerminalBackend<'config, 'scope> => TranscodeTerminal::Fancy
+);
+
+enumdispatch_impl_terminal!(
+    lifetimes are 'config: 'scope, 'scope,
+    TerminalBackend lifetime is 'scope,
+    on
+        TranscodeTerminal<'config, 'scope>,
+    implement variants
+        TranscodeTerminal::Bare,
+        TranscodeTerminal::Fancy
+);
+enumdispatch_impl_log!(
+    lifetimes are 'config, 'scope,
+    on
+        TranscodeTerminal<'config, 'scope>,
+    implement variants
+        TranscodeTerminal::Bare,
+        TranscodeTerminal::Fancy
+);
+enumdispatch_impl_log_to_file!(
+    lifetimes are 'config, 'scope,
+    on
+        TranscodeTerminal<'config, 'scope>,
+    implement variants
+        TranscodeTerminal::Bare,
+        TranscodeTerminal::Fancy
 );
 enumdispatch_impl_user_controllable!(
-    'a,
-    TranscodeTerminal<'a>,
-    TranscodeTerminal::Bare,
-    TranscodeTerminal::Fancy
+    lifetimes are 'config, 'scope,
+    on
+        TranscodeTerminal<'config, 'scope>,
+    implement variants
+        TranscodeTerminal::Bare,
+        TranscodeTerminal::Fancy
 );
 enumdispatch_impl_transcode!(
-    'a,
-    TranscodeTerminal<'a>,
-    TranscodeTerminal::Bare,
-    TranscodeTerminal::Fancy
+    lifetimes are 'config, 'scope,
+    TranscodeBackend lifetime is 'config,
+    on
+        TranscodeTerminal<'config, 'scope>,
+    implement variants
+        TranscodeTerminal::Bare,
+        TranscodeTerminal::Fancy
 );

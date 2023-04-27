@@ -44,21 +44,21 @@ pub type ArtistsWithChangedAlbumsMap<'a> =
     HashMap<String, (SharedArtistView<'a>, ChangedAlbumsMap<'a>)>;
 
 
-pub struct LibraryView<'a> {
+pub struct LibraryView<'config> {
     weak_self: WeakRwLock<Self>,
 
-    pub euphony_configuration: &'a Config,
+    pub euphony_configuration: &'config Config,
 
     /// The associated `ConfigLibrary` instance.
-    pub library_configuration: &'a ConfigLibrary,
+    pub library_configuration: &'config ConfigLibrary,
 }
 
-impl<'a> LibraryView<'a> {
+impl<'config> LibraryView<'config> {
     /// Instantiate a new `LibraryView` from the library's configuration struct.
     pub fn from_library_configuration(
-        config: &'a Config,
-        library_config: &'a ConfigLibrary,
-    ) -> SharedLibraryView<'a> {
+        config: &'config Config,
+        library_config: &'config ConfigLibrary,
+    ) -> SharedLibraryView<'config> {
         Arc::new_cyclic(|weak| {
             RwLock::new(Self {
                 weak_self: weak.clone(),
@@ -90,13 +90,13 @@ impl<'a> LibraryView<'a> {
     /// euphony does not scan the artist's albums and extract the common album artist tags from the file tags,
     /// but instead relies on the directory tree to tell artist names and album titles apart.  
     pub fn artist(
-        &'a self,
+        &self,
         artist_name: String,
-    ) -> Result<Option<SharedArtistView<'a>>> {
+    ) -> Result<Option<SharedArtistView<'config>>> {
         let self_arc: SharedLibraryView = self
             .weak_self
             .upgrade()
-            .ok_or_else(|| miette!("Could not upgrade weak reference."))?;
+            .expect("Could not upgrade weak reference.");
 
         let instance = ArtistView::new(self_arc, artist_name)?;
 
@@ -117,7 +117,7 @@ impl<'a> LibraryView<'a> {
     /// NOTE: In euphony, *"artist name" is understood as the artist's directory name*. This is because
     /// euphony does not scan the artist's albums and extract the common album artist tags from the file tags,
     /// but instead relies on the directory tree to tell artist names and album titles apart.
-    pub fn artists(&self) -> Result<HashMap<String, SharedArtistView<'a>>> {
+    pub fn artists(&self) -> Result<HashMap<String, SharedArtistView<'config>>> {
         let self_arc: SharedLibraryView = self
             .weak_self
             .upgrade()
@@ -167,8 +167,8 @@ impl<'a> LibraryView<'a> {
     /// For more information, see the `artists` method.
     pub fn scan_for_artists_with_changed_albums(
         &self,
-    ) -> Result<ArtistsWithChangedAlbumsMap<'a>> {
-        let all_artists: HashMap<String, SharedArtistView<'a>> =
+    ) -> Result<ArtistsWithChangedAlbumsMap<'config>> {
+        let all_artists: HashMap<String, SharedArtistView<'config>> =
             self.artists()?;
 
         all_artists
@@ -177,7 +177,7 @@ impl<'a> LibraryView<'a> {
                 let locked_artist =
                     artist.read().expect("ArtistView RwLock poisoned!");
 
-                let albums: ChangedAlbumsMap<'a> =
+                let albums: ChangedAlbumsMap<'config> =
                     match locked_artist.scan_for_albums_with_changes() {
                         Ok(albums) => albums,
                         Err(error) => return Some(Err(error)),
@@ -218,13 +218,13 @@ impl<'a> LibraryView<'a> {
     }
 }
 
-impl<'a> Hash for LibraryView<'a> {
+impl<'config> Hash for LibraryView<'config> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.library_configuration.name.hash(state);
     }
 }
 
-impl<'a> PartialEq for LibraryView<'a> {
+impl<'config> PartialEq for LibraryView<'config> {
     fn eq(&self, other: &Self) -> bool {
         self.library_configuration
             .name
@@ -232,26 +232,26 @@ impl<'a> PartialEq for LibraryView<'a> {
     }
 }
 
-impl<'a> Eq for LibraryView<'a> {}
+impl<'config> Eq for LibraryView<'config> {}
 
 /// A filesystem abstraction that enables the user to scan and fetch specific or
 /// all available albums by the artist it is about.
-pub struct ArtistView<'a> {
+pub struct ArtistView<'config> {
     weak_self: WeakRwLock<Self>,
 
     /// Backreference to the `Library` this `LibraryArtists` instance is from.
-    pub library: SharedLibraryView<'a>,
+    pub library: SharedLibraryView<'config>,
 
     /// Artist name.
     pub name: String,
 }
 
-impl<'a> ArtistView<'a> {
+impl<'config> ArtistView<'config> {
     /// Instantiate a new `ArtistView` from the library reference and an artist's name and directory.
     pub fn new(
-        library: SharedLibraryView<'a>,
+        library: SharedLibraryView<'config>,
         artist_name: String,
-    ) -> Result<SharedArtistView> {
+    ) -> Result<SharedArtistView<'config>> {
         let self_arc = Arc::new_cyclic(|weak| {
             RwLock::new(Self {
                 weak_self: weak.clone(),
@@ -296,9 +296,9 @@ impl<'a> ArtistView<'a> {
     /// euphony does not scan the album contents and extract the common album title from the tags in the file,
     /// but instead relies on the directory tree to tell artist names and album titles apart.  
     pub fn album(
-        &'a self,
+        &self,
         album_title: String,
-    ) -> Result<Option<SharedAlbumView<'a>>> {
+    ) -> Result<Option<SharedAlbumView<'config>>> {
         let self_arc = self.weak_self.upgrade().ok_or_else(|| {
             miette!("Could not upgrade ArtistView weak reference.")
         })?;
@@ -323,14 +323,14 @@ impl<'a> ArtistView<'a> {
     /// NOTE: In euphony, *"album title" is understood as the album's directory name*. This is because
     /// euphony does not scan the album contents and extract the common album title from the tags in the file,
     /// but instead relies on the directory tree to tell artist names and album titles apart.  
-    pub fn albums(&self) -> Result<HashMap<String, SharedAlbumView<'a>>> {
+    pub fn albums(&self) -> Result<HashMap<String, SharedAlbumView<'config>>> {
         let self_arc = self.weak_self.upgrade().ok_or_else(|| {
             miette!("Could not upgrade ArtistView weak reference.")
         })?;
 
         let artist_directory_scan = self.scan_artist_directory()?;
 
-        let mut album_map: HashMap<String, SharedAlbumView<'a>> =
+        let mut album_map: HashMap<String, SharedAlbumView<'config>> =
             HashMap::with_capacity(artist_directory_scan.directories.len());
 
         for directory in artist_directory_scan.directories {
@@ -354,8 +354,11 @@ impl<'a> ArtistView<'a> {
     /// containing the album view and the detected changes.
     ///
     /// For more information, see the `albums` method.
-    pub fn scan_for_albums_with_changes(&self) -> Result<ChangedAlbumsMap<'a>> {
-        let all_albums: HashMap<String, SharedAlbumView<'a>> = self.albums()?;
+    pub fn scan_for_albums_with_changes(
+        &self,
+    ) -> Result<ChangedAlbumsMap<'config>> {
+        let all_albums: HashMap<String, SharedAlbumView<'config>> =
+            self.albums()?;
 
         all_albums
             .into_iter()
@@ -411,24 +414,28 @@ impl<'a> ArtistView<'a> {
         })
     }
 
-    pub fn read_lock_library(&self) -> RwLockReadGuard<'_, LibraryView<'a>> {
+    pub fn read_lock_library(
+        &self,
+    ) -> RwLockReadGuard<'_, LibraryView<'config>> {
         self.library
             .read()
             .expect("ArtistView's library RwLock has been poisoned!")
     }
 
-    pub fn write_lock_library(&self) -> RwLockWriteGuard<'_, LibraryView<'a>> {
+    pub fn write_lock_library(
+        &self,
+    ) -> RwLockWriteGuard<'_, LibraryView<'config>> {
         self.library
             .write()
             .expect("ArtistView's library RwLock has been poisoned!")
     }
 }
 
-pub struct AlbumView<'a> {
+pub struct AlbumView<'config> {
     weak_self: WeakRwLock<Self>,
 
     /// Reference back to the `ArtistView` this album belongs to.
-    pub artist: SharedArtistView<'a>,
+    pub artist: SharedArtistView<'config>,
 
     /// Per-album configuration for euphony.
     pub configuration: AlbumConfiguration,
@@ -437,11 +444,11 @@ pub struct AlbumView<'a> {
     pub title: String,
 }
 
-impl<'a> AlbumView<'a> {
+impl<'config> AlbumView<'config> {
     pub fn new(
-        artist: SharedArtistView<'a>,
+        artist: SharedArtistView<'config>,
         album_title: String,
-    ) -> Result<SharedAlbumView> {
+    ) -> Result<SharedAlbumView<'config>> {
         let album_directory = {
             let artist_lock =
                 artist.read().expect("ArtistView RwLock poisoned!");
@@ -471,23 +478,25 @@ impl<'a> AlbumView<'a> {
         }))
     }
 
-    pub fn read_lock_artist(&self) -> RwLockReadGuard<'_, ArtistView<'a>> {
+    pub fn read_lock_artist(&self) -> RwLockReadGuard<'_, ArtistView<'config>> {
         self.artist.read().expect("ArtistView RwLock poisoned!")
     }
 
-    pub fn write_lock_artist(&self) -> RwLockWriteGuard<'_, ArtistView<'a>> {
+    pub fn write_lock_artist(
+        &self,
+    ) -> RwLockWriteGuard<'_, ArtistView<'config>> {
         self.artist.write().expect("ArtistView RwLock poisoned!")
     }
 
     /// Return the relevant `Config` (euphony's global configuration).
-    pub fn euphony_configuration(&self) -> &Config {
+    pub fn euphony_configuration(&self) -> &'config Config {
         self.read_lock_artist()
             .read_lock_library()
             .euphony_configuration
     }
 
     /// Return the relevant `ConfigLibrary` (configuration for the specific library).
-    pub fn library_configuration(&self) -> &ConfigLibrary {
+    pub fn library_configuration(&self) -> &'config ConfigLibrary {
         self.read_lock_artist()
             .read_lock_library()
             .library_configuration
@@ -538,7 +547,7 @@ impl<'a> AlbumView<'a> {
     /// which is a collection of tracked audio and data files.
     ///
     /// This *does* scan the disk for files.
-    fn tracked_source_files(&self) -> Result<AlbumSourceFileList<'a>> {
+    fn tracked_source_files(&self) -> Result<AlbumSourceFileList<'config>> {
         let self_arc = self.weak_self.upgrade().ok_or_else(|| {
             miette!("Could not upgrade AlbumView weak reference.")
         })?;
@@ -555,14 +564,14 @@ impl<'a> AlbumView<'a> {
     ///
     /// **This is a relatively expensive IO operation as it requires quite a bit of disk access.
     /// Reuse the results as much as possible to maintain good performance.**
-    pub fn scan_for_changes(&self) -> Result<AlbumFileChangesV2<'a>> {
+    pub fn scan_for_changes(&self) -> Result<AlbumFileChangesV2<'config>> {
         // TODO Implement caching via internal mutability for this costly scan operation.
         let source_album_directory_path =
             self.album_directory_in_source_library();
         let transcoded_album_directory_path =
             self.album_directory_in_transcoded_library();
 
-        let tracked_source_files: AlbumSourceFileList<'a> =
+        let tracked_source_files: AlbumSourceFileList<'config> =
             self.tracked_source_files()?;
 
         // Load states from disk (if they exist) and generate fresh filesystem states as well.
@@ -586,7 +595,7 @@ impl<'a> AlbumView<'a> {
 
         // Let `AlbumFileChangesV2` compare all the snapshots and generate a unified way
         // of detecting and listing changes (i.e. required work for transcoding).
-        let full_changes: AlbumFileChangesV2<'a> =
+        let full_changes: AlbumFileChangesV2<'config> =
             AlbumFileChangesV2::generate_from_source_and_transcoded_state(
                 saved_source_album_state,
                 fresh_source_album_state.tracked_files,
@@ -675,9 +684,9 @@ impl<K: Eq + Hash + Clone, V: Eq + Hash + Clone> SortedFileMap<K, V> {
 /// (see `AlbumFileState`).
 ///
 /// File paths are relative to the source album directory.
-pub struct AlbumSourceFileList<'a> {
+pub struct AlbumSourceFileList<'config> {
     /// The `AlbumView` this file list is based on.
-    pub album: SharedAlbumView<'a>,
+    pub album: SharedAlbumView<'config>,
 
     /// Audio file paths associated with the album.
     /// Paths are relative to the album source directory.
@@ -688,8 +697,10 @@ pub struct AlbumSourceFileList<'a> {
     pub data_files: Vec<PathBuf>,
 }
 
-impl<'a> AlbumSourceFileList<'a> {
-    pub fn from_album_view(album_view: SharedAlbumView<'a>) -> Result<Self> {
+impl<'config> AlbumSourceFileList<'config> {
+    pub fn from_album_view(
+        album_view: SharedAlbumView<'config>,
+    ) -> Result<Self> {
         let locked_album_view = album_view.read().expect(
             "AlbumSourceFileList's album_view RwLock has been poisoned!",
         );
@@ -815,13 +826,13 @@ impl<'a> AlbumSourceFileList<'a> {
      * Private methods
      */
 
-    fn album_ref(&self) -> RwLockReadGuard<'_, AlbumView<'a>> {
+    fn album_ref(&self) -> RwLockReadGuard<'_, AlbumView<'config>> {
         self.album
             .read()
             .expect("AlbumSourceFileList's album RwLock has been poisoned!")
     }
 
-    fn album_mut_ref(&self) -> RwLockWriteGuard<'_, AlbumView<'a>> {
+    fn album_mut_ref(&self) -> RwLockWriteGuard<'_, AlbumView<'config>> {
         self.album
             .write()
             .expect("AlbumSourceFileList's album RwLock has been poisoned!")
