@@ -116,10 +116,10 @@
 
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
+use std::thread::Scope;
 
 pub use bare::*;
 use crossbeam::channel::Receiver;
-use crossbeam::thread::Scope;
 pub use fancy::*;
 use shared::queue_v2::{
     AlbumItem,
@@ -228,17 +228,17 @@ macro_rules! terminal_impl_direct_from {
 macro_rules! enumdispatch_impl_terminal {
     (
         lifetimes are $($lifetime: lifetime $(: $lifetime_bound: lifetime)?),+,
-        TerminalBackend lifetime is $terminal_lifetime: lifetime,
+        TerminalBackend lifetime is $($terminal_lifetime: lifetime $(:$terminal_lifetime_bound: lifetime)?),+,
         on $t: ty,
         implement variants $($variant: path),+
     ) => {
-        impl<$($lifetime $(: $lifetime_bound)?),+> TerminalBackend<$terminal_lifetime> for $t {
+        impl<$($lifetime $(: $lifetime_bound)?),+> TerminalBackend<$($terminal_lifetime $(: $terminal_lifetime_bound)?),+> for $t {
             fn setup(
                 &mut self,
-                thread_scope: &$terminal_lifetime Scope<$terminal_lifetime>,
+                scope: &'scope Scope<'scope, 'scope_env>
             ) -> miette::Result<()> {
                 match self {
-                    $($variant(terminal) => terminal.setup(thread_scope)),+
+                    $($variant(terminal) => terminal.setup(scope)),+
                 }
             }
 
@@ -498,8 +498,8 @@ terminal_impl_direct_from!(
 );
 
 enumdispatch_impl_terminal!(
-    lifetimes are 'config: 'scope, 'scope,
-    TerminalBackend lifetime is 'scope,
+    lifetimes are 'config, 'scope, 'scope_env: 'scope,
+    TerminalBackend lifetime is 'scope, 'scope_env,
     on
         SimpleTerminal<'config, 'scope>,
     implement variants
@@ -536,8 +536,8 @@ terminal_impl_direct_from!(
 );
 
 enumdispatch_impl_terminal!(
-    lifetimes are 'config: 'scope, 'scope,
-    TerminalBackend lifetime is 'scope,
+    lifetimes are 'config, 'scope, 'scope_env: 'scope,
+    TerminalBackend lifetime is 'scope, 'scope_env,
     on
         ValidationTerminal<'config>,
     implement variants
@@ -566,9 +566,9 @@ enumdispatch_impl_validation!(
 );
 
 
-pub enum TranscodeTerminal<'config: 'threadscope, 'threadscope> {
+pub enum TranscodeTerminal<'config, 'scope> {
     Bare(BareTerminalBackend<'config>),
-    Fancy(TUITerminalBackend<'config, 'threadscope>),
+    Fancy(TUITerminalBackend<'config, 'scope>),
 }
 
 impl<'config: 'scope, 'scope> Debug for TranscodeTerminal<'config, 'scope> {
@@ -586,8 +586,8 @@ terminal_impl_direct_from!(
 );
 
 enumdispatch_impl_terminal!(
-    lifetimes are 'config: 'scope, 'scope,
-    TerminalBackend lifetime is 'scope,
+    lifetimes are 'config, 'scope, 'scope_env: 'scope,
+    TerminalBackend lifetime is 'scope, 'scope_env,
     on
         TranscodeTerminal<'config, 'scope>,
     implement variants

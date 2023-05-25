@@ -3,9 +3,9 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::thread::Scope;
 
 use crossbeam::channel::{never, Receiver};
-use crossbeam::thread::Scope;
 use crossterm::style::{Color, Stylize};
 use miette::{miette, IntoDiagnostic, Result};
 use strip_ansi_escapes::Writer;
@@ -63,10 +63,13 @@ impl<'config> BareTerminalBackend<'config> {
     }
 }
 
-impl<'config: 'scope, 'scope> TerminalBackend<'scope>
+impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
     for BareTerminalBackend<'config>
 {
-    fn setup(&mut self, _thread_scope: &'scope Scope<'scope>) -> Result<()> {
+    fn setup(
+        &mut self,
+        _scope: &'scope Scope<'scope, 'scope_env>,
+    ) -> Result<()> {
         Ok(())
     }
 

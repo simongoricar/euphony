@@ -4,11 +4,11 @@ use std::fs::File;
 use std::io::{stdout, BufWriter, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread::{Scope, ScopedJoinHandle};
 use std::time::{Duration, Instant};
 
 use ansi_to_tui::IntoText;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
-use crossbeam::thread::{Scope, ScopedJoinHandle};
 use crossterm::event::{Event, KeyCode};
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -506,10 +506,10 @@ fn run_render_loop(
     Ok(())
 }
 
-impl<'config: 'scope, 'scope> TerminalBackend<'scope>
+impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
     for TUITerminalBackend<'config, 'scope>
 {
-    fn setup(&mut self, thread_scope: &'scope Scope<'scope>) -> Result<()> {
+    fn setup(&mut self, scope: &'scope Scope<'scope, 'scope_env>) -> Result<()> {
         enable_raw_mode().into_diagnostic()?;
 
         let mut terminal = self.terminal.lock().unwrap();
@@ -541,7 +541,7 @@ impl<'config: 'scope, 'scope> TerminalBackend<'scope>
         let state_render_thread_clone: Arc<Mutex<TerminalUIState>> =
             self.state.clone();
 
-        let render_thread_join_handle = thread_scope.spawn(move |_| {
+        let render_thread_join_handle = scope.spawn(move || {
             run_render_loop(
                 terminal_render_thread_clone,
                 state_render_thread_clone,

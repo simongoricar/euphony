@@ -59,9 +59,9 @@ type QueuedChangedAlbums<'a> = Vec<(
 type LibrariesWithQueuedAlbums<'a> =
     Vec<(SharedLibraryView<'a>, QueuedChangedAlbums<'a>)>;
 
-pub fn cmd_transcode_all<'config: 'threadscope, 'threadscope>(
+pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
     configuration: &'config Config,
-    terminal: &mut TranscodeTerminal<'config, 'threadscope>,
+    mut terminal: &mut TranscodeTerminal<'config, 'scope>,
 ) -> Result<()> {
     let time_full_processing_start = Instant::now();
 
@@ -443,8 +443,8 @@ enum MainThreadMessage {
 /// to signal `MainThreadMessage`s (currently just an "abort processing" message).
 ///
 /// This function returns with `Ok(())` when the album has been processed.
-fn process_album_changes<'config: 'threadscope, 'threadscope>(
-    terminal: ArcRwLock<&'config mut TranscodeTerminal<'config, 'threadscope>>,
+fn process_album_changes<'config, 'scope>(
+    terminal: ArcRwLock<&mut TranscodeTerminal<'config, 'scope>>,
     album: SharedAlbumView<'config>,
     changes: &AlbumFileChangesV2,
     worker_progress_sender: Sender<FileJobMessage>,

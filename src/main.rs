@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 use std::process::exit;
+use std::thread;
+use std::thread::Scope;
 
 use clap::{Args, Parser, Subcommand};
-use crossbeam::thread::Scope;
 use crossterm::style::Stylize;
 use miette::{miette, Context, Result};
 
@@ -134,9 +135,9 @@ fn get_configuration(args: &CLIArgs) -> Result<Config> {
 ///
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console,
 /// making it much easier to track down bugs or parse output in some other program.
-fn get_transcode_terminal<'config: 'threadscope, 'threadscope>(
+fn get_transcode_terminal<'config, 'scope>(
     use_bare: bool,
-) -> TranscodeTerminal<'config, 'threadscope> {
+) -> TranscodeTerminal<'config, 'scope> {
     if use_bare {
         BareTerminalBackend::new().into()
     } else {
@@ -147,18 +148,17 @@ fn get_transcode_terminal<'config: 'threadscope, 'threadscope>(
 }
 
 /// Initializes the required terminal backend and executes the given CLI command.
-fn run_requested_cli_command<'threadscope>(
+fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
     args: CLIArgs,
-    config: Config,
-    scope: &'threadscope Scope<'threadscope>,
+    config: &'config Config,
+    scope: &'scope Scope<'scope, 'scope_env>,
 ) -> std::result::Result<(), i32> {
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
         // `transcode`/`transcode-all` has two available terminal backends:
         // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
         // TODO Fix this lifetime issue
-        let mut terminal: TranscodeTerminal<'_, 'threadscope> =
-            get_transcode_terminal(transcode_args.bare_terminal);
+        let mut terminal = get_transcode_terminal(transcode_args.bare_terminal);
 
         terminal
             .setup(scope)
@@ -260,12 +260,15 @@ fn main() -> Result<()> {
     let configuration = get_configuration(&args)
         .wrap_err_with(|| miette!("Could not load configuration."))?;
 
-    let cli_result = crossbeam::scope(|scope| {
-        match run_requested_cli_command(args, configuration, scope) {
+    thread::scope(|scope| {
+        let command_result =
+            run_requested_cli_command(args, &configuration, scope);
+
+        match command_result {
             Ok(_) => exit(0),
             Err(exit_code) => exit(exit_code),
         };
     });
 
-    cli_result.map_err(|_| miette!("Failed!"))
+    Ok(())
 }
