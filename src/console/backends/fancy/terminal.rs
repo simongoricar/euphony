@@ -215,8 +215,7 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
             )
             .split(queue_horizontal_layout[0]);
 
-        // let area_keybinds = left_vertical_layout[0];
-        let area_album_queue = left_vertical_layout[1];
+        let area_album_queue = left_vertical_layout[0];
         let area_file_queue = queue_horizontal_layout[1];
         let area_progress_bar = multi_block_layout[1];
         let area_logs = multi_block_layout[2];

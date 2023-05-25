@@ -21,7 +21,7 @@ impl DirectoryScan {
     /// containing direct files and all files directly in the directories one level down).
     pub fn from_directory_path<P: AsRef<Path>>(
         directory_path: P,
-        scan_depth: u16,
+        directory_scan_depth: u16,
     ) -> Result<Self> {
         let directory_path = directory_path.as_ref();
 
@@ -57,7 +57,7 @@ impl DirectoryScan {
                     file_list.push(entry);
                 } else if entry_type.is_dir() {
                     // If we can go deeper, queue the directory we found for further search.
-                    if directory_depth < scan_depth {
+                    if directory_depth < directory_scan_depth {
                         search_queue.push((entry.path(), directory_depth + 1));
                     }
 

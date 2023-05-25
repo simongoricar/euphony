@@ -768,7 +768,7 @@ impl<'config> AlbumSourceFileList<'config> {
     /// *but that isn't always true* (e.g. extension changes when transcoding, etc.).
     ///
     /// *Paths are still relative.*
-    pub fn map_source_file_paths_to_transcoded_file_paths(
+    pub fn map_source_file_paths_to_transcoded_file_paths_relative(
         &self,
     ) -> SortedFileMap<PathBuf, PathBuf> {
         let album = self.album_ref();
@@ -805,21 +805,63 @@ impl<'config> AlbumSourceFileList<'config> {
             );
         }
 
-        return SortedFileMap::new(
+        SortedFileMap::new(
             map_original_to_transcoded_audio,
             map_original_to_transcoded_data,
-        );
+        )
     }
 
     /// Generate a HashMap that maps from relative paths in the transcoded album directory
     /// to the relative paths of each of those original files in the source album directory.
     ///
     /// *Paths are still relative.*
-    pub fn map_transcoded_paths_to_source_paths(
+    pub fn map_transcoded_paths_to_source_paths_relative(
         &self,
     ) -> SortedFileMap<PathBuf, PathBuf> {
-        self.map_source_file_paths_to_transcoded_file_paths()
+        self.map_source_file_paths_to_transcoded_file_paths_relative()
             .to_inverted_map()
+    }
+
+    pub fn map_source_file_paths_to_transcoded_file_paths_absolute(
+        &self,
+    ) -> SortedFileMap<PathBuf, PathBuf> {
+        let (album_source_directory, album_transcoded_directory) = {
+            let album = self
+                .album
+                .read()
+                .expect("AlbumView's lock has been poisoned!");
+
+            (
+                album.album_directory_in_source_library(),
+                album.album_directory_in_transcoded_library(),
+            )
+        };
+
+        let source_to_transcoded_map =
+            self.map_source_file_paths_to_transcoded_file_paths_relative();
+
+        SortedFileMap::new(
+            source_to_transcoded_map
+                .audio
+                .into_iter()
+                .map(|(source_path, transcoded_path)| {
+                    (
+                        album_source_directory.join(source_path),
+                        album_transcoded_directory.join(transcoded_path),
+                    )
+                })
+                .collect(),
+            source_to_transcoded_map
+                .data
+                .into_iter()
+                .map(|(source_path, transcoded_path)| {
+                    (
+                        album_source_directory.join(source_path),
+                        album_transcoded_directory.join(transcoded_path),
+                    )
+                })
+                .collect(),
+        )
     }
 
     /*

@@ -157,7 +157,6 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
         // `transcode`/`transcode-all` has two available terminal backends:
         // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
-        // TODO Fix this lifetime issue
         let mut terminal = get_transcode_terminal(transcode_args.bare_terminal);
 
         terminal
@@ -170,7 +169,10 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
                 .map_err(|_| 1)?;
         }
 
-        commands::cmd_transcode_all(&config, &mut terminal).map_err(|_| 1)?;
+        let result = commands::cmd_transcode_all(config, &mut terminal);
+        if let Err(error) = result {
+            terminal.log_println(format!("ERROR: {error:?}"));
+        }
 
         terminal.destroy().map_err(|_| 1)?;
 

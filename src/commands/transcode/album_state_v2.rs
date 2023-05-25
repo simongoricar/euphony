@@ -71,11 +71,13 @@ impl AlbumFileState {
         let audio_file_map = Self::build_file_map_from_paths(
             base_source_album_directory,
             &tracked_source_files.audio_files,
+            true,
         )?;
 
         let data_file_map = Self::build_file_map_from_paths(
             base_source_album_directory,
             &tracked_source_files.data_files,
+            true,
         )?;
 
         Ok(Self {
@@ -95,7 +97,7 @@ impl AlbumFileState {
             base_transcoded_album_directory.as_ref();
 
         let source_to_transcoded_map = tracked_source_files
-            .map_source_file_paths_to_transcoded_file_paths();
+            .map_source_file_paths_to_transcoded_file_paths_relative();
 
         let transcoded_audio_file_list: Vec<PathBuf> =
             source_to_transcoded_map.audio.values().cloned().collect();
@@ -106,11 +108,13 @@ impl AlbumFileState {
         let audio_file_map = Self::build_file_map_from_paths(
             base_transcoded_album_directory,
             &transcoded_audio_file_list,
+            false,
         )?;
 
         let data_file_map = Self::build_file_map_from_paths(
             base_transcoded_album_directory,
             &transcoded_data_file_list,
+            false,
         )?;
 
         Ok(Self {
@@ -124,18 +128,33 @@ impl AlbumFileState {
     /// to the `FileTrackedMetadata` instances that contain additional file metadata we usually
     /// need to perform diffing between transcodes.
     fn build_file_map_from_paths<P: AsRef<Path>>(
-        album_directory_path: P,
-        paths: &Vec<PathBuf>,
+        album_base_directory_path: P,
+        relative_file_paths: &Vec<PathBuf>,
+        require_all_files_to_exist: bool,
     ) -> Result<HashMap<String, FileTrackedMetadata>> {
-        let album_directory_path = album_directory_path.as_ref();
+        let album_directory_path = album_base_directory_path.as_ref();
 
         let mut file_map: HashMap<String, FileTrackedMetadata> =
-            HashMap::with_capacity(paths.len());
+            HashMap::with_capacity(relative_file_paths.len());
 
-        for file_relative_path in paths {
+        for file_relative_path in relative_file_paths {
+            let file_absolute_path =
+                album_directory_path.join(file_relative_path);
+
+            if !file_absolute_path.is_file() {
+                if require_all_files_to_exist {
+                    return Err(miette!(
+                        "File is required to exist but doesn't!"
+                    ));
+                } else {
+                    continue;
+                }
+            }
+
             let tracked_file_metadata = FileTrackedMetadata::from_file_path(
                 album_directory_path.join(file_relative_path),
-            )?;
+            )
+            .wrap_err_with(|| miette!("Could not generate file metadata."))?;
 
             let file_relative_path_string =
                 file_relative_path.to_string_lossy().to_string();
@@ -430,7 +449,7 @@ impl TranscodedAlbumState {
 
 
         let transcoded_to_source_map_pathbuf =
-            tracked_album_files.map_transcoded_paths_to_source_paths();
+            tracked_album_files.map_transcoded_paths_to_source_paths_relative();
 
         let transcoded_to_source_audio_map_string: HashMap<String, String> =
             transcoded_to_source_map_pathbuf
@@ -730,7 +749,7 @@ impl<'a> AlbumFileChangesV2<'a> {
     /// - `saved_source_state` is, if previously transcoded, the source album state as saved in `.album.source-state.euphony`,
     /// - `fresh_source_state` is the fresh filesystem state of the source album directory,
     /// - `saved_transcoded_state` is, if previously transcoded, the transcoded album map as saved in `.album.transcode-state.euphony`,
-    /// - `fresh_transcoded_state` is the fresh filesystem state of the transcoded album directory.
+    /// - `fresh_transcoded_state` is the fresh filesystem state of the transcoded album directory (album directory-relative paths).
     ///
     /// `album` is a reference to the `AlbumView` the album states are associated with and
     /// `album_file_list` is the associated source file list.
@@ -837,8 +856,8 @@ impl<'a> AlbumFileChangesV2<'a> {
 
 
         // Files that aren't new, but are still missing in the transcoded directory (likely by user intervention).
-        let source_to_transcode_map =
-            album_file_list.map_source_file_paths_to_transcoded_file_paths();
+        let source_to_transcode_map = album_file_list
+            .map_source_file_paths_to_transcoded_file_paths_relative();
         let transcode_to_source_map = source_to_transcode_map.to_inverted_map();
 
         let expected_transcoded_audio_file_set: HashSet<String> =
@@ -1007,11 +1026,11 @@ impl<'a> AlbumFileChangesV2<'a> {
     /// (essentially always `true` if no previous transcoding has been done
     /// and the directory has some audio/data files).
     pub fn has_changes(&self) -> bool {
-        self.added_in_source_since_last_transcode.is_empty()
-            && self.changed_in_source_since_last_transcode.is_empty()
-            && self.removed_in_source_since_last_transcode.is_empty()
-            && self.missing_in_transcoded.is_empty()
-            && self.excess_in_transcoded.is_empty()
+        !self.added_in_source_since_last_transcode.is_empty()
+            || !self.changed_in_source_since_last_transcode.is_empty()
+            || !self.removed_in_source_since_last_transcode.is_empty()
+            || !self.missing_in_transcoded.is_empty()
+            || !self.excess_in_transcoded.is_empty()
     }
 
     /// Return the total number of changed files.
@@ -1066,9 +1085,9 @@ impl<'a> AlbumFileChangesV2<'a> {
         let mut jobs: Vec<CancellableTaskV2<FileJobMessage>> =
             Vec::with_capacity(self.number_of_changed_files());
 
-        let source_to_target_path_map = self
+        let source_to_target_absolute_path_map = self
             .tracked_files
-            .map_source_file_paths_to_transcoded_file_paths();
+            .map_source_file_paths_to_transcoded_file_paths_absolute();
 
 
         // Parse file lists to separate their change types
@@ -1104,12 +1123,12 @@ impl<'a> AlbumFileChangesV2<'a> {
         // Generate jobs from the parsed file lists.
         for file_path in audio_files_to_transcode {
             let source_path = file_path;
-            let target_path = source_to_target_path_map
+            let target_path = source_to_target_absolute_path_map
                 .audio
                 .get(source_path)
                 .ok_or_else(|| {
-                miette!("BUG: Map is missing audio file entry.")
-            })?;
+                    miette!("BUG: Map is missing audio file entry.")
+                })?;
 
             let queue_item_id =
                 queue_item_id_generator(FileType::Audio, source_path)?;
@@ -1129,10 +1148,12 @@ impl<'a> AlbumFileChangesV2<'a> {
 
         for file_path in data_files_to_copy_to_transcoded_dir {
             let source_path = file_path;
-            let target_path =
-                source_to_target_path_map.data.get(source_path).ok_or_else(
-                    || miette!("BUG: Map is missing data file entry."),
-                )?;
+            let target_path = source_to_target_absolute_path_map
+                .data
+                .get(source_path)
+                .ok_or_else(|| {
+                    miette!("BUG: Map is missing data file entry.")
+                })?;
 
             let queue_item_id =
                 queue_item_id_generator(FileType::Data, source_path)?;
