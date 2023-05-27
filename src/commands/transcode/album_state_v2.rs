@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::ops::Sub;
 use std::path::{Path, PathBuf};
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use std::time::UNIX_EPOCH;
 
 use miette::{miette, Context, IntoDiagnostic, Result};
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::transcode::jobs::{
@@ -508,7 +509,7 @@ impl TranscodedAlbumState {
         Ok(self
             .transcoded_to_original_file_paths
             .get(&file_path_string)
-            .and_then(|str| Some(PathBuf::from(str))))
+            .map(PathBuf::from))
     }
 }
 
@@ -617,7 +618,7 @@ impl FileTrackedMetadata {
 /// Represents a double `Vec`: one for audio files, the other for data files.
 /// If you want to deal with unknown files as well, see `ExtendedSortedFileList`.
 // TODO Move to some utility module.
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct SortedFileList<T> {
     pub audio: Vec<T>,
     pub data: Vec<T>,
@@ -647,6 +648,7 @@ impl<T> SortedFileList<T> {
 /// Unlike `SortedFileList`, `ExtendedSortedFileList` includes `unknown` types of files.
 /// That is the only difference.
 // TODO Move to some utility module.
+#[derive(Default, Debug, Clone)]
 pub struct ExtendedSortedFileList<T> {
     pub audio: Vec<T>,
     pub data: Vec<T>,
@@ -766,8 +768,7 @@ impl<'a> AlbumFileChangesV2<'a> {
             source_album_directory,
             transcoded_album_directory,
         ) = {
-            let album_locked =
-                album.read().expect("AlbumView RwLock has been poisoned!");
+            let album_locked = album.read();
 
             (
                 album_locked.library_configuration().transcoding.clone(),
@@ -778,7 +779,7 @@ impl<'a> AlbumFileChangesV2<'a> {
 
 
         let saved_source_files = saved_source_state
-            .and_then(|inner| Some(inner.tracked_files))
+            .map(|inner| inner.tracked_files)
             .unwrap_or_default();
         let fresh_source_files = fresh_source_state;
 
@@ -786,7 +787,7 @@ impl<'a> AlbumFileChangesV2<'a> {
         // last transcode - keys are transcoded file paths and values are source file paths
         // (relative to the album directory).
         let saved_transcoded_map = saved_transcoded_state
-            .and_then(|inner| Some(inner.transcoded_to_original_file_paths))
+            .map(|inner| inner.transcoded_to_original_file_paths)
             .unwrap_or_default();
         let fresh_transcoded_files = fresh_transcoded_state;
 
@@ -1247,7 +1248,7 @@ impl<'a> AlbumFileChangesV2<'a> {
         first_metadata_map: &HashMap<String, FileTrackedMetadata>,
         second_metadata_map: &HashMap<String, FileTrackedMetadata>,
     ) -> Result<Vec<String>> {
-        Ok(map_key_iterator
+        map_key_iterator
             .filter_map(|item| {
                 let first_metadata = match first_metadata_map.get(item) {
                     None => {
@@ -1278,7 +1279,7 @@ impl<'a> AlbumFileChangesV2<'a> {
             .collect::<Result<Vec<String>>>()
             .wrap_err_with(|| {
                 miette!("Could not compute changed files: invalid metadata map.")
-            })?)
+            })
     }
 
     /// Given an iterator over relative paths (can be `String`, `str`),
@@ -1300,14 +1301,29 @@ impl<'a> AlbumFileChangesV2<'a> {
     }
 
     pub fn read_lock_album(&self) -> RwLockReadGuard<'_, AlbumView<'a>> {
-        self.album_view
-            .read()
-            .expect("Album RwLock has been poisoned!")
+        self.album_view.read()
     }
 
     pub fn write_lock_library(&self) -> RwLockWriteGuard<'_, AlbumView<'a>> {
-        self.album_view
-            .write()
-            .expect("Album RwLock has been poisoned!")
+        self.album_view.write()
+    }
+}
+
+impl<'a> Debug for AlbumFileChangesV2<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Album file changes:\n\
+            \tadded: {:?}\n\
+            \tchanged: {:?}\n\
+            \tremoved in source: {:?}\n\
+            \tmissing in transcode: {:?}\n\
+            \texcess in transcode: {:?}",
+            self.added_in_source_since_last_transcode,
+            self.changed_in_source_since_last_transcode,
+            self.removed_in_source_since_last_transcode,
+            self.missing_in_transcoded,
+            self.excess_in_transcoded,
+        )
     }
 }

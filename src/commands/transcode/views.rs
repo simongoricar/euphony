@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+use std::sync::{Arc, Weak};
 
 use miette::{miette, Context, Result};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::transcode::album_configuration::AlbumConfiguration;
@@ -101,8 +102,7 @@ impl<'config> LibraryView<'config> {
         let instance = ArtistView::new(self_arc, artist_name)?;
 
         {
-            let instance_lock = instance.read()
-                .expect("ArtistView instance RwLock poisoned immediately after creation!?");
+            let instance_lock = instance.read();
 
             if !instance_lock.artist_directory_in_source_library().is_dir() {
                 return Ok(None);
@@ -174,8 +174,7 @@ impl<'config> LibraryView<'config> {
         all_artists
             .into_iter()
             .filter_map(|(name, artist)| {
-                let locked_artist =
-                    artist.read().expect("ArtistView RwLock poisoned!");
+                let locked_artist = artist.read();
 
                 let albums: ChangedAlbumsMap<'config> =
                     match locked_artist.scan_for_albums_with_changes() {
@@ -261,9 +260,7 @@ impl<'config> ArtistView<'config> {
         });
 
         {
-            let self_locked = self_arc
-                .write()
-                .expect("Just-created ArtistView Arc has been poisoned?!");
+            let self_locked = self_arc.write();
 
             if !self_locked.artist_directory_in_source_library().is_dir() {
                 return Err(miette!(
@@ -306,9 +303,7 @@ impl<'config> ArtistView<'config> {
         let instance = AlbumView::new(self_arc, album_title)?;
 
         {
-            let instance_locked = instance
-                .read()
-                .expect("Just-created AlbumView RwLock poisoned!?");
+            let instance_locked = instance.read();
 
             if !instance_locked.album_directory_in_source_library().is_dir() {
                 return Ok(None);
@@ -364,8 +359,7 @@ impl<'config> ArtistView<'config> {
             .into_iter()
             .filter_map(|(title, album)| {
                 let changes = {
-                    let album_locked =
-                        album.read().expect("AlbumView RwLock poisoned!");
+                    let album_locked = album.read();
 
                     album_locked.scan_for_changes()
                 };
@@ -417,17 +411,13 @@ impl<'config> ArtistView<'config> {
     pub fn read_lock_library(
         &self,
     ) -> RwLockReadGuard<'_, LibraryView<'config>> {
-        self.library
-            .read()
-            .expect("ArtistView's library RwLock has been poisoned!")
+        self.library.read()
     }
 
     pub fn write_lock_library(
         &self,
     ) -> RwLockWriteGuard<'_, LibraryView<'config>> {
-        self.library
-            .write()
-            .expect("ArtistView's library RwLock has been poisoned!")
+        self.library.write()
     }
 }
 
@@ -450,8 +440,7 @@ impl<'config> AlbumView<'config> {
         album_title: String,
     ) -> Result<SharedAlbumView<'config>> {
         let album_directory = {
-            let artist_lock =
-                artist.read().expect("ArtistView RwLock poisoned!");
+            let artist_lock = artist.read();
 
             artist_lock
                 .artist_directory_in_source_library()
@@ -479,13 +468,13 @@ impl<'config> AlbumView<'config> {
     }
 
     pub fn read_lock_artist(&self) -> RwLockReadGuard<'_, ArtistView<'config>> {
-        self.artist.read().expect("ArtistView RwLock poisoned!")
+        self.artist.read()
     }
 
     pub fn write_lock_artist(
         &self,
     ) -> RwLockWriteGuard<'_, ArtistView<'config>> {
-        self.artist.write().expect("ArtistView RwLock poisoned!")
+        self.artist.write()
     }
 
     /// Return the relevant `Config` (euphony's global configuration).
@@ -701,9 +690,7 @@ impl<'config> AlbumSourceFileList<'config> {
     pub fn from_album_view(
         album_view: SharedAlbumView<'config>,
     ) -> Result<Self> {
-        let locked_album_view = album_view.read().expect(
-            "AlbumSourceFileList's album_view RwLock has been poisoned!",
-        );
+        let locked_album_view = album_view.read();
 
         let transcoding_configuration =
             &locked_album_view.library_configuration().transcoding;
@@ -826,10 +813,7 @@ impl<'config> AlbumSourceFileList<'config> {
         &self,
     ) -> SortedFileMap<PathBuf, PathBuf> {
         let (album_source_directory, album_transcoded_directory) = {
-            let album = self
-                .album
-                .read()
-                .expect("AlbumView's lock has been poisoned!");
+            let album = self.album.read();
 
             (
                 album.album_directory_in_source_library(),
@@ -869,14 +853,10 @@ impl<'config> AlbumSourceFileList<'config> {
      */
 
     fn album_ref(&self) -> RwLockReadGuard<'_, AlbumView<'config>> {
-        self.album
-            .read()
-            .expect("AlbumSourceFileList's album RwLock has been poisoned!")
+        self.album.read()
     }
 
     fn album_mut_ref(&self) -> RwLockWriteGuard<'_, AlbumView<'config>> {
-        self.album
-            .write()
-            .expect("AlbumSourceFileList's album RwLock has been poisoned!")
+        self.album.write()
     }
 }

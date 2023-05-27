@@ -1,5 +1,6 @@
+use std::ops::DerefMut;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -7,6 +8,7 @@ use crossbeam::channel;
 use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
 use crossterm::style::Stylize;
 use miette::{miette, Context, IntoDiagnostic, Result};
+use parking_lot::RwLock;
 
 use crate::commands::transcode::album_state_v2::{AlbumFileChangesV2, FileType};
 use crate::commands::transcode::jobs::{
@@ -16,9 +18,9 @@ use crate::commands::transcode::jobs::{
 };
 use crate::commands::transcode::views::{
     ArcRwLock,
-    ArtistsWithChangedAlbumsMap,
     LibraryView,
     SharedAlbumView,
+    SharedArtistView,
     SharedLibraryView,
 };
 use crate::configuration::Config;
@@ -37,6 +39,7 @@ use crate::console::{
     UserControlMessage,
     UserControllableBackend,
 };
+use crate::globals::is_verbose_enabled;
 
 pub mod album_configuration;
 pub mod album_state_v2;
@@ -47,17 +50,28 @@ pub mod packets;
 pub mod threadpool;
 pub mod views;
 
-type LibrariesWithChanges<'a> = Vec<(
+type SortedLibrariesWithChanges<'a> = Vec<(
     SharedLibraryView<'a>,
-    ArtistsWithChangedAlbumsMap<'a>,
+    SortedArtistsWithChanges<'a>,
 )>;
+type SortedArtistsWithChanges<'a> = Vec<(
+    String,
+    SharedArtistView<'a>,
+    SortedAlbumsWithChanges<'a>,
+)>;
+type SortedAlbumsWithChanges<'a> = Vec<(
+    String,
+    SharedAlbumView<'a>,
+    AlbumFileChangesV2<'a>,
+)>;
+
+type QueuedChangedLibraries<'a> =
+    Vec<(SharedLibraryView<'a>, QueuedChangedAlbums<'a>)>;
 type QueuedChangedAlbums<'a> = Vec<(
     SharedAlbumView<'a>,
     QueueItemID,
     AlbumFileChangesV2<'a>,
 )>;
-type LibrariesWithQueuedAlbums<'a> =
-    Vec<(SharedLibraryView<'a>, QueuedChangedAlbums<'a>)>;
 
 pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
     configuration: &'config Config,
@@ -93,8 +107,8 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
     let total_changed_files = libraries_with_changes
         .iter()
         .flat_map(|(_, artist_to_changed_albums)| artist_to_changed_albums)
-        .flat_map(|(_, (_, changed_albums))| changed_albums)
-        .map(|(_, (_, album_changes))| album_changes.number_of_changed_files())
+        .flat_map(|(_, _, changed_albums)| changed_albums)
+        .map(|(_, _, album_changes)| album_changes.number_of_changed_files())
         .sum::<usize>();
 
     terminal.log_println(format!(
@@ -104,7 +118,7 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
 
 
     // Queue the entire workload - this way we'll generate `QueueItemID`s
-    // for each item that will enable us to interact with the terminal backend
+    // for each item, enabling us to interact with the terminal backend
     // and display individual album and file progress.
     terminal.queue_album_enable();
     terminal.queue_file_enable();
@@ -117,8 +131,6 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
     terminal.progress_set_current(files_finished)?;
     terminal.progress_set_total(total_changed_files)?;
 
-    // TODO
-
     for (album, album_queue_id, album_changes) in queued_work_per_library
         .into_iter()
         .flat_map(|(_, albums)| albums)
@@ -126,8 +138,7 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
         let time_album_start = Instant::now();
 
         let (album_artist_name, album_title, album_library_name) = {
-            let album_locked =
-                album.read().expect("AlbumView RwLock has been poisoned!");
+            let album_locked = album.read();
             let artist_locked = album_locked.read_lock_artist();
             let library_locked = artist_locked.read_lock_library();
 
@@ -144,6 +155,10 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
             \n    {album_artist_name} - {album_title}\
             \n    Library: {album_library_name}"
         ));
+
+        if is_verbose_enabled() {
+            terminal.log_println(format!("Album changes: {:?}", album_changes));
+        }
 
         // TODO A percentage of storage saved after each file finishes would be cool
         //      (but we'd need a way to display that).
@@ -168,30 +183,25 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
                 )
             });
 
-            // We spawned a thread that will process the album. In the meantime, we should
+            // Above, we spawned a thread that will process the album. In the meantime, we should
             // keep monitoring the progress (parsing `FileJobMessage`s from the worker threads)
-            // and monitoring the user input (in case of a cancellation request from `terminal_user_input`,
-            // we "forward" the request via the `processing_control_tx` `Sender`.
+            // and monitoring the user input (in case of a cancellation request from `terminal_user_input`
+            // we forward that request via `processing_control_tx`).
             loop {
                 // Check for worker thread progress.
                 let worker_message =
                     worker_rx.recv_timeout(Duration::from_millis(1));
                 match worker_message {
                     Ok(message) => {
-                        // TODO
-                        let mut _terminal_locked =
-                            shared_terminal.write().expect(
-                                "TranscodeTerminal RwLock has been poisoned!",
-                            );
+                        let mut terminal_locked = shared_terminal.write();
 
                         // TODO Temporary
                         #[allow(unused_variables)]
                         match message {
                             FileJobMessage::Starting { queue_item } => {
-                                // terminal_locked
-                                //     .queue_file_item_start(queue_item)?;
-                                // terminal_locked
-                                //     .queue_file_item_start(queue_item)?;
+                                terminal_locked
+                                    .deref_mut()
+                                    .queue_file_item_start(queue_item)?;
                             }
                             FileJobMessage::Finished {
                                 queue_item,
@@ -209,13 +219,17 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
                                     }
                                 };
 
-                                // terminal.queue_file_item_finish(
-                                //     queue_item,
-                                //     item_result,
-                                // )?;
+                                terminal_locked
+                                    .deref_mut()
+                                    .queue_file_item_finish(
+                                        queue_item,
+                                        item_result,
+                                    )?;
 
                                 files_finished += 1;
-                                // terminal.progress_set_current(files_finished)?;
+                                terminal_locked
+                                    .deref_mut()
+                                    .progress_set_current(files_finished)?;
 
                                 // TODO How to handle errored files? Previous implementation
                                 //      returned an `Err`, but that's a bit extreme, no?
@@ -225,13 +239,15 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
                                     FileItemErrorType::Cancelled,
                                 );
 
-                                // terminal.queue_file_item_finish(
-                                //     queue_item,
-                                //     item_result,
-                                // )?;
+                                terminal_locked
+                                    .deref_mut()
+                                    .queue_file_item_finish(
+                                        queue_item,
+                                        item_result,
+                                    )?;
                             }
                             FileJobMessage::Log { content } => {
-                                // terminal.log_println(content);
+                                terminal_locked.log_println(content);
                             }
                         }
                     }
@@ -275,14 +291,12 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
         // Loop has ended, get the shared terminal back out of ArcRwLock.
         terminal = Arc::try_unwrap(shared_terminal)
             .expect("Can't unwrap Arc - someone is still holding a reference to the TranscodeTerminal.")
-            .into_inner()
-            .expect("TranscodeTerminal RwLock has been poisoned, can't into_inner!");
+            .into_inner();
 
         if exit_was_requested {
             // TODO Implement deletion of partial transcodes and similar rollback mechanisms.
             // Processing was aborted by user.
-            let album_locked =
-                album.read().expect("AlbumView RwLock has been poisoned!");
+            let album_locked = album.read();
 
             terminal.log_println(
                 format!(
@@ -309,8 +323,7 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
             album_changes.generate_transcoded_album_state()?;
 
         {
-            let album_locked =
-                album.read().expect("AlbumView RwLock has been poisoned!");
+            let album_locked = album.read();
 
             source_file_state.save_to_directory(
                 album_locked.album_directory_in_source_library(),
@@ -347,7 +360,7 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
 
 fn collect_libraries_with_changes<'a>(
     configuration: &'a Config,
-) -> Result<LibrariesWithChanges<'a>> {
+) -> Result<SortedLibrariesWithChanges<'a>> {
     // `LibraryView` is the root abstraction here - we use it to discover artists and their albums.
     let mut libraries: Vec<SharedLibraryView<'a>> = configuration
         .libraries
@@ -358,43 +371,67 @@ fn collect_libraries_with_changes<'a>(
         .collect();
 
     libraries.sort_unstable_by(|first, second| {
-        let first_locked =
-            first.read().expect("LibraryView RwLock lock poisoned.");
-        let second_locked =
-            second.read().expect("LibraryView RwLock lock poisoned");
+        let first_locked = first.read();
+        let second_locked = second.read();
 
         first_locked.name().cmp(&second_locked.name())
     });
 
     // We perform a scan on each library: for each artist in the library, we scan each
-    // of their albums for changes (this includes untranscoded albums, not just normal changes).
-    // This is a relatively expensive step (a lot of disk accesses), but we now have all the work
-    // we need to do.
+    // of their albums for changes (this includes untranscoded albums in addition to
+    // albums changed since last transcode). This is a relatively expensive step (a lot of disk accesses),
+    // but we will now have all the work we need to perform.
     libraries
         .into_iter()
         .map(|library| {
             let scan = library
                 .read()
-                .expect("LibraryView RwLock has been poisoned!")
                 .scan_for_artists_with_changed_albums()?;
 
-            Ok((library, scan))
+            let mut ordered_artists: SortedArtistsWithChanges = scan
+                .into_iter()
+                .map(
+                    |(artist_name, (artist_view, changed_albums_map))| {
+                        let mut ordered_albums: SortedAlbumsWithChanges =
+                            changed_albums_map
+                                .into_iter()
+                                .map(|(album_title, (album_view, changes))| {
+                                    (album_title, album_view, changes)
+                                })
+                                .collect();
+
+                        ordered_albums.sort_unstable_by(
+                            |(first_album_title, _, _), (second_album_title, _, _)| {
+                                first_album_title.cmp(second_album_title)
+                            }
+                        );
+
+                        (artist_name, artist_view, ordered_albums)
+                    },
+                )
+                .collect();
+
+            ordered_artists.sort_unstable_by(|(first, _, _), (second, _, _)| {
+                first.cmp(second)
+            });
+
+            Ok((library, ordered_artists))
         })
-        .collect::<Result<LibrariesWithChanges<'a>>>()
+        .collect::<Result<SortedLibrariesWithChanges<'a>>>()
 }
 
 fn queue_all_libraries_with_changes<'config: 'scope, 'scope>(
     terminal: &mut TranscodeTerminal<'config, 'scope>,
-    libraries_with_changes: LibrariesWithChanges<'config>,
-) -> Result<LibrariesWithQueuedAlbums<'config>> {
+    libraries_with_changes: SortedLibrariesWithChanges<'config>,
+) -> Result<QueuedChangedLibraries<'config>> {
     // Queue all libraries and all the changed albums insite it.
-    let mut queued_work_per_library: LibrariesWithQueuedAlbums<'config> =
+    let mut queued_work_per_library: QueuedChangedLibraries<'config> =
         Vec::with_capacity(libraries_with_changes.len());
 
     for (library, artists) in libraries_with_changes {
         let changed_albums_count = artists
             .iter()
-            .map(|(_, (_, changed_albums))| changed_albums.len())
+            .map(|(_, _, changed_albums)| changed_albums.len())
             .sum::<usize>();
 
         let mut library_queue: QueuedChangedAlbums =
@@ -404,8 +441,8 @@ fn queue_all_libraries_with_changes<'config: 'scope, 'scope>(
         // Queue all albums for each artist in this library.
         let all_albums_in_library = artists
             .into_iter()
-            .flat_map(|(_, (_, changed_albums))| changed_albums)
-            .map(|(_, changes)| changes);
+            .flat_map(|(_, _, changed_albums)| changed_albums)
+            .map(|(_, view, changes)| (view, changes));
 
         for (album_view, changes) in all_albums_in_library {
             let num_of_file_changes = changes.number_of_changed_files();
@@ -443,15 +480,15 @@ enum MainThreadMessage {
 /// to signal `MainThreadMessage`s (currently just an "abort processing" message).
 ///
 /// This function returns with `Ok(())` when the album has been processed.
-fn process_album_changes<'config, 'scope>(
-    terminal: ArcRwLock<&mut TranscodeTerminal<'config, 'scope>>,
+fn process_album_changes<'config>(
+    terminal: ArcRwLock<&mut TranscodeTerminal<'config, '_>>,
     album: SharedAlbumView<'config>,
     changes: &AlbumFileChangesV2,
     worker_progress_sender: Sender<FileJobMessage>,
     main_thread_receiver: Receiver<MainThreadMessage>,
 ) -> Result<()> {
     let thread_pool_size = {
-        let album_locked = album.read().expect("AlbumView lock poisoned!");
+        let album_locked = album.read();
 
         album_locked
             .euphony_configuration()
@@ -486,11 +523,9 @@ fn process_album_changes<'config, 'scope>(
         );
 
         let queued_file_item_id = {
-            let mut terminal_locked = terminal
-                .write()
-                .expect("TranscodeTerminal RwLock has been poisoned!");
+            let mut terminal_locked = terminal.write();
 
-            terminal_locked.queue_file_item_add(file_item)?
+            terminal_locked.deref_mut().queue_file_item_add(file_item)?
         };
 
         Ok(queued_file_item_id)
@@ -527,10 +562,8 @@ fn process_album_changes<'config, 'scope>(
     // This point is reached on two occasions:
     // - thread pool jobs finished normally, in which case the following will barely block,
     // - main thread requested cancellation, in which case we're probably going to have to wait for the workers a bit.
-    cancellation_flag.store(true, Ordering::Release);
-
     thread_pool
-        .join()
+        .set_cancellation_and_join()
         .wrap_err_with(|| miette!("Thread pool exited abnormally."))?;
 
     Ok(())

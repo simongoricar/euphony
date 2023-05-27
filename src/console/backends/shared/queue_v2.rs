@@ -83,31 +83,25 @@ pub trait QueueItemStateQuery<R: Debug> {
 // Blanket implementation on basically all `QueueItem`s to help with querying for states.
 impl<I: QueueItem<R>, R: Debug> QueueItemStateQuery<R> for I {
     fn is_pending(&self) -> bool {
-        match self.get_state() {
-            QueueItemGenericState::Pending => true,
-            _ => false,
-        }
+        matches!(self.get_state(), QueueItemGenericState::Pending)
     }
 
     fn is_queued(&self) -> bool {
-        match self.get_state() {
-            QueueItemGenericState::Queued => true,
-            _ => false,
-        }
+        matches!(self.get_state(), QueueItemGenericState::Queued)
     }
 
     fn is_in_progress(&self) -> bool {
-        match self.get_state() {
-            QueueItemGenericState::InProgress => true,
-            _ => false,
-        }
+        matches!(
+            self.get_state(),
+            QueueItemGenericState::InProgress
+        )
     }
 
     fn is_finished(&self) -> bool {
-        match self.get_state() {
-            QueueItemGenericState::Finished { .. } => true,
-            _ => false,
-        }
+        matches!(
+            self.get_state(),
+            QueueItemGenericState::Finished { .. }
+        )
     }
 }
 
@@ -193,10 +187,7 @@ impl<'a> RenderableQueueItem<String> for AlbumItem<'a> {
     fn render(&self) -> String {
         // This is just a placeholder implementation as concrete backend implementations
         // are expected to "subclass" (enclose) this struct with their specific implementation.
-        let album_locked = self
-            .album_view
-            .read()
-            .expect("AlbumView RwLock has been poisoned!");
+        let album_locked = self.album_view.read();
 
         format!(
             "{} - {}",

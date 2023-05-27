@@ -18,7 +18,6 @@ use crate::console::backends::{
 use crate::console::{LogBackend, LogToFileBackend, TerminalBackend};
 use crate::globals::VERBOSE;
 
-mod cached;
 mod commands;
 mod configuration;
 mod console;
@@ -26,7 +25,8 @@ mod filesystem;
 mod globals;
 
 
-#[derive(Subcommand, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
+#[derive(Subcommand)]
 enum CLICommand {
     #[command(
         name = "transcode",
@@ -176,23 +176,6 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
 
         terminal.destroy().map_err(|_| 1)?;
 
-        // match transcode_result {
-        //     Ok(_) => {
-        //         terminal
-        //             .destroy()
-        //             .expect("Could not destroy tui terminal backend.");
-        //
-        //         Ok(())
-        //     }
-        //     Err(error) => {
-        //         terminal.log_println(error.to_string().red());
-        //         terminal
-        //             .destroy()
-        //             .expect("Could not destroy tui terminal backend.");
-        //
-        //         Err(1)
-        //     }
-        // }
         Ok(())
     } else if let CLICommand::ValidateAll(args) = args.command {
         let mut terminal: ValidationTerminal = BareTerminalBackend::new().into();
@@ -207,7 +190,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
                 .map_err(|_| 1)?;
         }
 
-        match commands::cmd_validate(&config, &mut terminal) {
+        match commands::cmd_validate(config, &mut terminal) {
             Ok(_) => {}
             Err(error) => {
                 terminal.log_println(format!(
@@ -228,7 +211,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
         terminal
             .setup(scope)
             .expect("Could not set up bare console backend.");
-        commands::cmd_show_config(&config, &mut terminal);
+        commands::cmd_show_config(config, &mut terminal);
         terminal
             .destroy()
             .expect("Could not destroy bare console backend.");
@@ -240,7 +223,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
         terminal
             .setup(scope)
             .expect("Could not set up bare console backend.");
-        commands::cmd_list_libraries(&config, &mut terminal);
+        commands::cmd_list_libraries(config, &mut terminal);
         terminal
             .destroy()
             .expect("Could not destroy bare console backend.");

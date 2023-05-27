@@ -17,7 +17,7 @@ fn run_threadpool_coordinator(
     active_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
 ) -> ThreadPoolStopReason {
     loop {
-        let cancellation_value = cancellation_flag.load(Ordering::Acquire);
+        let cancellation_value = cancellation_flag.load(Ordering::SeqCst);
         if cancellation_value {
             // Cancellation flag is set, we should exit!
             // But before that, we should wait for all active threads - they should all

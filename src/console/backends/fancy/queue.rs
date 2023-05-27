@@ -88,11 +88,7 @@ impl<'a, 'b> RenderableQueueItem<Text<'b>> for FancyAlbumQueueItem<'a> {
 
         // TODO Add colouring based on completion.
         let rendered_spans: Vec<Span> = {
-            let album_locked = self
-                .item
-                .album_view
-                .read()
-                .expect("AlbumView RwLock has been poisoned!");
+            let album_locked = self.item.album_view.read();
 
             vec![
                 Span::raw(prefix),

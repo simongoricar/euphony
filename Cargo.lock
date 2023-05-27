@@ -312,6 +312,7 @@ dependencies = [
  "linked-hash-map",
  "miette",
  "oneshot",
+ "parking_lot",
  "pathdiff",
  "rand",
  "serde",

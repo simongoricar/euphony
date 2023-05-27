@@ -22,7 +22,8 @@ use crate::filesystem::get_path_extension_or_empty;
 use crate::globals::is_verbose_enabled;
 
 // How fast the thread pool's coordinator cleans up and creates new tasks ("ticks", if you will).
-const THREAD_POOL_COORDINATOR_TICK_DURATION: Duration = Duration::from_millis(5);
+const THREAD_POOL_COORDINATOR_TICK_DURATION: Duration =
+    Duration::from_millis(50);
 const FFMPEG_TASK_CANCELLATION_CHECK_INTERVAL: Duration =
     Duration::from_millis(50);
 
@@ -70,7 +71,7 @@ pub enum ThreadPoolV2StopReason {
 ///   (when `true` the task has been cancelled).
 /// - A message sender (`Sender<C>`) that the worker can use to relay messages back to the main
 ///   thread. The message type is generic (`C`), but it must be `Send`.
-pub struct CancellableThreadPoolV2<WorkerMessage: Send + 'static> {
+pub struct CancellableThreadPoolV2 {
     /// Maximum amount of tasks (threads) that can be running concurrently.
     max_num_threads: usize,
 
@@ -82,26 +83,23 @@ pub struct CancellableThreadPoolV2<WorkerMessage: Send + 'static> {
     /// A multi-producer single-consumer Sender. Ditributed across workers who can send
     /// messages back to the user-provided channel's `Receiver`. The data sent can be anything
     /// that can be safely sent across threads (`Send`).
-    worker_message_sender: Sender<WorkerMessage>,
+    worker_message_sender: Sender<FileJobMessage>,
 
     /// If `Some`, a handle to the pool coordinator (handles spawning and cleaning up tasks).
-    pool_coordination_thread: Option<JoinHandle<ThreadPoolV2StopReason>>,
+    pool_coordination_thread: Option<JoinHandle<Result<ThreadPoolV2StopReason>>>,
 
     /// A vector of pending tasks.
-    pending_tasks: Arc<Mutex<Vec<CancellableTaskV2<WorkerMessage>>>>,
+    pending_tasks: Arc<Mutex<Vec<CancellableTaskV2<FileJobMessage>>>>,
 
     /// A vector of currently-running tasks. Never larger than `max_num_threads`.
     running_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
-impl<WorkerMessage> CancellableThreadPoolV2<WorkerMessage>
-where
-    WorkerMessage: Send + 'static,
-{
+impl CancellableThreadPoolV2 {
     /// Create a new cancellable thread pool.
     pub fn new(
         thread_pool_size: usize,
-        worker_message_sender: Sender<WorkerMessage>,
+        worker_message_sender: Sender<FileJobMessage>,
     ) -> Self {
         Self {
             max_num_threads: thread_pool_size,
@@ -130,13 +128,25 @@ where
 
         // TODO Fix this and the rest of the errors, then finally test the new rewrite.
         let coordinator_thread_handle = thread::spawn(move || {
-            CancellableThreadPoolV2::run_coordinator(
+            let out_of_loop_sender = worker_message_sender.clone();
+
+            let coordinator_result = CancellableThreadPoolV2::run_coordinator(
                 max_num_threads,
                 cancellation_flag,
                 worker_message_sender,
                 pending_tasks_copy,
                 running_tasks_copy,
-            )
+            );
+
+            if is_verbose_enabled() {
+                out_of_loop_sender
+                    .send(FileJobMessage::new_log(
+                        "ThreadPool: coordinator thread has stopped.",
+                    ))
+                    .into_diagnostic()?;
+            }
+
+            coordinator_result
         });
 
         self.pool_coordination_thread = Some(coordinator_thread_handle);
@@ -149,7 +159,7 @@ where
     /// The cancellable task's message sender type must match the threadpool's messager sender.
     pub fn queue_task(
         &mut self,
-        cancellable_task: CancellableTaskV2<WorkerMessage>,
+        cancellable_task: CancellableTaskV2<FileJobMessage>,
     ) {
         let mut exclusive_queue_lock = self.get_locked_pending_tasks();
         exclusive_queue_lock.push(cancellable_task);
@@ -158,8 +168,8 @@ where
     /// Checks whether there are any running or pending tasks in this thread pool.
     pub fn has_tasks_left(&self) -> bool {
         let (pending_vec_empty, running_vec_empty) = {
-            let pending_tasks = self.get_locked_pending_tasks();
             let running_tasks = self.get_locked_running_tasks();
+            let pending_tasks = self.get_locked_pending_tasks();
 
             (pending_tasks.is_empty(), running_tasks.is_empty())
         };
@@ -183,8 +193,8 @@ where
     }
 
     /// This method will set the cancellation flag and wait for the thread pool to finish.
-    pub fn cancel_pool(self) -> Result<ThreadPoolV2StopReason> {
-        self.task_cancellation_flag.store(true, Ordering::Release);
+    pub fn set_cancellation_and_join(self) -> Result<ThreadPoolV2StopReason> {
+        self.task_cancellation_flag.store(true, Ordering::SeqCst);
         self.join()
     }
 
@@ -203,13 +213,13 @@ where
                 "ThreadPool coordinator thread exited abnormally. {:?}",
                 error
             )
-        })
+        })?
     }
 
     /// Lock and return the list of pending tasks.
     fn get_locked_pending_tasks(
         &self,
-    ) -> MutexGuard<Vec<CancellableTaskV2<WorkerMessage>>> {
+    ) -> MutexGuard<Vec<CancellableTaskV2<FileJobMessage>>> {
         self.pending_tasks
             .lock()
             .expect("pending_tasks job queue lock has been poisoned!")
@@ -230,17 +240,25 @@ where
     fn run_coordinator(
         max_num_threads: usize,
         cancellation_flag: Arc<AtomicBool>,
-        worker_message_sender: Sender<WorkerMessage>,
-        pending_tasks: Arc<Mutex<Vec<CancellableTaskV2<WorkerMessage>>>>,
+        worker_message_sender: Sender<FileJobMessage>,
+        pending_tasks: Arc<Mutex<Vec<CancellableTaskV2<FileJobMessage>>>>,
         running_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
-    ) -> ThreadPoolV2StopReason {
+    ) -> Result<ThreadPoolV2StopReason> {
         loop {
             let cancellation_flag_value =
-                cancellation_flag.load(Ordering::Acquire);
+                cancellation_flag.load(Ordering::SeqCst);
             if cancellation_flag_value {
                 // Cancellation flag is set, we should exit!
                 // We should wait for all active threads first though - the threads will, if
                 // properly implemented, soon see the cancellation flag and exit accordingly.
+
+                if is_verbose_enabled() {
+                    worker_message_sender.send(
+                        FileJobMessage::new_log("ThreadPool: cancellation flag set, waiting for active workers, clearing pending tasks and joining.")
+                    )
+                        .into_diagnostic()?;
+                }
+
                 let mut running_tasks_locked = running_tasks
                     .lock()
                     .expect("running_tasks mutex lock has been poisoned!");
@@ -253,7 +271,16 @@ where
                     .expect("pending_tasks mutex lock has been poisoned!");
                 pending_tasks_locked.clear();
 
-                return ThreadPoolV2StopReason::CancellationFlagSet;
+                if is_verbose_enabled() {
+                    worker_message_sender
+                        .send(FileJobMessage::new_log(
+                            "ThreadPool: exiting coordinator thread.",
+                        ))
+                        .into_diagnostic()?;
+                }
+
+
+                return Ok(ThreadPoolV2StopReason::CancellationFlagSet);
             }
 
             // No cancellation yet, so tick normally:
@@ -272,6 +299,15 @@ where
                     }
                 }
 
+                if !finished_tasks_indices.is_empty() && is_verbose_enabled() {
+                    worker_message_sender
+                        .send(FileJobMessage::new_log(format!(
+                            "ThreadPool: {} tasks finished since last tick.",
+                            finished_tasks_indices.len()
+                        )))
+                        .into_diagnostic()?;
+                }
+
                 if !finished_tasks_indices.is_empty() {
                     // We now drain the running task vector by given indices.
                     // This can be done directly using indices without problems because
@@ -288,7 +324,7 @@ where
                 let threads_to_limit =
                     max_num_threads - running_tasks_locked.len();
                 if threads_to_limit > 0 {
-                    let tasks_to_run: Vec<CancellableTaskV2<WorkerMessage>> = {
+                    let tasks_to_run: Vec<CancellableTaskV2<FileJobMessage>> = {
                         let mut pending_tasks_locked =
                             pending_tasks.lock().expect(
                                 "pending_tasks mutex lock has been poisoned!",
@@ -300,6 +336,15 @@ where
                             .drain(0..min(pending_tasks_num, threads_to_limit))
                             .collect()
                     };
+
+                    if is_verbose_enabled() {
+                        worker_message_sender
+                            .send(FileJobMessage::new_log(format!(
+                                "ThreadPool: spawning {} tasks",
+                                tasks_to_run.len()
+                            )))
+                            .into_diagnostic()?;
+                    }
 
                     // Create new threads for each new task.
                     for new_task in tasks_to_run {
@@ -315,6 +360,14 @@ where
 
                         running_tasks_locked.push(task_thread_handle);
                     }
+                } else if !finished_tasks_indices.is_empty()
+                    && is_verbose_enabled()
+                {
+                    worker_message_sender
+                        .send(FileJobMessage::new_log(
+                            "ThreadPool: no pending tasks to spawn right now",
+                        ))
+                        .into_diagnostic()?;
                 }
             }
 
@@ -328,9 +381,9 @@ where
  */
 #[derive(Clone, Copy)]
 pub enum FileJobType {
-    TranscodeAudioFile,
-    CopyFile,
-    DeleteProcessedFile,
+    TranscodeAudio,
+    Copy,
+    DeleteProcessed,
 }
 
 /// Task state for completed `FileJob`s.
@@ -361,6 +414,30 @@ pub enum FileJobMessage {
         content: String,
     },
 }
+
+impl FileJobMessage {
+    pub fn new_starting(queue_item: QueueItemID) -> Self {
+        Self::Starting { queue_item }
+    }
+
+    pub fn new_finished(queue_item: QueueItemID, result: FileJobResult) -> Self {
+        Self::Finished {
+            queue_item,
+            processing_result: result,
+        }
+    }
+
+    pub fn new_cancelled(queue_item: QueueItemID) -> Self {
+        Self::Cancelled { queue_item }
+    }
+
+    pub fn new_log<S: Into<String>>(log_string: S) -> Self {
+        Self::Log {
+            content: log_string.into(),
+        }
+    }
+}
+
 
 /// A simple file job abstraction.
 ///
@@ -424,8 +501,7 @@ impl TranscodeAudioFileJob {
         target_file_path: PathBuf,
         queue_item: QueueItemID,
     ) -> Result<Self> {
-        let album_locked =
-            album.read().expect("AlbumView RwLock has been poisoned!");
+        let album_locked = album.read();
 
         let config = album_locked.euphony_configuration();
 
@@ -517,9 +593,8 @@ impl FileJob for TranscodeAudioFileJob {
             fs::create_dir_all(&self.target_file_directory_path);
 
         if let Err(error) = create_dir_result {
-            let verbose_info = is_verbose_enabled().then(|| {
-                format!("fs::create_dir_all error: {}", error.to_string())
-            });
+            let verbose_info = is_verbose_enabled()
+                .then(|| format!("fs::create_dir_all error: {error}"));
 
             message_sender.send(FileJobMessage::Finished {
                 queue_item: self.queue_item,
@@ -557,7 +632,7 @@ impl FileJob for TranscodeAudioFileJob {
             .is_none()
         {
             let cancellation_flag_value =
-                cancellation_flag.load(Ordering::Acquire);
+                cancellation_flag.load(Ordering::SeqCst);
             if cancellation_flag_value {
                 // Cancellation flag is set to true, we should kill ffmpeg and exit as soon as possible.
                 ffmpeg_child_process
@@ -573,7 +648,7 @@ impl FileJob for TranscodeAudioFileJob {
         }
 
         // ffmpeg process is finished at this point, we should just check what the reason was.
-        let final_cancellation_flag = cancellation_flag.load(Ordering::Acquire);
+        let final_cancellation_flag = cancellation_flag.load(Ordering::SeqCst);
         if final_cancellation_flag {
             // Process was killed because of cancellation.
             message_sender
@@ -683,8 +758,7 @@ impl CopyFileJob {
         target_file_path: PathBuf,
         queue_item: QueueItemID,
     ) -> Result<Self> {
-        let album_locked =
-            album.read().expect("AlbumView lock has been poisoned!");
+        let album_locked = album.read();
 
         let transcoding_config =
             &album_locked.library_configuration().transcoding;
@@ -739,9 +813,8 @@ impl FileJob for CopyFileJob {
             fs::create_dir_all(&self.target_file_directory_path);
 
         if let Err(error) = create_dir_result {
-            let verbose_info = is_verbose_enabled().then(|| {
-                format!("fs::create_dir_all error: {}", error.to_string())
-            });
+            let verbose_info = is_verbose_enabled()
+                .then(|| format!("fs::create_dir_all error: {error}"));
 
             message_sender.send(FileJobMessage::Finished {
                 queue_item: self.queue_item,
@@ -864,14 +937,13 @@ impl FileJob for DeleteProcessedFileJob {
 
         let processing_result = if !self.target_file_path.is_file() {
             if self.ignore_if_missing {
-                let verbose_info = is_verbose_enabled().then(|| format!("File did not exist, but ignore_if_missing==true - skipping."));
+                let verbose_info = is_verbose_enabled().then(|| "File did not exist, but ignore_if_missing==true - skipping.".to_string());
 
                 FileJobResult::Okay { verbose_info }
             } else {
                 FileJobResult::Errored {
-                    error: format!(
-                        "File did not exist and ignore_if_missing!=true!"
-                    ),
+                    error: "File did not exist and ignore_if_missing != true!"
+                        .to_string(),
                     verbose_info: None,
                 }
             }

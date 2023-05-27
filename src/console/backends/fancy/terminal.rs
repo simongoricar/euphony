@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{stdout, BufWriter, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread;
 use std::thread::{Scope, ScopedJoinHandle};
 use std::time::{Duration, Instant};
 
@@ -54,6 +55,8 @@ use crate::console::LogBackend;
 pub const LOG_JOURNAL_MAX_LINES: usize = 20;
 const TERMINAL_REFRESH_RATE_SECONDS: f64 = 0.05;
 
+pub const LOG_JOURNAL_FLUSH_INTERVAL: Duration = Duration::from_secs(10);
+
 
 /// `tui`-based terminal UI implementation of a terminal backend.
 /// Supports all available terminal backend "extensions", meaning it can be used as a backend
@@ -64,7 +67,9 @@ pub struct TUITerminalBackend<'config: 'threadscope, 'threadscope> {
 
     /// If `Some`, `log_file_output` contains the buffered writer of the log file
     /// (writing to this writer will write the content to the log file).
-    log_file_output: Option<Mutex<BufWriter<Writer<File>>>>,
+    log_file_output: Option<Arc<Mutex<BufWriter<Writer<File>>>>>,
+
+    log_file_flush_thread: Option<ScopedJoinHandle<'threadscope, Result<()>>>,
 
     /// An end cursor position we save in setup - this allows us to restore the
     /// ending cursor position when the backend is destroyed.
@@ -100,6 +105,7 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
         Ok(Self {
             terminal: Arc::new(Mutex::new(terminal)),
             log_file_output: None,
+            log_file_flush_thread: None,
             terminal_end_cursor_position: None,
             has_been_set_up: false,
             render_thread: None,
@@ -553,6 +559,36 @@ impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
         self.render_thread_channel = Some(stop_tx);
         self.has_been_set_up = true;
 
+        // Set up file output flushing thread (if outputting to file).
+        if let Some(log_file_output) = self.log_file_output.as_ref() {
+            let weak_log_output = Arc::downgrade(log_file_output);
+
+            self.log_file_flush_thread = Some(scope.spawn(move || {
+                let mut accumulator: Duration = Duration::from_nanos(0);
+                let individual_sleep_duration = LOG_JOURNAL_FLUSH_INTERVAL / 100;
+
+                loop {
+                    thread::sleep(individual_sleep_duration);
+                    accumulator += individual_sleep_duration;
+
+                    if accumulator >= LOG_JOURNAL_FLUSH_INTERVAL {
+                        if let Some(log_output_ref) = weak_log_output.upgrade() {
+                            log_output_ref
+                                .lock()
+                                .expect("Log output lock has been poisoned!")
+                                .flush()
+                                .into_diagnostic()?;
+                        } else {
+                            // All strong refrences of log output Arc have been dropped, so we should stop as well.
+                            return Ok(());
+                        }
+
+                        accumulator = Duration::from_nanos(0);
+                    }
+                }
+            }));
+        }
+
         Ok(())
     }
 
@@ -927,14 +963,18 @@ impl<'config: 'scope, 'scope> LogToFileBackend
 
         let buf_writer =
             BufWriter::with_capacity(1024, ansi_escaped_file_writer);
-        self.log_file_output = Some(Mutex::new(buf_writer));
+        self.log_file_output = Some(Arc::new(Mutex::new(buf_writer)));
 
         Ok(())
     }
 
     fn disable_saving_logs_to_file(&mut self) -> Result<()> {
         if let Some(buf_writer) = self.log_file_output.take() {
-            let mut buf_writer = buf_writer.into_inner().into_diagnostic()?;
+            let mut buf_writer = Arc::try_unwrap(buf_writer)
+                .map_err(|_| "")
+                .expect("BUG: We're not the only ones with a strong reference to log output!")
+                .into_inner()
+                .into_diagnostic()?;
 
             buf_writer.flush().into_diagnostic()?;
         }
