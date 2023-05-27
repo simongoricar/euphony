@@ -1,5 +1,4 @@
 use std::ops::DerefMut;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -47,7 +46,6 @@ pub mod directories;
 pub mod jobs;
 pub mod metadata;
 pub mod packets;
-pub mod threadpool;
 pub mod views;
 
 type SortedLibrariesWithChanges<'a> = Vec<(
@@ -501,7 +499,6 @@ fn process_album_changes<'config>(
     let mut thread_pool =
         CancellableThreadPoolV2::new(thread_pool_size, worker_progress_sender);
     thread_pool.start()?;
-    let cancellation_flag = thread_pool.cancellation_flag();
 
     // Generate and queue all file jobs.
     let jobs = changes.generate_file_jobs(|file_type, file_path| {
