@@ -159,15 +159,15 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
         let mut terminal = get_transcode_terminal(transcode_args.bare_terminal);
 
-        terminal
-            .setup(scope)
-            .expect("Could not set up tui terminal backend.");
-
         if let Some(log_file_path) = transcode_args.log_to_file {
             terminal
                 .enable_saving_logs_to_file(PathBuf::from(log_file_path))
                 .map_err(|_| 1)?;
         }
+
+        terminal
+            .setup(scope)
+            .expect("Could not set up tui terminal backend.");
 
         let result = commands::cmd_transcode_all(config, &mut terminal);
         if let Err(error) = result {
@@ -180,15 +180,16 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
     } else if let CLICommand::ValidateAll(args) = args.command {
         let mut terminal: ValidationTerminal = BareTerminalBackend::new().into();
 
-        terminal
-            .setup(scope)
-            .expect("Could not set up bare console backend.");
-
         if let Some(log_file_path) = args.log_to_file {
             terminal
                 .enable_saving_logs_to_file(PathBuf::from(log_file_path))
                 .map_err(|_| 1)?;
         }
+
+        terminal
+            .setup(scope)
+            .expect("Could not set up bare console backend.");
+
 
         match commands::cmd_validate(config, &mut terminal) {
             Ok(_) => {}

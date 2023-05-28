@@ -91,7 +91,8 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
     let terminal_user_input = terminal.get_user_control_receiver()?;
 
 
-    let libraries_with_changes = collect_libraries_with_changes(configuration)?;
+    let libraries_with_changes =
+        collect_libraries_with_changes(configuration, terminal)?;
     // It is possible that no changes have been detected, in which case we should just exit.
     if libraries_with_changes.is_empty() {
         terminal.log_println(
@@ -356,15 +357,19 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
  * Utility functions
  */
 
-fn collect_libraries_with_changes<'a>(
-    configuration: &'a Config,
-) -> Result<SortedLibrariesWithChanges<'a>> {
+fn collect_libraries_with_changes<'config>(
+    configuration: &'config Config,
+    terminal: &mut TranscodeTerminal<'config, '_>,
+) -> Result<SortedLibrariesWithChanges<'config>> {
     // `LibraryView` is the root abstraction here - we use it to discover artists and their albums.
-    let mut libraries: Vec<SharedLibraryView<'a>> = configuration
+    let mut libraries: Vec<SharedLibraryView<'config>> = configuration
         .libraries
         .values()
         .map(|library| {
-            LibraryView::<'a>::from_library_configuration(configuration, library)
+            LibraryView::<'config>::from_library_configuration(
+                configuration,
+                library,
+            )
         })
         .collect();
 
@@ -375,6 +380,16 @@ fn collect_libraries_with_changes<'a>(
         first_locked.name().cmp(&second_locked.name())
     });
 
+    if is_verbose_enabled() {
+        terminal.log_println(format!(
+            "Collected libraries: {:?}",
+            libraries
+                .iter()
+                .map(|library| library.read().name())
+                .collect::<Vec<String>>(),
+        ));
+    }
+
     // We perform a scan on each library: for each artist in the library, we scan each
     // of their albums for changes (this includes untranscoded albums in addition to
     // albums changed since last transcode). This is a relatively expensive step (a lot of disk accesses),
@@ -382,9 +397,34 @@ fn collect_libraries_with_changes<'a>(
     libraries
         .into_iter()
         .map(|library| {
-            let scan = library
-                .read()
+            let library_read = library.read();
+
+            if is_verbose_enabled() {
+                terminal.log_println(format!(
+                    "Scanning changes in library: {}", library_read.name(),
+                ));
+            }
+
+            let scan = library_read
                 .scan_for_artists_with_changed_albums()?;
+
+            if is_verbose_enabled() {
+                terminal.log_println(format!(
+                    "Changed artists: {:?}",
+                    scan.iter().map(|(artist_name, (_, changed_albums))| {
+                        let changed_albums_formatted = changed_albums.iter()
+                            .map(|(album_title, (_, changes))| {
+                                format!("album={album_title};changes={changes:?}")
+                            })
+                            .collect::<Vec<String>>();
+
+                        format!(
+                            "artist={artist_name};changed_albums={changed_albums_formatted:?}"
+                        )
+                    })
+                        .collect::<Vec<String>>(),
+                ));
+            }
 
             let mut ordered_artists: SortedArtistsWithChanges = scan
                 .into_iter()
@@ -413,9 +453,11 @@ fn collect_libraries_with_changes<'a>(
                 first.cmp(second)
             });
 
+            drop(library_read);
+
             Ok((library, ordered_artists))
         })
-        .collect::<Result<SortedLibrariesWithChanges<'a>>>()
+        .collect::<Result<SortedLibrariesWithChanges<'config>>>()
 }
 
 fn queue_all_libraries_with_changes<'config: 'scope, 'scope>(

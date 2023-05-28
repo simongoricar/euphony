@@ -133,6 +133,49 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
         }
     }
 
+    fn set_up_log_flushing_thread(&mut self, scope: &'scope Scope<'scope, '_>) {
+        // Set up file output flushing thread (if outputting to file).
+        if let Some(log_file_output) = self.log_file_output.as_ref() {
+            let weak_log_output = Arc::downgrade(log_file_output);
+
+            self.log_file_flush_thread = Some(scope.spawn(move || {
+                let mut accumulator: Duration = Duration::from_nanos(0);
+                let individual_sleep_duration = LOG_JOURNAL_FLUSH_INTERVAL / 100;
+
+                loop {
+                    thread::sleep(individual_sleep_duration);
+                    accumulator += individual_sleep_duration;
+
+                    if accumulator >= LOG_JOURNAL_FLUSH_INTERVAL {
+                        if let Some(log_output_ref) = weak_log_output.upgrade() {
+                            log_output_ref
+                                .lock()
+                                .expect("Log output lock has been poisoned!")
+                                .flush()
+                                .into_diagnostic()?;
+                        } else {
+                            // All strong refrences of log output Arc have been dropped, so we should stop as well.
+                            return Ok(());
+                        }
+
+                        accumulator = Duration::from_nanos(0);
+                    }
+                }
+            }));
+        }
+    }
+
+    fn join_and_destroy_log_flushing_thead(&mut self) -> Result<()> {
+        if let Some(log_file_flusher_handle) = self.log_file_flush_thread.take()
+        {
+            log_file_flusher_handle
+                .join()
+                .map_err(|_| miette!("Log file flushing thread panicked!"))??;
+        }
+
+        Ok(())
+    }
+
     /// Perform a full render of all terminal UI widgets.
     /// - `state` is a `MutexGuard` with the locked terminal state behind it,
     /// - `frame` is the `tui` terminal frame to draw on and
@@ -517,21 +560,23 @@ impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
     fn setup(&mut self, scope: &'scope Scope<'scope, 'scope_env>) -> Result<()> {
         enable_raw_mode().into_diagnostic()?;
 
-        let mut terminal = self.terminal.lock().unwrap();
+        {
+            let mut terminal = self.terminal.lock().unwrap();
 
-        // Prepare space for terminal UI (without drawing over previous content).
-        let size = terminal.size().into_diagnostic()?;
+            // Prepare space for terminal UI (without drawing over previous content).
+            let size = terminal.size().into_diagnostic()?;
 
-        terminal
-            .backend_mut()
-            .execute(Print("\n".repeat(size.height as usize)))
-            .into_diagnostic()?;
+            terminal
+                .backend_mut()
+                .execute(Print("\n".repeat(size.height as usize)))
+                .into_diagnostic()?;
 
-        let cursor_end_position =
-            terminal.backend_mut().get_cursor().into_diagnostic()?;
-        self.terminal_end_cursor_position = Some(cursor_end_position);
+            let cursor_end_position =
+                terminal.backend_mut().get_cursor().into_diagnostic()?;
+            self.terminal_end_cursor_position = Some(cursor_end_position);
 
-        terminal.clear().into_diagnostic()?;
+            terminal.clear().into_diagnostic()?;
+        }
 
         // We create a simple one-way channel that we will use to forward keyboard events.
         let (user_control_tx, user_control_rx) =
@@ -559,35 +604,7 @@ impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
         self.render_thread_channel = Some(stop_tx);
         self.has_been_set_up = true;
 
-        // Set up file output flushing thread (if outputting to file).
-        if let Some(log_file_output) = self.log_file_output.as_ref() {
-            let weak_log_output = Arc::downgrade(log_file_output);
-
-            self.log_file_flush_thread = Some(scope.spawn(move || {
-                let mut accumulator: Duration = Duration::from_nanos(0);
-                let individual_sleep_duration = LOG_JOURNAL_FLUSH_INTERVAL / 100;
-
-                loop {
-                    thread::sleep(individual_sleep_duration);
-                    accumulator += individual_sleep_duration;
-
-                    if accumulator >= LOG_JOURNAL_FLUSH_INTERVAL {
-                        if let Some(log_output_ref) = weak_log_output.upgrade() {
-                            log_output_ref
-                                .lock()
-                                .expect("Log output lock has been poisoned!")
-                                .flush()
-                                .into_diagnostic()?;
-                        } else {
-                            // All strong refrences of log output Arc have been dropped, so we should stop as well.
-                            return Ok(());
-                        }
-
-                        accumulator = Duration::from_nanos(0);
-                    }
-                }
-            }));
-        }
+        self.set_up_log_flushing_thread(scope);
 
         Ok(())
     }
@@ -645,6 +662,7 @@ impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
         // If logging to file was enabled, we should disable it before this backend is dropped,
         // otherwise we risk failing to flush to file when the entire struct is dropped.
         self.disable_saving_logs_to_file()?;
+        self.join_and_destroy_log_flushing_thead()?;
 
         Ok(())
     }

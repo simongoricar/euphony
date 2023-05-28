@@ -189,6 +189,7 @@ impl<'a, 'b> RenderableQueueItem<Text<'b>> for FancyFileQueueItem<'a> {
         let rendered_spans: Vec<Span> = vec![
             Span::raw(prefix),
             Span::raw(file_type_str),
+            Span::raw(" "),
             Span::raw(self.item.file_name.clone()),
         ];
 

@@ -124,10 +124,11 @@ impl AlbumFileState {
         })
     }
 
-    /// Given a base album path and the list containing relative paths (relative to
-    /// `album_directory_path`), this function builds a `HashMap` from all the relative file paths
-    /// to the `FileTrackedMetadata` instances that contain additional file metadata we usually
-    /// need to perform diffing between transcodes.
+    /// Given a base album path and the list containing paths relative to `album_directory_path`,
+    /// this function builds a `HashMap` from relative file paths
+    /// to `FileTrackedMetadata` instances containing per-file metadata.
+    ///
+    /// We usually need this to perform diffing between transcodes.
     fn build_file_map_from_paths<P: AsRef<Path>>(
         album_base_directory_path: P,
         relative_file_paths: &Vec<PathBuf>,
@@ -449,8 +450,25 @@ impl TranscodedAlbumState {
             )?;
 
 
-        let transcoded_to_source_map_pathbuf =
-            tracked_album_files.map_transcoded_paths_to_source_paths_relative();
+        let transcoded_to_source_map_pathbuf = {
+            // We must make sure that only the transcoded files that exist are actually generated here.
+            let filtered_tracked_files = AlbumSourceFileList {
+                album: tracked_album_files.album.clone(),
+                audio_files: transcoded_file_state
+                    .audio_files
+                    .keys()
+                    .map(PathBuf::from)
+                    .collect(),
+                data_files: transcoded_file_state
+                    .data_files
+                    .keys()
+                    .map(PathBuf::from)
+                    .collect(),
+            };
+
+            filtered_tracked_files
+                .map_transcoded_paths_to_source_paths_relative()
+        };
 
         let transcoded_to_source_audio_map_string: HashMap<String, String> =
             transcoded_to_source_map_pathbuf
@@ -746,7 +764,7 @@ pub struct AlbumFileChangesV2<'view> {
     pub excess_in_transcoded: ExtendedSortedFileList<PathBuf>,
 }
 
-impl<'a> AlbumFileChangesV2<'a> {
+impl<'view> AlbumFileChangesV2<'view> {
     /// Generate an `AlbumFileChangesV2` instance by comparing several saved and fresh filesystem states:
     /// - `saved_source_state` is, if previously transcoded, the source album state as saved in `.album.source-state.euphony`,
     /// - `fresh_source_state` is the fresh filesystem state of the source album directory,
@@ -757,11 +775,11 @@ impl<'a> AlbumFileChangesV2<'a> {
     /// `album_file_list` is the associated source file list.
     pub fn generate_from_source_and_transcoded_state(
         saved_source_state: Option<SourceAlbumState>,
-        fresh_source_state: AlbumFileState,
+        fresh_source_state: SourceAlbumState,
         saved_transcoded_state: Option<TranscodedAlbumState>,
-        fresh_transcoded_state: AlbumFileState,
-        album: SharedAlbumView<'a>,
-        album_file_list: AlbumSourceFileList<'a>,
+        fresh_transcoded_state: TranscodedAlbumState,
+        album: SharedAlbumView<'view>,
+        album_file_list: AlbumSourceFileList<'view>,
     ) -> Result<Self> {
         let (
             transcoding_config,
@@ -777,6 +795,7 @@ impl<'a> AlbumFileChangesV2<'a> {
             )
         };
 
+        // FIXME: Doesn't transcode files that had previously been transcoded, but have since been deleted from the target directory.
 
         let saved_source_files = saved_source_state
             .map(|inner| inner.tracked_files)
@@ -796,15 +815,33 @@ impl<'a> AlbumFileChangesV2<'a> {
         let saved_source_data_files_set: HashSet<String> =
             saved_source_files.data_files.keys().cloned().collect();
 
-        let fresh_source_audio_files_set: HashSet<String> =
-            fresh_source_files.audio_files.keys().cloned().collect();
-        let fresh_source_data_files_set: HashSet<String> =
-            fresh_source_files.data_files.keys().cloned().collect();
+        let fresh_source_audio_files_set: HashSet<String> = fresh_source_files
+            .tracked_files
+            .audio_files
+            .keys()
+            .cloned()
+            .collect();
+        let fresh_source_data_files_set: HashSet<String> = fresh_source_files
+            .tracked_files
+            .data_files
+            .keys()
+            .cloned()
+            .collect();
 
         let fresh_transcoded_audio_files_set: HashSet<String> =
-            fresh_transcoded_files.audio_files.keys().cloned().collect();
+            fresh_transcoded_files
+                .transcoded_files
+                .audio_files
+                .keys()
+                .cloned()
+                .collect();
         let fresh_transcoded_data_files_set: HashSet<String> =
-            fresh_transcoded_files.data_files.keys().cloned().collect();
+            fresh_transcoded_files
+                .transcoded_files
+                .data_files
+                .keys()
+                .cloned()
+                .collect();
         let fresh_transcoded_full_files_set: HashSet<String> =
             HashSet::from_iter(
                 fresh_transcoded_data_files_set
@@ -833,13 +870,13 @@ impl<'a> AlbumFileChangesV2<'a> {
             saved_source_audio_files_set
                 .intersection(&fresh_source_audio_files_set),
             &saved_source_files.audio_files,
-            &fresh_source_files.audio_files,
+            &fresh_source_files.tracked_files.audio_files,
         )?;
         let changed_data_files = Self::filter_only_changed_files(
             saved_source_data_files_set
                 .intersection(&fresh_source_data_files_set),
             &saved_source_files.data_files,
-            &fresh_source_files.data_files,
+            &fresh_source_files.tracked_files.data_files,
         )?;
 
 
@@ -1300,11 +1337,11 @@ impl<'a> AlbumFileChangesV2<'a> {
             .collect()
     }
 
-    pub fn read_lock_album(&self) -> RwLockReadGuard<'_, AlbumView<'a>> {
+    pub fn read_lock_album(&self) -> RwLockReadGuard<'_, AlbumView<'view>> {
         self.album_view.read()
     }
 
-    pub fn write_lock_library(&self) -> RwLockWriteGuard<'_, AlbumView<'a>> {
+    pub fn write_lock_library(&self) -> RwLockWriteGuard<'_, AlbumView<'view>> {
         self.album_view.write()
     }
 }
@@ -1313,12 +1350,13 @@ impl<'a> Debug for AlbumFileChangesV2<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Album file changes:\n\
-            \tadded: {:?}\n\
-            \tchanged: {:?}\n\
-            \tremoved in source: {:?}\n\
-            \tmissing in transcode: {:?}\n\
-            \texcess in transcode: {:?}",
+            "AlbumFileChangesV2 {{\n\
+            \tadded_in_source_since_last_transcode={:?}\n\
+            \tchanged_in_source_since_last_transcode={:?}\n\
+            \tremoved_in_source_since_last_transcode={:?}\n\
+            \tmissing_in_transcoded={:?}\n\
+            \texcess_in_transcoded={:?}\n\
+            }}",
             self.added_in_source_since_last_transcode,
             self.changed_in_source_since_last_transcode,
             self.removed_in_source_since_last_transcode,

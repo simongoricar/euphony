@@ -587,9 +587,9 @@ impl<'config> AlbumView<'config> {
         let full_changes: AlbumFileChangesV2<'config> =
             AlbumFileChangesV2::generate_from_source_and_transcoded_state(
                 saved_source_album_state,
-                fresh_source_album_state.tracked_files,
+                fresh_source_album_state,
                 saved_transcoded_album_state,
-                fresh_transcoded_album_state.transcoded_files,
+                fresh_transcoded_album_state,
                 self.weak_self.upgrade().ok_or_else(|| {
                     miette!("Could not upgarde AlbumView's weak_self!")
                 })?,
