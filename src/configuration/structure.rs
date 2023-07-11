@@ -48,9 +48,9 @@ impl Config {
             .expect("Could not load configuration file!");
 
         config.configuration_file_path = dunce::canonicalize(configuration_filepath)
-            .expect("Could not canocalize configuration file path even though it has loaded!");
+            .expect("Could not canonicalize configuration file path even though it has loaded!");
 
-        // Run init methods for all configuration subtables.
+        // Run init methods for all configuration sub-tables.
 
         config.essentials.after_load_init()?;
         config.validation.after_load_init()?;
@@ -214,14 +214,14 @@ impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
             .binary
             .replace("{TOOLS_BASE}", &essentials.base_tools_path);
 
-        let canocalized_ffmpeg = dunce::canonicalize(ffmpeg.clone())
+        let canonicalized_ffmpeg = dunce::canonicalize(ffmpeg.clone())
             .unwrap_or_else(|_| panic!(
-                "Could not canocalize ffmpeg binary path: \"{ffmpeg}\", make sure the path is valid.",
+                "Could not canonicalize ffmpeg binary path: \"{ffmpeg}\", make sure the path is valid.",
             ));
 
-        self.binary = canocalized_ffmpeg.to_string_lossy().to_string();
+        self.binary = canonicalized_ffmpeg.to_string_lossy().to_string();
 
-        if !canocalized_ffmpeg.is_file() {
+        if !canonicalized_ffmpeg.is_file() {
             panic!("No file exists at this path: {}", self.binary);
         }
 

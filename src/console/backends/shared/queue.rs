@@ -78,7 +78,7 @@ pub fn generate_dynamic_task_list<
     let mut current_queue_offset: usize = 0;
 
     // Generates leading text "... (N completed) ..." if there are at least
-    // two complted items at the top of the queue that we can squash and if the total length
+    // two completed items at the top of the queue that we can squash and if the total length
     // of the task queue is longer than we can display. This means we don't squash completed items
     // if we can display them all.
     let leading_items_completed_count = task_queue
@@ -104,7 +104,7 @@ pub fn generate_dynamic_task_list<
         lines_used += 1;
     }
 
-    // Before we add normal lines we calculate if we will need a tralining "... (N hidden) ..." entry.
+    // Before we add normal lines we calculate if we will need a trailing "... (N hidden) ..." entry.
     // This is only shown when the remaining items would overflow.
     let should_add_trailing =
         (queue_size - current_queue_offset + 1) > (max_list_lines - lines_used);

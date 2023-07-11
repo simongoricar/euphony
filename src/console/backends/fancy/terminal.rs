@@ -61,7 +61,7 @@ pub const LOG_JOURNAL_FLUSH_INTERVAL: Duration = Duration::from_secs(10);
 /// `tui`-based terminal UI implementation of a terminal backend.
 /// Supports all available terminal backend "extensions", meaning it can be used as a backend
 /// for transcoding.
-pub struct TUITerminalBackend<'config: 'threadscope, 'threadscope> {
+pub struct TUITerminalBackend<'config: 'thread_scope, 'thread_scope> {
     /// `tui::Terminal`, which is how we interact with the terminal and build a terminal UI.
     terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
 
@@ -69,7 +69,7 @@ pub struct TUITerminalBackend<'config: 'threadscope, 'threadscope> {
     /// (writing to this writer will write the content to the log file).
     log_file_output: Option<Arc<Mutex<BufWriter<Writer<File>>>>>,
 
-    log_file_flush_thread: Option<ScopedJoinHandle<'threadscope, Result<()>>>,
+    log_file_flush_thread: Option<ScopedJoinHandle<'thread_scope, Result<()>>>,
 
     /// An end cursor position we save in setup - this allows us to restore the
     /// ending cursor position when the backend is destroyed.
@@ -80,7 +80,7 @@ pub struct TUITerminalBackend<'config: 'threadscope, 'threadscope> {
     has_been_set_up: bool,
 
     /// When `has_been_set_up` is true, `render_thread` contains a handle to the render thread.
-    render_thread: Option<ScopedJoinHandle<'threadscope, Result<()>>>,
+    render_thread: Option<ScopedJoinHandle<'thread_scope, Result<()>>>,
 
     /// When `has_been_set_up` is true, `render_thread_channel` contains a sender with which to
     /// signal to the render thread that it should stop.
@@ -154,7 +154,7 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
                                 .flush()
                                 .into_diagnostic()?;
                         } else {
-                            // All strong refrences of log output Arc have been dropped, so we should stop as well.
+                            // All strong references of log output Arc have been dropped, so we should stop as well.
                             return Ok(());
                         }
 
@@ -467,11 +467,11 @@ fn run_render_loop(
     user_control_message_sender: Sender<UserControlMessage>,
     stop_signal_receiver: Receiver<()>,
 ) -> Result<()> {
-    // Continiously render terminal UI (until stop signal is received via channel).
+    // Continuously render terminal UI (until stop signal is received via channel).
     loop {
         let time_tick_begin = Instant::now();
 
-        // We might get a signal (via a multiproducer-singleconsumer channel) to stop rendering,
+        // We might get a signal (via a multi-producer-single-consumer channel) to stop rendering,
         // which is why we check our Receiver every iteration. If there is a message, we stop rendering
         // and exit the thread.
         match stop_signal_receiver.try_recv() {

@@ -57,7 +57,7 @@ pub struct AnimatedSpinner {
     /// Time at which this spinner was started.
     init_time: Instant,
 
-    /// A list of phases of this spiner.
+    /// A list of phases of this spinner.
     phases: &'static [char],
 
     /// How long each phase of the spinner should be held

@@ -27,10 +27,12 @@ pub struct CancellableTaskV2<C: Send> {
     #[allow(dead_code)]
     id: String,
 
+    #[allow(clippy::type_complexity)]
     task_closure: Box<dyn FnOnce(&AtomicBool, &Sender<C>) + Send>,
 }
 
 impl<C: Send> CancellableTaskV2<C> {
+    #[allow(clippy::type_complexity)]
     pub fn new(
         task_id: String,
         boxed_closure: Box<dyn FnOnce(&AtomicBool, &Sender<C>) + Send>,
@@ -77,7 +79,7 @@ pub struct CancellableThreadPoolV2 {
     /// (how and when depends entirely on their implementation).
     task_cancellation_flag: Arc<AtomicBool>,
 
-    /// A multi-producer single-consumer Sender. Ditributed across workers who can send
+    /// A multi-producer single-consumer Sender. Distributed across workers who can send
     /// messages back to the user-provided channel's `Receiver`. The data sent can be anything
     /// that can be safely sent across threads (`Send`).
     worker_message_sender: Sender<FileJobMessage>,
@@ -153,7 +155,7 @@ impl CancellableThreadPoolV2 {
 
     /// Enter the given cancellable task into the threadpool task queue.
     ///
-    /// The cancellable task's message sender type must match the threadpool's messager sender.
+    /// The cancellable task's message sender type must match the thread-pool's message sender.
     pub fn queue_task(
         &mut self,
         cancellable_task: CancellableTaskV2<FileJobMessage>,
@@ -223,7 +225,7 @@ impl CancellableThreadPoolV2 {
             .expect("pending_tasks job queue lock has been poisoned!")
     }
 
-    /// Lock and return the lits of currently-running tasks.
+    /// Lock and return the list of currently-running task handles.
     fn get_locked_running_tasks(&self) -> MutexGuard<Vec<JoinHandle<()>>> {
         self.running_tasks
             .lock()

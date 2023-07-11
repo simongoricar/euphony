@@ -222,7 +222,7 @@ macro_rules! terminal_impl_direct_from {
 
 
 /// This macro implements [enum dispatching](https://docs.rs/enum_dispatch/latest/enum_dispatch/) behavior.
-/// For more details, see the module documtation.
+/// For more details, see the module documentation.
 ///
 /// This macro implements the `TerminalBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_terminal {
@@ -252,7 +252,7 @@ macro_rules! enumdispatch_impl_terminal {
 }
 
 /// This macro implements [enum dispatching](https://docs.rs/enum_dispatch/latest/enum_dispatch/) behavior.
-/// For more details, see the module documtation.
+/// For more details, see the module documentation.
 ///
 /// This macro implements the `LogBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_log {
@@ -278,7 +278,7 @@ macro_rules! enumdispatch_impl_log {
 }
 
 /// This macro implements [enum dispatching](https://docs.rs/enum_dispatch/latest/enum_dispatch/) behavior.
-/// For more details, see the module documtation.
+/// For more details, see the module documentation.
 ///
 /// This macro implements the `LogToFileBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_log_to_file {
@@ -304,7 +304,7 @@ macro_rules! enumdispatch_impl_log_to_file {
 }
 
 /// This macro implements [enum dispatching](https://docs.rs/enum_dispatch/latest/enum_dispatch/) behavior.
-/// For more details, see the module documtation.
+/// For more details, see the module documentation.
 ///
 /// This macro implements the `ValidationBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_validation {
@@ -324,7 +324,7 @@ macro_rules! enumdispatch_impl_validation {
 }
 
 /// This macro implements [enum dispatching](https://docs.rs/enum_dispatch/latest/enum_dispatch/) behavior.
-/// For more details, see the module documtation.
+/// For more details, see the module documentation.
 ///
 /// This macro implements the `TranscodeBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_transcode {
@@ -464,7 +464,7 @@ macro_rules! enumdispatch_impl_transcode {
 }
 
 /// This macro implements [enum dispatching](https://docs.rs/enum_dispatch/latest/enum_dispatch/) behavior.
-/// For more details, see the module documtation.
+/// For more details, see the module documentation.
 ///
 /// This macro implements the `UserControllableBackend` trait on the given enum's variants.
 macro_rules! enumdispatch_impl_user_controllable {

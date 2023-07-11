@@ -424,7 +424,7 @@ fn validate_entire_collection(
     //  3. Check for unexpected files in each album directory.
     //  4. Check for any album collisions between libraries.
 
-    // This is a general chck that uses `validation.extensions_considered_audio_files` to check
+    // This is a general check that uses `validation.extensions_considered_audio_files` to check
     // whether the file in question is considered an audio file
     // (but this says nothing about the validity of the extension for a given library).
     let is_audio_file = |file_path: &PathBuf| {

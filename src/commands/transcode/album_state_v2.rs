@@ -278,7 +278,7 @@ impl SourceAlbumState {
     /// Save the source album state into the given directory as JSON.
     /// If the file exists without `allow_overwrite` being `true`, this method will return an `Err`.
     ///
-    /// *This method is preffered over `SourceAlbumState::save_to_file` since it automatically uses
+    /// *This method is preferred over `SourceAlbumState::save_to_file` since it automatically uses
     /// the correct file name (see `SOURCE_ALBUM_STATE_FILE_NAME`).*
     pub fn save_to_directory<P: AsRef<Path>>(
         &self,
@@ -806,7 +806,7 @@ pub struct AlbumFileChangesV2<'view> {
     /// Paths are absolute and point to the source album directory.
     pub missing_in_transcoded: SortedFileList<PathBuf>,
 
-    /// Files that don't belong to any transcode - essentally extra files we should probably remove.
+    /// Files that don't belong to any transcode - essentially extra files we should probably remove.
     /// This is unlikely to happen unless the user has manually modified the transcoded album directory.
     ///
     /// Paths are absolute and point to the *transcoded album directory*.

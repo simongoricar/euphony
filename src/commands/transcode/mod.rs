@@ -43,8 +43,6 @@ use crate::globals::is_verbose_enabled;
 pub mod album_configuration;
 pub mod album_state_v2;
 pub mod jobs;
-pub mod metadata;
-pub mod packets;
 pub mod views;
 
 type SortedLibrariesWithChanges<'a> = Vec<(
@@ -463,7 +461,7 @@ fn queue_all_libraries_with_changes<'config: 'scope, 'scope>(
     terminal: &mut TranscodeTerminal<'config, 'scope>,
     libraries_with_changes: SortedLibrariesWithChanges<'config>,
 ) -> Result<QueuedChangedLibraries<'config>> {
-    // Queue all libraries and all the changed albums insite it.
+    // Queue all libraries and all the changed albums inside it.
     let mut queued_work_per_library: QueuedChangedLibraries<'config> =
         Vec::with_capacity(libraries_with_changes.len());
 

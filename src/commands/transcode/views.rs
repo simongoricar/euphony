@@ -404,7 +404,7 @@ impl<'config> ArtistView<'config> {
     /// Perform a zero-depth directory scan of the artist directory.
     fn scan_artist_directory(&self) -> Result<DirectoryScan> {
         DirectoryScan::from_directory_path(
-            &self.artist_directory_in_source_library(),
+            self.artist_directory_in_source_library(),
             0,
         )
         .wrap_err_with(|| {
@@ -464,8 +464,7 @@ impl<'config> AlbumView<'config> {
             ));
         }
 
-        let album_configuration =
-            AlbumConfiguration::load(album_directory.clone())?;
+        let album_configuration = AlbumConfiguration::load(album_directory)?;
 
         Ok(Arc::new_cyclic(|weak| {
             RwLock::new(Self {

@@ -1,4 +1,4 @@
-/// A small progress bar abstration that contains just two fields: `current` out of `total` progress.
+/// A small progress bar abstraction that contains just two fields: `current` out of `total` progress.
 #[derive(Default)]
 pub struct ProgressState {
     pub current: usize,
