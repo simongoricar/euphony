@@ -30,12 +30,15 @@ pub type ArcRwLock<T> = Arc<RwLock<T>>;
 pub type WeakRwLock<T> = Weak<RwLock<T>>;
 
 pub type SharedLibraryView<'a> = ArcRwLock<LibraryView<'a>>;
+#[allow(dead_code)]
 pub type WeakLibraryView<'a> = WeakRwLock<LibraryView<'a>>;
 
 pub type SharedArtistView<'a> = ArcRwLock<ArtistView<'a>>;
+#[allow(dead_code)]
 pub type WeakArtistView<'a> = WeakRwLock<ArtistView<'a>>;
 
 pub type SharedAlbumView<'a> = ArcRwLock<AlbumView<'a>>;
+#[allow(dead_code)]
 pub type WeakAlbumView<'a> = WeakRwLock<AlbumView<'a>>;
 
 
@@ -89,7 +92,8 @@ impl<'config> LibraryView<'config> {
     ///
     /// NOTE: In euphony, *"artist name" is understood as the artist's directory name*. This is because
     /// euphony does not scan the artist's albums and extract the common album artist tags from the file tags,
-    /// but instead relies on the directory tree to tell artist names and album titles apart.  
+    /// but instead relies on the directory tree to tell artist names and album titles apart.
+    #[allow(dead_code)]
     pub fn artist(
         &self,
         artist_name: String,
@@ -195,6 +199,7 @@ impl<'config> LibraryView<'config> {
 
     /// Scan the root directory of the library and return a list of files at the root
     /// that should be validated against the configured validation rules.
+    #[allow(dead_code)]
     pub fn library_root_validation_files(&self) -> Result<Vec<PathBuf>> {
         let library_directory_scan = self.scan_root_directory()?;
 
@@ -292,6 +297,7 @@ impl<'config> ArtistView<'config> {
     /// NOTE: In euphony, *"album title" is understood as the album's directory name*. This is because
     /// euphony does not scan the album contents and extract the common album title from the tags in the file,
     /// but instead relies on the directory tree to tell artist names and album titles apart.  
+    #[allow(dead_code)]
     pub fn album(
         &self,
         album_title: String,
@@ -380,6 +386,7 @@ impl<'config> ArtistView<'config> {
 
     /// Scan the artist source directory and return a list of files
     /// that should be validated against the configured validation rules.
+    #[allow(dead_code)]
     pub fn artist_directory_validation_files(&self) -> Result<Vec<PathBuf>> {
         let artist_directory_scan = self.scan_artist_directory()?;
 
@@ -408,12 +415,15 @@ impl<'config> ArtistView<'config> {
         })
     }
 
+    #[inline]
     pub fn read_lock_library(
         &self,
     ) -> RwLockReadGuard<'_, LibraryView<'config>> {
         self.library.read()
     }
 
+    #[allow(dead_code)]
+    #[inline]
     pub fn write_lock_library(
         &self,
     ) -> RwLockWriteGuard<'_, LibraryView<'config>> {
@@ -467,10 +477,13 @@ impl<'config> AlbumView<'config> {
         }))
     }
 
+    #[inline]
     pub fn read_lock_artist(&self) -> RwLockReadGuard<'_, ArtistView<'config>> {
         self.artist.read()
     }
 
+    #[allow(dead_code)]
+    #[inline]
     pub fn write_lock_artist(
         &self,
     ) -> RwLockWriteGuard<'_, ArtistView<'config>> {
@@ -507,6 +520,7 @@ impl<'config> AlbumView<'config> {
 
     /// Scan the album directory and return a list of files
     /// that should be validated against the configured validation rules.
+    #[allow(dead_code)]
     pub fn album_validation_files(&self) -> Result<Vec<PathBuf>> {
         let album_scan = self.scan_album_directory()?;
 
@@ -521,7 +535,7 @@ impl<'config> AlbumView<'config> {
     /// for the particular album.
     fn scan_album_directory(&self) -> Result<DirectoryScan> {
         DirectoryScan::from_directory_path(
-            &self.album_directory_in_source_library(),
+            self.album_directory_in_source_library(),
             self.configuration.scan.depth,
         )
         .wrap_err_with(|| {
@@ -603,8 +617,6 @@ impl<'config> AlbumView<'config> {
     }
 }
 
-// TODO: Remove all the dead code at the very end.
-
 /// Represents a double `HashMap`: one for audio files, the other for data files.
 /// TODO Move to some utility module.
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
@@ -646,10 +658,14 @@ impl<K: Eq + Hash, V> SortedFileMap<K, V> {
     }
 
     /// Returns `true` if both `audio` and `data` contain no data.
+    #[allow(dead_code)]
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.audio.is_empty() && self.data.is_empty()
     }
 
+    #[allow(dead_code)]
+    #[inline]
     pub fn destructure(self) -> (HashMap<K, V>, HashMap<K, V>) {
         (self.audio, self.data)
     }
@@ -742,19 +758,6 @@ impl<'config> AlbumSourceFileList<'config> {
         })
     }
 
-    /// Returns a list of references to both audio and data file paths in this scan.
-    pub fn all_file_paths(&self) -> Vec<&PathBuf> {
-        self.audio_files
-            .iter()
-            .chain(self.data_files.iter())
-            .collect()
-    }
-
-    /// Returns the total file count.
-    pub fn file_count(&self) -> usize {
-        self.audio_files.len() + self.data_files.len()
-    }
-
     /// Generate a HashMap that maps from relative paths in the source album directory
     /// to the relative paths of each of those files in the transcoded album directory.
     ///
@@ -765,7 +768,7 @@ impl<'config> AlbumSourceFileList<'config> {
     pub fn map_source_file_paths_to_transcoded_file_paths_relative(
         &self,
     ) -> SortedFileMap<PathBuf, PathBuf> {
-        let album = self.album_ref();
+        let album = self.album_read();
         let transcoded_audio_file_extension = &album
             .euphony_configuration()
             .tools
@@ -859,11 +862,14 @@ impl<'config> AlbumSourceFileList<'config> {
      * Private methods
      */
 
-    fn album_ref(&self) -> RwLockReadGuard<'_, AlbumView<'config>> {
+    #[inline]
+    fn album_read(&self) -> RwLockReadGuard<'_, AlbumView<'config>> {
         self.album.read()
     }
 
-    fn album_mut_ref(&self) -> RwLockWriteGuard<'_, AlbumView<'config>> {
+    #[allow(dead_code)]
+    #[inline]
+    fn album_write(&self) -> RwLockWriteGuard<'_, AlbumView<'config>> {
         self.album.write()
     }
 }

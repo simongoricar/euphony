@@ -94,6 +94,7 @@ impl DirectoryScan {
 
     /// Retrieve the list of scanned files, additionally filtered to specific extensions.
     /// The extension list should contain lowercase names without dots (e.g. "txt").
+    #[allow(dead_code)]
     pub fn files_with_extensions(
         &self,
         extensions: &[String],
@@ -125,13 +126,4 @@ pub fn get_path_extension_or_empty<P: AsRef<Path>>(path: P) -> Result<String> {
         .to_str()
         .ok_or_else(|| miette!("Could not convert extension to UTF-8."))?
         .to_ascii_lowercase())
-}
-
-/// Get a file's extension, if any.
-#[inline]
-pub fn get_path_file_extension<P: AsRef<Path>>(path: P) -> Result<String> {
-    match path.as_ref().extension() {
-        Some(extension) => Ok(extension.to_string_lossy().to_string()),
-        None => Err(miette!("File does not have an extension.")),
-    }
 }

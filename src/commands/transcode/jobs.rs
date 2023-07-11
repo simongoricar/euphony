@@ -1,10 +1,6 @@
-// TODO Construct a job system that implements the CancellableTask
-//  then find a way to get these jobs from AlbumFileChangesV2.
-
 use std::cmp::min;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-// TODO Use oneshot library
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
@@ -28,6 +24,7 @@ const FFMPEG_TASK_CANCELLATION_CHECK_INTERVAL: Duration =
     Duration::from_millis(50);
 
 pub struct CancellableTaskV2<C: Send> {
+    #[allow(dead_code)]
     id: String,
 
     task_closure: Box<dyn FnOnce(&AtomicBool, &Sender<C>) + Send>,
@@ -188,6 +185,7 @@ impl CancellableThreadPoolV2 {
 
     /// Get the cancellation flag of this thread pool. This is useful for
     /// triggering cancellation externally (by just setting this `AtomicBool` to `true`).
+    #[allow(dead_code)]
     pub fn cancellation_flag(&self) -> Arc<AtomicBool> {
         self.task_cancellation_flag.clone()
     }
@@ -370,12 +368,6 @@ impl CancellableThreadPoolV2 {
 /*
  * Specific job implementations
  */
-#[derive(Clone, Copy)]
-pub enum FileJobType {
-    TranscodeAudio,
-    Copy,
-    DeleteProcessed,
-}
 
 /// Task state for completed `FileJob`s.
 pub enum FileJobResult {
@@ -569,9 +561,7 @@ impl FileJob for TranscodeAudioFileJob {
         message_sender: &Sender<FileJobMessage>,
     ) -> Result<()> {
         message_sender
-            .send(FileJobMessage::Starting {
-                queue_item: self.queue_item,
-            })
+            .send(FileJobMessage::new_starting(self.queue_item))
             .into_diagnostic()
             .wrap_err_with(|| {
                 miette!("Could not send FileJobMessage::Starting.")
@@ -587,13 +577,10 @@ impl FileJob for TranscodeAudioFileJob {
             let verbose_info = is_verbose_enabled()
                 .then(|| format!("fs::create_dir_all error: {error}"));
 
-            message_sender.send(FileJobMessage::Finished {
-                queue_item: self.queue_item,
-                processing_result: FileJobResult::Errored {
-                    error: "Could not create target file's missing parent directory.".to_string(),
-                    verbose_info
-                }
-            })
+            message_sender.send(FileJobMessage::new_finished(self.queue_item, FileJobResult::Errored {
+                error: "Could not create target file's missing parent directory.".to_string(),
+                verbose_info
+            }))
                 .into_diagnostic()
                 .wrap_err_with(|| miette!("Could not send FileJobMessage::Finished"))?;
 
@@ -643,9 +630,7 @@ impl FileJob for TranscodeAudioFileJob {
         if final_cancellation_flag {
             // Process was killed because of cancellation.
             message_sender
-                .send(FileJobMessage::Cancelled {
-                    queue_item: self.queue_item,
-                })
+                .send(FileJobMessage::new_cancelled(self.queue_item))
                 .into_diagnostic()
                 .wrap_err_with(|| {
                     miette!("Could not send FileJobMessage::Cancelled.")
@@ -709,10 +694,10 @@ impl FileJob for TranscodeAudioFileJob {
             };
 
             message_sender
-                .send(FileJobMessage::Finished {
-                    queue_item: self.queue_item,
+                .send(FileJobMessage::new_finished(
+                    self.queue_item,
                     processing_result,
-                })
+                ))
                 .into_diagnostic()
                 .wrap_err_with(|| {
                     miette!("Could not send FileJobMessage::Finished.")
@@ -789,9 +774,7 @@ impl FileJob for CopyFileJob {
         message_sender: &Sender<FileJobMessage>,
     ) -> Result<()> {
         message_sender
-            .send(FileJobMessage::Starting {
-                queue_item: self.queue_item,
-            })
+            .send(FileJobMessage::new_starting(self.queue_item))
             .into_diagnostic()
             .wrap_err_with(|| {
                 miette!("Could not send FileJobMessage::Starting.")
@@ -807,13 +790,10 @@ impl FileJob for CopyFileJob {
             let verbose_info = is_verbose_enabled()
                 .then(|| format!("fs::create_dir_all error: {error}"));
 
-            message_sender.send(FileJobMessage::Finished {
-                queue_item: self.queue_item,
-                processing_result: FileJobResult::Errored {
-                    error: "Could not create target file's missing parent directory.".to_string(),
-                    verbose_info
-                }
-            })
+            message_sender.send(FileJobMessage::new_finished(self.queue_item, FileJobResult::Errored {
+                error: "Could not create target file's missing parent directory.".to_string(),
+                verbose_info
+            }))
                 .into_diagnostic()
                 .wrap_err_with(|| miette!("Could not send FileJobMessage::Finished"))?;
 
@@ -855,10 +835,10 @@ impl FileJob for CopyFileJob {
         };
 
         message_sender
-            .send(FileJobMessage::Finished {
-                queue_item: self.queue_item,
+            .send(FileJobMessage::new_finished(
+                self.queue_item,
                 processing_result,
-            })
+            ))
             .into_diagnostic()
             .wrap_err_with(|| {
                 miette!("Could not send FileJobMessage::Finished.")
@@ -918,9 +898,7 @@ impl FileJob for DeleteProcessedFileJob {
         message_sender: &Sender<FileJobMessage>,
     ) -> Result<()> {
         message_sender
-            .send(FileJobMessage::Starting {
-                queue_item: self.queue_item,
-            })
+            .send(FileJobMessage::new_starting(self.queue_item))
             .into_diagnostic()
             .wrap_err_with(|| {
                 miette!("Could not send FileJobMessage::Starting.")
@@ -951,10 +929,10 @@ impl FileJob for DeleteProcessedFileJob {
         };
 
         message_sender
-            .send(FileJobMessage::Finished {
-                queue_item: self.queue_item,
+            .send(FileJobMessage::new_finished(
+                self.queue_item,
                 processing_result,
-            })
+            ))
             .into_diagnostic()
             .wrap_err_with(|| {
                 miette!("Could not send FileJobMessage::Finished.")

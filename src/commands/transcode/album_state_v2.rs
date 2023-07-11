@@ -498,27 +498,8 @@ impl TranscodedAlbumState {
             )?;
 
 
-        let transcoded_to_source_map_pathbuf = {
-            // We must make sure that only the transcoded files that exist are actually generated here.
-            // let filtered_tracked_files = AlbumSourceFileList {
-            //     album: tracked_album_files.album.clone(),
-            //     audio_files: transcoded_file_state
-            //         .audio_files
-            //         .keys()
-            //         .map(PathBuf::from)
-            //         .collect(),
-            //     data_files: transcoded_file_state
-            //         .data_files
-            //         .keys()
-            //         .map(PathBuf::from)
-            //         .collect(),
-            // };
-
-            // filtered_tracked_files
-            //     .map_transcoded_paths_to_source_paths_relative()
-
-            tracked_album_files.map_transcoded_paths_to_source_paths_relative()
-        };
+        let transcoded_to_source_map_pathbuf =
+            tracked_album_files.map_transcoded_paths_to_source_paths_relative();
 
         let transcoded_to_source_audio_map_string: HashMap<String, String> =
             transcoded_to_source_map_pathbuf
@@ -560,6 +541,7 @@ impl TranscodedAlbumState {
     ///
     /// While the information is there, this method does not indicate whether the provided path
     /// is an audio or a data file.
+    #[allow(dead_code)]
     pub fn get_original_file_path<P: AsRef<Path>>(
         &self,
         transcoded_file_path: P,
@@ -908,10 +890,6 @@ impl<'view> AlbumFileChangesV2<'view> {
             .collect::<HashSet<String>>();
 
 
-        let saved_transcoded_map_to_original_files = saved_transcoded_state
-            .as_ref()
-            .map(|state| state.transcoded_to_original_file_paths.clone())
-            .unwrap_or_default();
 
         let saved_transcoded_file_state = saved_transcoded_state
             .as_ref()
@@ -1242,279 +1220,6 @@ impl<'view> AlbumFileChangesV2<'view> {
             missing_in_transcoded,
             excess_in_transcoded,
         })
-
-        /*
-        // TODO rewrite diffing system
-
-        // DEPRECATED rewriting above, deeprecated below
-
-        // FIXME: Doesn't transcode files that had previously been transcoded,
-        //        but have since been deleted from the target directory.
-
-        let saved_source_files = saved_source_state
-            .map(|inner| inner.tracked_files)
-            .unwrap_or_default();
-        let fresh_source_files = fresh_source_state;
-
-        // See `TranscodedAlbumState::original_file_paths` - this is a saved map from the
-        // last transcode - keys are transcoded file paths and values are source file paths
-        // (relative to the album directory).
-        let saved_transcoded_map = saved_transcoded_state
-            .map(|inner| inner.transcoded_to_original_file_paths)
-            .unwrap_or_default();
-        let fresh_transcoded_files = fresh_transcoded_state;
-
-        let saved_source_audio_files_set: HashSet<String> =
-            saved_source_files.audio_files.keys().cloned().collect();
-        let saved_source_data_files_set: HashSet<String> =
-            saved_source_files.data_files.keys().cloned().collect();
-
-        let fresh_source_audio_files_set: HashSet<String> = fresh_source_files
-            .tracked_files
-            .audio_files
-            .keys()
-            .cloned()
-            .collect();
-        let fresh_source_data_files_set: HashSet<String> = fresh_source_files
-            .tracked_files
-            .data_files
-            .keys()
-            .cloned()
-            .collect();
-
-        let fresh_transcoded_audio_files_set: HashSet<String> =
-            fresh_transcoded_files
-                .transcoded_files
-                .audio_files
-                .keys()
-                .cloned()
-                .collect();
-        let fresh_transcoded_data_files_set: HashSet<String> =
-            fresh_transcoded_files
-                .transcoded_files
-                .data_files
-                .keys()
-                .cloned()
-                .collect();
-        let fresh_transcoded_full_files_set: HashSet<String> =
-            HashSet::from_iter(
-                fresh_transcoded_data_files_set
-                    .union(&fresh_transcoded_data_files_set)
-                    .cloned(),
-            );
-
-
-        // Newly added files in the source directory since last transcode.
-        let new_audio_files: Vec<String> = fresh_source_audio_files_set
-            .sub(&saved_source_audio_files_set)
-            .iter()
-            .map(|item| item.to_string())
-            .collect();
-        let new_data_files: Vec<String> = fresh_source_data_files_set
-            .sub(&saved_source_data_files_set)
-            .iter()
-            .map(|item| item.to_string())
-            .collect();
-
-
-        // Changed files in the source directory since last transcode.
-        // This is done by calling a filtering method that only returns file paths of files whose
-        // metadata (`FileTrackedMetadata`) has changed.
-        let changed_audio_files = Self::filter_only_changed_files(
-            saved_source_audio_files_set
-                .intersection(&fresh_source_audio_files_set),
-            &saved_source_files.audio_files,
-            &fresh_source_files.tracked_files.audio_files,
-        )?;
-        let changed_data_files = Self::filter_only_changed_files(
-            saved_source_data_files_set
-                .intersection(&fresh_source_data_files_set),
-            &saved_source_files.data_files,
-            &fresh_source_files.tracked_files.data_files,
-        )?;
-
-
-        // Removed files in the source directory since last transcode.
-        let removed_audio_files: Vec<String> = saved_source_audio_files_set
-            .sub(&fresh_source_audio_files_set)
-            .iter()
-            .map(|item| item.to_string())
-            .collect();
-        let removed_data_files: Vec<String> = saved_source_data_files_set
-            .sub(&fresh_source_data_files_set)
-            .iter()
-            .map(|item| item.to_string())
-            .collect();
-
-
-        // Files that aren't new, but are still missing in the transcoded directory (likely by user intervention).
-        let source_to_transcode_map = album_file_list
-            .map_source_file_paths_to_transcoded_file_paths_relative();
-        let transcode_to_source_map = source_to_transcode_map.to_inverted_map();
-
-        let expected_transcoded_audio_file_set: HashSet<String> =
-            source_to_transcode_map
-                .audio
-                .values()
-                .map(|item| item.to_string_lossy().to_string())
-                .collect();
-        let expected_transcoded_data_file_set: HashSet<String> =
-            source_to_transcode_map
-                .data
-                .values()
-                .map(|item| item.to_string_lossy().to_string())
-                .collect();
-
-        let missing_audio_files: Vec<String> = if saved_transcoded_map.is_empty()
-        {
-            // No transcode has been done previously, meaning all files are missing.
-            expected_transcoded_audio_file_set
-                .union(&expected_transcoded_data_file_set)
-                .cloned()
-                .collect()
-        } else {
-            expected_transcoded_audio_file_set
-                .sub(&fresh_transcoded_audio_files_set)
-                .iter()
-                // Map each missing transcoded file to its original.
-                .map(|item| {
-                    transcode_to_source_map.audio.get(&PathBuf::from(item))
-                        .expect("audio file path was not present in the inverted map")
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .collect()
-        };
-
-        let missing_data_files: Vec<String> = if saved_transcoded_map.is_empty()
-        {
-            // No transcode has been done previously, meaning no files can be missing.
-            Vec::new()
-        } else {
-            expected_transcoded_data_file_set
-                .sub(&fresh_transcoded_data_files_set)
-                .iter()
-                // Map each missing transcoded file to its original.
-                .map(|item| {
-                    transcode_to_source_map.data.get(&PathBuf::from(item))
-                        .expect("audio file path was not present in the inverted map")
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .collect()
-        };
-
-
-        // Files in the transcoded directory that don't belong to any previous transcode and will not be
-        // overwritten by this transcode - essentially extra files we might like to delete.
-        let raw_excess_files_in_transcoded: Vec<String> = {
-            let expected_transcoded_full_file_set: HashSet<String> =
-                source_to_transcode_map
-                    .into_flattened_map()
-                    .values()
-                    .map(|item| item.to_string_lossy().to_string())
-                    .collect();
-
-            fresh_transcoded_full_files_set
-                .sub(&expected_transcoded_full_file_set)
-                .iter()
-                .map(|item| item.to_string())
-                .collect()
-        };
-
-        // Now we sort them into excess audio, data and unknown files.
-        let mut excess_audio_files_in_transcoded: Vec<String> = Vec::new();
-        let mut excess_data_files_in_transcoded: Vec<String> = Vec::new();
-        let mut excess_unknown_files_in_transcoded: Vec<String> = Vec::new();
-
-        for excess_file in raw_excess_files_in_transcoded {
-            if transcoding_config
-                .is_path_audio_file_by_extension(&excess_file)?
-            {
-                excess_audio_files_in_transcoded.push(excess_file);
-            } else if transcoding_config
-                .is_path_data_file_by_extension(&excess_file)?
-            {
-                excess_data_files_in_transcoded.push(excess_file);
-            } else {
-                // This can happen if the user copies some completely other file into the
-                // transcoded album directory.
-                excess_unknown_files_in_transcoded.push(excess_file);
-            }
-        }
-
-
-        // Construct final sorted file lists by converting all the `String`s to `PathBuf`s.
-        let added_in_source_since_last_transcode = SortedFileList::new(
-            Self::convert_relative_paths_to_absolute(
-                &source_album_directory,
-                new_audio_files,
-            ),
-            Self::convert_relative_paths_to_absolute(
-                &source_album_directory,
-                new_data_files,
-            ),
-        );
-
-        let changed_in_source_since_last_transcode = SortedFileList::new(
-            Self::convert_relative_paths_to_absolute(
-                &source_album_directory,
-                changed_audio_files,
-            ),
-            Self::convert_relative_paths_to_absolute(
-                &source_album_directory,
-                changed_data_files,
-            ),
-        );
-
-        let removed_in_source_since_last_transcode = SortedFileList::new(
-            Self::convert_relative_paths_to_absolute(
-                &source_album_directory,
-                removed_audio_files,
-            ),
-            Self::convert_relative_paths_to_absolute(
-                &source_album_directory,
-                removed_data_files,
-            ),
-        );
-
-        let missing_in_transcoded = SortedFileList::new(
-            Self::convert_relative_paths_to_absolute(
-                &source_album_directory,
-                missing_audio_files,
-            ),
-            Self::convert_relative_paths_to_absolute(
-                &source_album_directory,
-                missing_data_files,
-            ),
-        );
-
-        let excess_in_transcoded = ExtendedSortedFileList::new(
-            Self::convert_relative_paths_to_absolute(
-                &transcoded_album_directory,
-                excess_audio_files_in_transcoded,
-            ),
-            Self::convert_relative_paths_to_absolute(
-                &transcoded_album_directory,
-                excess_data_files_in_transcoded,
-            ),
-            Self::convert_relative_paths_to_absolute(
-                &transcoded_album_directory,
-                excess_unknown_files_in_transcoded,
-            ),
-        );
-
-        // TODO Thoroughly test the new diff algorithm.
-
-        Ok(Self {
-            album_view: album,
-            tracked_files: album_file_list,
-            added_in_source_since_last_transcode,
-            changed_in_source_since_last_transcode,
-            removed_in_source_since_last_transcode,
-            missing_in_transcoded,
-            excess_in_transcoded,
-        })*/
     }
 
     /// Returns `true` if any changes were detected since last transcode
@@ -1776,61 +1481,6 @@ impl<'view> AlbumFileChangesV2<'view> {
             .collect()
     }
 
-    #[deprecated]
-    /// Utility function to filter an iterator of file paths.
-    ///
-    /// - `map_key_iterator` should iterate over file paths you want to filter for changes,
-    /// - `first_metadata_map` and `second_metadata_map` should map from `map_key_iterator`
-    ///   items (**all of them**) to a `FileTrackedMetadata` each,
-    ///
-    /// If either of the `HashMap`s do not contain any single key that the iterator provides,
-    /// this function will return en `Err`.
-    ///
-    /// Process:
-    /// - We iterate over each provided file path from the iterator.
-    /// - Each file's associated `FileTrackedMetadata` from both maps is retrieved.
-    /// - The two metadata structs are compared: if they do not match (i.e. file has changed),
-    ///   the file name is retained in the returned vector of Strings. If the files are the same,
-    ///   as far as the `FileTrackedMetadata` struct is concerned, it is not in the returned vector.
-    fn filter_only_changed_files<'b, I: Iterator<Item = &'b String>>(
-        map_key_iterator: I,
-        first_metadata_map: &HashMap<String, FileTrackedMetadata>,
-        second_metadata_map: &HashMap<String, FileTrackedMetadata>,
-    ) -> Result<Vec<String>> {
-        map_key_iterator
-            .filter_map(|item| {
-                let first_metadata = match first_metadata_map.get(item) {
-                    None => {
-                        return Some(Err(miette!(
-                            "BUG: Missing saved source audio file entry."
-                        )));
-                    }
-                    Some(meta) => meta,
-                };
-
-                let second_metadata = match second_metadata_map.get(item) {
-                    None => {
-                        return Some(Err(miette!(
-                            "BUG: Mising fresh source audio file entry."
-                        )));
-                    }
-                    Some(meta) => meta,
-                };
-
-                // If the metadata does not match, this means the file has changed, so we include
-                // it in the final list of paths.
-                if !first_metadata.matches(&second_metadata) {
-                    Some(Ok(item.to_string()))
-                } else {
-                    None
-                }
-            })
-            .collect::<Result<Vec<String>>>()
-            .wrap_err_with(|| {
-                miette!("Could not compute changed files: invalid metadata map.")
-            })
-    }
-
     /// Given an iterator over relative paths (can be `String`, `str`),
     /// construct a vector that contains absolute paths.
     fn convert_relative_paths_to_absolute<
@@ -1886,6 +1536,7 @@ impl<'view> AlbumFileChangesV2<'view> {
         self.album_view.read()
     }
 
+    #[allow(dead_code)]
     pub fn write_lock_library(&self) -> RwLockWriteGuard<'_, AlbumView<'view>> {
         self.album_view.write()
     }

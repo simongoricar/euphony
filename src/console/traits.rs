@@ -13,9 +13,6 @@ use crate::console::backends::shared::queue_v2::{
     QueueItemID,
 };
 
-// TODO Continue this abstraction
-pub type BoxedThreadClosure = Box<dyn (FnOnce() -> Result<()>) + Send + 'static>;
-
 /// The way multiple UI backends are done in euphony is via a set of terminal backend traits.
 /// **This is the base. All terminal backends must implement this.**
 ///
