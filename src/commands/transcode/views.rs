@@ -576,6 +576,9 @@ impl<'config> AlbumView<'config> {
             TranscodedAlbumState::load_from_directory(
                 &transcoded_album_directory_path,
             )?;
+
+        // FIXME This is returning a list of files that should exist after transcoding instead of the current filesystem state.
+        //       Document this and add an obvious way to generate both, then use the current filesystem state here.
         let fresh_transcoded_album_state =
             TranscodedAlbumState::generate_from_tracked_files(
                 &tracked_source_files,
@@ -591,7 +594,7 @@ impl<'config> AlbumView<'config> {
                 saved_transcoded_album_state,
                 fresh_transcoded_album_state,
                 self.weak_self.upgrade().ok_or_else(|| {
-                    miette!("Could not upgarde AlbumView's weak_self!")
+                    miette!("Could not upgrade AlbumView's weak_self!")
                 })?,
                 tracked_source_files,
             )?;
@@ -645,6 +648,10 @@ impl<K: Eq + Hash, V> SortedFileMap<K, V> {
     /// Returns `true` if both `audio` and `data` contain no data.
     pub fn is_empty(&self) -> bool {
         self.audio.is_empty() && self.data.is_empty()
+    }
+
+    pub fn destructure(self) -> (HashMap<K, V>, HashMap<K, V>) {
+        (self.audio, self.data)
     }
 }
 

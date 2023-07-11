@@ -337,15 +337,6 @@ impl CancellableThreadPoolV2 {
                             .collect()
                     };
 
-                    if is_verbose_enabled() {
-                        worker_message_sender
-                            .send(FileJobMessage::new_log(format!(
-                                "ThreadPool: spawning {} tasks",
-                                tasks_to_run.len()
-                            )))
-                            .into_diagnostic()?;
-                    }
-
                     // Create new threads for each new task.
                     for new_task in tasks_to_run {
                         let cancellation_flag_copy = cancellation_flag.clone();
