@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
 use miette::{miette, Result};
-use tui::style::{Modifier, Style};
-use tui::text::{Span, Text};
-use tui::widgets::ListItem;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Span, Text};
+use ratatui::widgets::ListItem;
 
 use crate::console::backends::shared::queue_v2::{
     QueueItem,

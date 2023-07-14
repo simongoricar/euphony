@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tui::text::{Span, Spans, Text};
+use ratatui::text::{Line, Span, Text};
 
 use crate::console::backends::shared::queue_v2::{
     AlbumItem,
@@ -102,7 +102,7 @@ impl<'a, 'b> RenderableQueueItem<Text<'b>> for FancyAlbumQueueItem<'a> {
         };
 
         Text {
-            lines: vec![Spans::from(rendered_spans)],
+            lines: vec![Line::from(rendered_spans)],
         }
     }
 }
@@ -194,7 +194,7 @@ impl<'a, 'b> RenderableQueueItem<Text<'b>> for FancyFileQueueItem<'a> {
         ];
 
         Text {
-            lines: vec![Spans::from(rendered_spans)],
+            lines: vec![Line::from(rendered_spans)],
         }
     }
 }

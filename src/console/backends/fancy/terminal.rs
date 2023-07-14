@@ -15,13 +15,13 @@ use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::ExecutableCommand;
 use miette::{miette, IntoDiagnostic, Result, WrapErr};
+use ratatui::backend::{Backend, CrosstermBackend};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Span;
+use ratatui::widgets::{Block, Borders, Gauge, List, ListItem};
+use ratatui::{Frame, Terminal};
 use strip_ansi_escapes::Writer;
-use tui::backend::{Backend, CrosstermBackend};
-use tui::layout::{Alignment, Constraint, Direction, Layout};
-use tui::style::{Color, Modifier, Style};
-use tui::text::{Span, Spans};
-use tui::widgets::{Block, Borders, Gauge, List, ListItem};
-use tui::{Frame, Terminal};
 
 use crate::console::backends::fancy::queue::{
     FancyAlbumQueueItem,
@@ -359,7 +359,7 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
                 finished_ok_item_count + finished_not_ok_item_count;
 
 
-            let file_queue_title = Spans(vec![
+            let file_queue_title = vec![
                 Span::styled(
                     " Files ",
                     Style::default()
@@ -374,7 +374,7 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
                     Style::default()
                         .fg(Color::Indexed(74))  // SkyBlue3 (#5fafd7)
                 )
-            ]);
+            ];
 
             let file_queue_list = List::new(dynamic_task_queue).block(
                 Block::default()
@@ -393,7 +393,7 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
             let progress_bar = Gauge::default()
                 .block(
                     Block::default()
-                        .title(Spans(vec![
+                        .title(vec![
                             Span::styled(
                                 " Progress",
                                 Style::default().add_modifier(Modifier::BOLD),
@@ -403,7 +403,7 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
                                 progress.current, progress.total
                             )),
                             Span::raw("| Press Q to abort processing "),
-                        ]))
+                        ])
                         .borders(Borders::ALL)
                         .title_alignment(Alignment::Left),
                 )
@@ -417,13 +417,13 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
             frame.render_widget(progress_bar, area_progress_bar);
         } else {
             let empty_progress_bar = Block::default()
-                .title(Spans(vec![
+                .title(vec![
                     Span::styled(
                         " Progress (inactive) ",
                         Style::default().add_modifier(Modifier::ITALIC),
                     ),
                     Span::raw("| Press Q to abort processing "),
-                ]))
+                ])
                 .borders(Borders::ALL)
                 .title_alignment(Alignment::Left);
 
