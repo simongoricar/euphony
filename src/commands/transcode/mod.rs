@@ -9,7 +9,7 @@ use crossterm::style::Stylize;
 use miette::{miette, Context, IntoDiagnostic, Result};
 use parking_lot::RwLock;
 
-use crate::commands::transcode::album_state_v2::{AlbumFileChangesV2, FileType};
+use crate::commands::transcode::album_state::{AlbumFileChangesV2, FileType};
 use crate::commands::transcode::jobs::{
     CancellableThreadPoolV2,
     FileJobMessage,
@@ -41,7 +41,7 @@ use crate::console::{
 use crate::globals::is_verbose_enabled;
 
 pub mod album_configuration;
-pub mod album_state_v2;
+pub mod album_state;
 pub mod jobs;
 pub mod views;
 

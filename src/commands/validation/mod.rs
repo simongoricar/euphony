@@ -347,6 +347,8 @@ fn validate_entire_collection(
     config: &Config,
     terminal: &mut ValidationTerminal,
 ) -> Result<()> {
+    // TODO Rewrite validation to use the `views.rs` abstractions instead.
+
     // As explained in the README and configuration template, library structure is expected to be the following:
     // <base library directory>
     // |
@@ -623,8 +625,8 @@ fn validate_entire_collection(
     } else {
         terminal.log_println(
             format!(
-                "Entire collection validated, found {} validation errors!",
-                validation_error_info_array.len().to_string().bold()
+                "Found {} validation errors!",
+                validation_error_info_array.len()
             )
             .red(),
         );

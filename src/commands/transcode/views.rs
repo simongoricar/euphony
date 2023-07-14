@@ -10,7 +10,7 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::transcode::album_configuration::AlbumConfiguration;
-use crate::commands::transcode::album_state_v2::{
+use crate::commands::transcode::album_state::{
     AlbumFileChangesV2,
     SourceAlbumState,
     TranscodedAlbumState,
