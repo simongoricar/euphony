@@ -8,16 +8,17 @@ use crossterm::style::Stylize;
 use miette::{miette, Context, Result};
 
 use crate::configuration::Config;
+use crate::console::backends::fancy_v2::terminal::FancyTerminalBackend;
 use crate::console::backends::{
     BareTerminalBackend,
     SimpleTerminal,
-    TUITerminalBackend,
     TranscodeTerminal,
     ValidationTerminal,
 };
 use crate::console::{LogBackend, LogToFileBackend, TerminalBackend};
 use crate::globals::VERBOSE;
 
+mod cancellation;
 mod commands;
 mod configuration;
 mod console;
@@ -136,13 +137,13 @@ fn get_configuration(args: &CLIArgs) -> Result<Config> {
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console,
 /// making it much easier to track down bugs or parse output in some other program.
 fn get_transcode_terminal<'config, 'scope>(
-    use_bare: bool,
+    use_bare_terminal: bool,
 ) -> TranscodeTerminal<'config, 'scope> {
-    if use_bare {
+    if use_bare_terminal {
         BareTerminalBackend::new().into()
     } else {
-        TUITerminalBackend::new()
-            .expect("Could not create TUI terminal backend.")
+        FancyTerminalBackend::new()
+            .expect("Could not create fancy terminal UI backend.")
             .into()
     }
 }
@@ -157,11 +158,11 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
         // `transcode`/`transcode-all` has two available terminal backends:
         // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
-        let mut terminal = get_transcode_terminal(transcode_args.bare_terminal);
+        let terminal = get_transcode_terminal(transcode_args.bare_terminal);
 
         if let Some(log_file_path) = transcode_args.log_to_file {
             terminal
-                .enable_saving_logs_to_file(PathBuf::from(log_file_path))
+                .enable_saving_logs_to_file(PathBuf::from(log_file_path), scope)
                 .map_err(|_| 1)?;
         }
 
@@ -169,7 +170,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
             .setup(scope)
             .expect("Could not set up tui terminal backend.");
 
-        let result = commands::cmd_transcode_all(config, &mut terminal);
+        let result = commands::cmd_transcode_all(config, &terminal);
         if let Err(error) = result {
             terminal.log_println(format!("ERROR: {error:?}"));
         }
@@ -182,7 +183,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
 
         if let Some(log_file_path) = args.log_to_file {
             terminal
-                .enable_saving_logs_to_file(PathBuf::from(log_file_path))
+                .enable_saving_logs_to_file(PathBuf::from(log_file_path), scope)
                 .map_err(|_| 1)?;
         }
 

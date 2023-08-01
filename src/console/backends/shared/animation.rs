@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 const PIXEL_SPINNER_PHASES: [char; 8] = ['⣾', '⣷', '⣯', '⣟', '⡿', '⢿', '⣻', '⣽'];
 const PIE_SPINNER_PHASES: [char; 4] = ['◴', '◷', '◶', '◵'];
 const SQUARE_SPINNER_PHASES: [char; 4] = ['◰', '◳', '◲', '◱'];
-const ARC_SPINNER_PHASES: [char; 4] = ['◜', '◝', '◞', '◟'];
+const ARC_SPINNER_PHASES: [char; 6] = ['◜', '◠', '◝', '◞', '◡', '◟'];
 const MOON_SPINNER_PHASES: [char; 4] = ['◐', '◓', '◑', '◒'];
 const PULSING_DOT_PHASES: [char; 3] = ['○', '◎', '●'];
 
@@ -34,12 +34,12 @@ impl SpinnerStyle {
     }
 
     /// Get the default speed associated with the given spinner style.
-    fn get_default_speed(&self) -> Duration {
+    fn get_default_duration(&self) -> Duration {
         match self {
             SpinnerStyle::Pixel => Duration::from_secs_f64(1.45),
             SpinnerStyle::Pie => Duration::from_secs_f64(2.0),
             SpinnerStyle::Square => Duration::from_secs_f64(2.0),
-            SpinnerStyle::Arc => Duration::from_secs_f64(2.0),
+            SpinnerStyle::Arc => Duration::from_secs_f64(1.5),
             SpinnerStyle::Moon => Duration::from_secs_f64(2.0),
             SpinnerStyle::PulsingDot => Duration::from_secs_f64(2.2),
         }
@@ -69,11 +69,12 @@ impl AnimatedSpinner {
     /// Initialize a new `AnimatedSpinner` by providing a `SpinnerStyle` and the `speed` at which
     /// it should be played. If `speed` is `None`, a default speed associated with the selected
     /// spinner style is used.
-    pub fn new(style: SpinnerStyle, speed: Option<Duration>) -> Self {
+    pub fn new(style: SpinnerStyle, loop_duration: Option<Duration>) -> Self {
         let phases = style.get_phases();
-        let speed = speed.unwrap_or_else(|| style.get_default_speed());
+        let animation_duration =
+            loop_duration.unwrap_or_else(|| style.get_default_duration());
 
-        let phase_hold_time = speed / phases.len() as u32;
+        let phase_hold_time = animation_duration / phases.len() as u32;
 
         Self {
             init_time: Instant::now(),

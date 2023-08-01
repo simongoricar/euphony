@@ -26,7 +26,7 @@ use crate::commands::transcode::views::{
     SortedFileMap,
 };
 use crate::configuration::{Config, ConfigLibrary};
-use crate::console::backends::shared::queue_v2::QueueItemID;
+use crate::console::backends::shared::queue::QueueItemID;
 
 const SOURCE_ALBUM_STATE_FILE_NAME: &str = ".album.source-state.euphony";
 const SOURCE_ALBUM_STATE_SCHEMA_VERSION: u32 = 2;
@@ -687,11 +687,6 @@ impl<T> SortedFileList<T> {
     pub fn is_empty(&self) -> bool {
         self.audio.is_empty() && self.data.is_empty()
     }
-
-    /// Get total length of the sorted file list.
-    pub fn total_length(&self) -> usize {
-        self.audio.len() + self.data.len()
-    }
 }
 
 
@@ -723,11 +718,6 @@ impl<T> ExtendedSortedFileList<T> {
     pub fn is_empty(&self) -> bool {
         self.audio.is_empty() && self.data.is_empty() && self.unknown.is_empty()
     }
-
-    /// Get total length of the extended sorted file list.
-    pub fn total_length(&self) -> usize {
-        self.audio.len() + self.data.len() + self.unknown.len()
-    }
 }
 
 #[derive(Debug)]
@@ -746,8 +736,20 @@ impl<T: Debug> SourceAndTargetPair<T> {
 }
 
 
+#[inline]
+fn sort_pathbuf_iterator<'a, I: IntoIterator<Item = &'a PathBuf>>(
+    iterator: I,
+) -> Vec<&'a PathBuf> {
+    let mut vector: Vec<&PathBuf> = iterator.into_iter().collect();
+    vector.sort_unstable();
+
+    vector
+}
+
+
 
 /// Describes one of three possible file types (audio, data, unknown).
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum FileType {
     /// Audio files, as configured per-library.
     Audio,
@@ -1234,12 +1236,27 @@ impl<'view> AlbumFileChangesV2<'view> {
     }
 
     /// Return the total number of changed files.
+    #[inline]
     pub fn number_of_changed_files(&self) -> usize {
-        self.added_in_source_since_last_transcode.total_length()
-            + self.changed_in_source_since_last_transcode.total_length()
-            + self.removed_from_source_since_last_transcode.total_length()
-            + self.missing_in_transcoded.total_length()
-            + self.excess_in_transcoded.total_length()
+        self.number_of_changed_audio_files()
+            + self.number_of_changed_data_files()
+    }
+
+    pub fn number_of_changed_audio_files(&self) -> usize {
+        self.added_in_source_since_last_transcode.audio.len()
+            + self.changed_in_source_since_last_transcode.audio.len()
+            + self.removed_from_source_since_last_transcode.audio.len()
+            + self.missing_in_transcoded.audio.len()
+            + self.excess_in_transcoded.audio.len()
+    }
+
+    pub fn number_of_changed_data_files(&self) -> usize {
+        self.added_in_source_since_last_transcode.data.len()
+            + self.changed_in_source_since_last_transcode.data.len()
+            + self.removed_from_source_since_last_transcode.data.len()
+            + self.missing_in_transcoded.data.len()
+            + self.excess_in_transcoded.data.len()
+            + self.excess_in_transcoded.unknown.len()
     }
 
     /// Generate a `SourceAlbumState` (deserialized version of `.album.source-state.euphony` file),
@@ -1292,35 +1309,39 @@ impl<'view> AlbumFileChangesV2<'view> {
 
         // Parse file lists to separate their change types
         // (some files need to be transcoded, some copied, some deleted).
-        let audio_files_to_transcode = self
-            .added_in_source_since_last_transcode
-            .audio
-            .iter()
-            .chain(self.changed_in_source_since_last_transcode.audio.iter())
-            .chain(self.missing_in_transcoded.audio.iter());
+        let audio_files_to_transcode = sort_pathbuf_iterator(
+            self.added_in_source_since_last_transcode
+                .audio
+                .iter()
+                .chain(self.changed_in_source_since_last_transcode.audio.iter())
+                .chain(self.missing_in_transcoded.audio.iter()),
+        );
 
-        let data_files_to_copy_to_transcoded_dir = self
-            .added_in_source_since_last_transcode
-            .data
-            .iter()
-            .chain(self.changed_in_source_since_last_transcode.data.iter())
-            .chain(self.missing_in_transcoded.data.iter());
+        let data_files_to_copy_to_transcoded_dir = sort_pathbuf_iterator(
+            self.added_in_source_since_last_transcode
+                .data
+                .iter()
+                .chain(self.changed_in_source_since_last_transcode.data.iter())
+                .chain(self.missing_in_transcoded.data.iter()),
+        );
 
         // TODO Make removing excess files configurable.
-        let audio_files_to_delete_from_transcoded_dir = self
-            .removed_from_source_since_last_transcode
-            .audio
-            .iter()
-            .map(|pair| &pair.target_path)
-            .chain(self.excess_in_transcoded.audio.iter());
-        let data_files_to_delete_from_transcoded_dir = self
-            .removed_from_source_since_last_transcode
-            .data
-            .iter()
-            .map(|pair| &pair.target_path)
-            .chain(self.excess_in_transcoded.data.iter());
+        let audio_files_to_delete_from_transcoded_dir = sort_pathbuf_iterator(
+            self.removed_from_source_since_last_transcode
+                .audio
+                .iter()
+                .map(|pair| &pair.target_path)
+                .chain(self.excess_in_transcoded.audio.iter()),
+        );
+        let data_files_to_delete_from_transcoded_dir = sort_pathbuf_iterator(
+            self.removed_from_source_since_last_transcode
+                .data
+                .iter()
+                .map(|pair| &pair.target_path)
+                .chain(self.excess_in_transcoded.data.iter()),
+        );
         let unknown_files_to_delete_from_transcoded_dir =
-            self.excess_in_transcoded.unknown.iter();
+            sort_pathbuf_iterator(self.excess_in_transcoded.unknown.iter());
 
 
         // Generate jobs from the parsed file lists.
@@ -1382,6 +1403,7 @@ impl<'view> AlbumFileChangesV2<'view> {
 
             let delete_from_processed_job = DeleteProcessedFileJob::new(
                 target_file_path.to_path_buf(),
+                FileType::Audio,
                 true,
                 queue_item_id,
             )
@@ -1400,6 +1422,7 @@ impl<'view> AlbumFileChangesV2<'view> {
 
             let delete_from_processed_job = DeleteProcessedFileJob::new(
                 target_path.to_path_buf(),
+                FileType::Data,
                 true,
                 queue_item_id,
             )
@@ -1418,6 +1441,7 @@ impl<'view> AlbumFileChangesV2<'view> {
 
             let delete_from_processed_job = DeleteProcessedFileJob::new(
                 target_path.to_path_buf(),
+                FileType::Unknown,
                 true,
                 queue_item_id,
             )

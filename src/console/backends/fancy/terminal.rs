@@ -9,12 +9,12 @@ use std::thread::{Scope, ScopedJoinHandle};
 use std::time::{Duration, Instant};
 
 use ansi_to_tui::IntoText;
-use crossbeam::channel::{Receiver, Sender, TryRecvError};
+use crossbeam::channel::{Receiver, Sender};
 use crossterm::event::{Event, KeyCode};
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::ExecutableCommand;
-use miette::{miette, IntoDiagnostic, Result, WrapErr};
+use miette::{miette, IntoDiagnostic, Result};
 use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -23,19 +23,20 @@ use ratatui::widgets::{Block, Borders, Gauge, List, ListItem};
 use ratatui::{Frame, Terminal};
 use strip_ansi_escapes::Writer;
 
+use crate::cancellation::CancellationToken;
 use crate::console::backends::fancy::queue::{
     FancyAlbumQueueItem,
     FancyFileQueueItem,
 };
 use crate::console::backends::fancy::state::TerminalUIState;
-use crate::console::backends::shared::queue_v2::{
-    AlbumItem,
-    AlbumItemFinishedResult,
-    FileItem,
-    FileItemFinishedResult,
+use crate::console::backends::shared::queue::{
+    AlbumQueueItem,
+    AlbumQueueItemFinishedResult,
+    FileQueueItem,
+    FileQueueItemFinishedResult,
+    GenericQueueItemState,
     Queue,
     QueueItem,
-    QueueItemGenericState,
     QueueItemID,
 };
 use crate::console::backends::shared::{
@@ -71,6 +72,8 @@ pub struct TUITerminalBackend<'config: 'thread_scope, 'thread_scope> {
 
     log_file_flush_thread: Option<ScopedJoinHandle<'thread_scope, Result<()>>>,
 
+    log_file_cancellation_token: Option<CancellationToken>,
+
     /// An end cursor position we save in setup - this allows us to restore the
     /// ending cursor position when the backend is destroyed.
     terminal_end_cursor_position: Option<(u16, u16)>,
@@ -82,9 +85,9 @@ pub struct TUITerminalBackend<'config: 'thread_scope, 'thread_scope> {
     /// When `has_been_set_up` is true, `render_thread` contains a handle to the render thread.
     render_thread: Option<ScopedJoinHandle<'thread_scope, Result<()>>>,
 
-    /// When `has_been_set_up` is true, `render_thread_channel` contains a sender with which to
-    /// signal to the render thread that it should stop.
-    render_thread_channel: Option<Sender<()>>,
+    /// When `has_been_set_up` is true, `render_thread_channel` contains a cancellation token
+    /// with which to signal to the render thread that it should stop.
+    render_cancellation_token: Option<CancellationToken>,
 
     /// This optionally contains the `Receiver` pair of the user control channel
     /// (essentially a message channel for user keybinds).
@@ -106,10 +109,11 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
             terminal: Arc::new(Mutex::new(terminal)),
             log_file_output: None,
             log_file_flush_thread: None,
+            log_file_cancellation_token: None,
             terminal_end_cursor_position: None,
             has_been_set_up: false,
             render_thread: None,
-            render_thread_channel: None,
+            render_cancellation_token: None,
             user_control_receiver: None,
             state: Arc::new(Mutex::new(TerminalUIState::new())),
         })
@@ -135,34 +139,49 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
 
     fn set_up_log_flushing_thread(&mut self, scope: &'scope Scope<'scope, '_>) {
         // Set up file output flushing thread (if outputting to file).
-        if let Some(log_file_output) = self.log_file_output.as_ref() {
-            let weak_log_output = Arc::downgrade(log_file_output);
+        let Some(log_file_output) = self.log_file_output.as_ref() else {
+            return;
+        };
+        let log_file_output_arc_clone = log_file_output.clone();
 
-            self.log_file_flush_thread = Some(scope.spawn(move || {
-                let mut accumulator: Duration = Duration::from_nanos(0);
-                let individual_sleep_duration = LOG_JOURNAL_FLUSH_INTERVAL / 100;
 
-                loop {
-                    thread::sleep(individual_sleep_duration);
-                    accumulator += individual_sleep_duration;
+        let flush_thread_cancellation_token = CancellationToken::new();
+        let flush_thread_cancellation_token_clone =
+            flush_thread_cancellation_token.clone();
 
-                    if accumulator >= LOG_JOURNAL_FLUSH_INTERVAL {
-                        if let Some(log_output_ref) = weak_log_output.upgrade() {
-                            log_output_ref
-                                .lock()
-                                .expect("Log output lock has been poisoned!")
-                                .flush()
-                                .into_diagnostic()?;
-                        } else {
-                            // All strong references of log output Arc have been dropped, so we should stop as well.
-                            return Ok(());
-                        }
 
-                        accumulator = Duration::from_nanos(0);
-                    }
+        self.log_file_cancellation_token = Some(flush_thread_cancellation_token);
+        self.log_file_flush_thread = Some(scope.spawn(move || {
+            let mut time_accumulator = Duration::from_secs(0);
+            let individual_sleep_duration = LOG_JOURNAL_FLUSH_INTERVAL / 100;
+
+            loop {
+                thread::sleep(individual_sleep_duration);
+                time_accumulator += individual_sleep_duration;
+
+                if flush_thread_cancellation_token_clone.is_cancelled()
+                    || Arc::strong_count(&log_file_output_arc_clone) == 1
+                {
+                    log_file_output_arc_clone
+                        .lock()
+                        .expect("Log output Mutex lock has been poisoned!")
+                        .flush()
+                        .into_diagnostic()?;
+
+                    return Ok(());
                 }
-            }));
-        }
+
+                if time_accumulator >= LOG_JOURNAL_FLUSH_INTERVAL {
+                    log_file_output_arc_clone
+                        .lock()
+                        .expect("Log output Mutex lock has been poisoned!")
+                        .flush()
+                        .into_diagnostic()?;
+
+                    time_accumulator = Duration::from_secs(0);
+                }
+            }
+        }));
     }
 
     fn join_and_destroy_log_flushing_thead(&mut self) -> Result<()> {
@@ -343,12 +362,12 @@ impl<'config: 'scope, 'scope> TUITerminalBackend<'config, 'scope> {
 
             for item in file_queue.items.values() {
                 match item.get_state() {
-                    QueueItemGenericState::Pending => pending_item_count += 1,
-                    QueueItemGenericState::Queued => pending_item_count += 1,
-                    QueueItemGenericState::InProgress => {
+                    GenericQueueItemState::Pending => pending_item_count += 1,
+                    GenericQueueItemState::Queued => pending_item_count += 1,
+                    GenericQueueItemState::InProgress => {
                         in_progress_item_count += 1
                     }
-                    QueueItemGenericState::Finished { ok } => match ok {
+                    GenericQueueItemState::Finished { ok } => match ok {
                         true => finished_ok_item_count += 1,
                         false => finished_not_ok_item_count += 1,
                     },
@@ -465,7 +484,7 @@ fn run_render_loop(
     terminal_arc_mutex: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
     state_arc_mutex: Arc<Mutex<TerminalUIState>>,
     user_control_message_sender: Sender<UserControlMessage>,
-    stop_signal_receiver: Receiver<()>,
+    cancellation_token: CancellationToken,
 ) -> Result<()> {
     // Continuously render terminal UI (until stop signal is received via channel).
     loop {
@@ -474,20 +493,9 @@ fn run_render_loop(
         // We might get a signal (via a multi-producer-single-consumer channel) to stop rendering,
         // which is why we check our Receiver every iteration. If there is a message, we stop rendering
         // and exit the thread.
-        match stop_signal_receiver.try_recv() {
-            Ok(_) => {
-                // Main thread signaled us to stop, exit by returning Ok(()).
-                break;
-            }
-            Err(error) => match error {
-                TryRecvError::Empty => {
-                    // Nothing should be done - main thread simply hasn't sent us a request to stop.
-                }
-                TryRecvError::Disconnected => {
-                    // Something went very wrong, panic (main thread somehow died or dropped Sender).
-                    panic!("Main thread has disconnected.");
-                }
-            },
+        if cancellation_token.is_cancelled() {
+            // Main thread signaled us to stop, exit by returning Ok(()).
+            break;
         }
 
         // Perform drawing and thread sleeping.
@@ -583,9 +591,8 @@ impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
             crossbeam::channel::unbounded::<UserControlMessage>();
         self.user_control_receiver = Some(user_control_rx);
 
-        // We create a simple one-way channel that we can now use to signal to the render thread
-        // to stop rendering and exit.
-        let (stop_tx, stop_rx) = crossbeam::channel::unbounded::<()>();
+        let render_cancellation_token = CancellationToken::new();
+        let render_cancellation_token_clone = render_cancellation_token.clone();
 
         let terminal_render_thread_clone = self.terminal.clone();
         let state_render_thread_clone: Arc<Mutex<TerminalUIState>> =
@@ -596,12 +603,12 @@ impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
                 terminal_render_thread_clone,
                 state_render_thread_clone,
                 user_control_tx,
-                stop_rx,
+                render_cancellation_token_clone,
             )
         });
 
         self.render_thread = Some(render_thread_join_handle);
-        self.render_thread_channel = Some(stop_tx);
+        self.render_cancellation_token = Some(render_cancellation_token);
         self.has_been_set_up = true;
 
         self.set_up_log_flushing_thread(scope);
@@ -614,20 +621,21 @@ impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
             return Ok(());
         }
 
-        let render_thread_stop_sender = self
-            .render_thread_channel
-            .as_mut()
-            .expect("has_been_set_up is true, but no render thread Sender?!");
-        render_thread_stop_sender
-            .send(())
-            .into_diagnostic()
-            .wrap_err("Could not send stop signal to render thread.")?;
+        let render_cancellation_token = self
+            .render_cancellation_token
+            .take()
+            .expect("Attempted to destroy without having been set up!");
+
+        render_cancellation_token.cancel();
+
 
         let render_thread = self
             .render_thread
             .take()
             .expect("has_been_set_up is true, but no render thread?!");
+
         render_thread.join().expect("Render thread panicked!")?;
+
 
         // The program will exit soon - make sure the next prompt doesn't start somewhere in the
         // middle of the screen, where the UI was - reset cursor and print a newline to make it look
@@ -658,6 +666,7 @@ impl<'config, 'scope, 'scope_env: 'scope> TerminalBackend<'scope, 'scope_env>
 
             disable_raw_mode().into_diagnostic()?;
         }
+
 
         // If logging to file was enabled, we should disable it before this backend is dropped,
         // otherwise we risk failing to flush to file when the entire struct is dropped.
@@ -776,7 +785,7 @@ impl<'config: 'scope, 'scope> TranscodeBackend<'config>
 
     fn queue_album_item_add(
         &mut self,
-        item: AlbumItem<'config>,
+        item: AlbumQueueItem<'config>,
     ) -> Result<QueueItemID> {
         let wrapped_item = FancyAlbumQueueItem::new(item);
         let item_id = wrapped_item.get_id();
@@ -787,7 +796,7 @@ impl<'config: 'scope, 'scope> TranscodeBackend<'config>
                 miette!("Album queue is disabled, can't add item.")
             })?;
 
-            queue.add_item(wrapped_item)?;
+            queue.queue_item(wrapped_item)?;
         }
 
         Ok(item_id)
@@ -807,7 +816,7 @@ impl<'config: 'scope, 'scope> TranscodeBackend<'config>
     fn queue_album_item_finish(
         &mut self,
         item_id: QueueItemID,
-        result: AlbumItemFinishedResult,
+        result: AlbumQueueItemFinishedResult,
     ) -> Result<()> {
         let mut state = self.lock_state();
 
@@ -822,7 +831,7 @@ impl<'config: 'scope, 'scope> TranscodeBackend<'config>
     fn queue_album_item_remove(
         &mut self,
         item_id: QueueItemID,
-    ) -> Result<AlbumItem<'config>> {
+    ) -> Result<AlbumQueueItem<'config>> {
         let mut state = self.lock_state();
 
         let queue = state.album_queue.as_mut().ok_or_else(|| {
@@ -859,7 +868,7 @@ impl<'config: 'scope, 'scope> TranscodeBackend<'config>
 
     fn queue_file_item_add(
         &mut self,
-        item: FileItem<'config>,
+        item: FileQueueItem<'config>,
     ) -> Result<QueueItemID> {
         let wrapped_item = FancyFileQueueItem::new(item);
         let item_id = wrapped_item.get_id();
@@ -870,7 +879,7 @@ impl<'config: 'scope, 'scope> TranscodeBackend<'config>
             .as_mut()
             .ok_or_else(|| miette!("File queue is disabled, can't add item."))?;
 
-        queue.add_item(wrapped_item)?;
+        queue.queue_item(wrapped_item)?;
         Ok(item_id)
     }
 
@@ -888,7 +897,7 @@ impl<'config: 'scope, 'scope> TranscodeBackend<'config>
     fn queue_file_item_finish(
         &mut self,
         item_id: QueueItemID,
-        result: FileItemFinishedResult,
+        result: FileQueueItemFinishedResult,
     ) -> Result<()> {
         let mut state = self.lock_state();
 
@@ -903,7 +912,7 @@ impl<'config: 'scope, 'scope> TranscodeBackend<'config>
     fn queue_file_item_remove(
         &mut self,
         item_id: QueueItemID,
-    ) -> Result<FileItem<'config>> {
+    ) -> Result<FileQueueItem<'config>> {
         let mut state = self.lock_state();
 
         let queue = state.file_queue.as_mut().ok_or_else(|| {
@@ -987,14 +996,14 @@ impl<'config: 'scope, 'scope> LogToFileBackend
     }
 
     fn disable_saving_logs_to_file(&mut self) -> Result<()> {
-        if let Some(buf_writer) = self.log_file_output.take() {
-            let mut buf_writer = Arc::try_unwrap(buf_writer)
-                .map_err(|_| "")
-                .expect("BUG: We're not the only ones with a strong reference to log output!")
-                .into_inner()
-                .into_diagnostic()?;
+        // TODO Why not join the flushing thread here instead of in a separate function?
 
-            buf_writer.flush().into_diagnostic()?;
+        if let Some(buf_writer) = self.log_file_output.take() {
+            let mut locked_buf_writer = buf_writer
+                .lock()
+                .expect("Log output Mutex has been poisoned!");
+
+            locked_buf_writer.flush().into_diagnostic()?;
         }
 
         Ok(())

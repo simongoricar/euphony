@@ -2,14 +2,14 @@ use std::time::Duration;
 
 use ratatui::text::{Line, Span, Text};
 
-use crate::console::backends::shared::queue_v2::{
-    AlbumItem,
-    AlbumItemFinishedResult,
-    FileItem,
-    FileItemFinishedResult,
-    FileItemType,
+use crate::console::backends::shared::queue::{
+    AlbumQueueItem,
+    AlbumQueueItemFinishedResult,
+    FileQueueItem,
+    FileQueueItemFinishedResult,
+    FileQueueItemType,
+    GenericQueueItemState,
     QueueItem,
-    QueueItemGenericState,
     QueueItemID,
     RenderableQueueItem,
 };
@@ -19,7 +19,7 @@ use crate::console::backends::shared::{AnimatedSpinner, SpinnerStyle};
  * ALBUM QUEUE ITEM implementation (fancy backend-specific)
  */
 pub struct FancyAlbumQueueItem<'config> {
-    pub item: AlbumItem<'config>,
+    pub item: AlbumQueueItem<'config>,
 
     pub spinner: Option<AnimatedSpinner>,
 
@@ -27,7 +27,7 @@ pub struct FancyAlbumQueueItem<'config> {
 }
 
 impl<'a> FancyAlbumQueueItem<'a> {
-    pub fn new(queue_item: AlbumItem<'a>) -> Self {
+    pub fn new(queue_item: AlbumQueueItem<'a>) -> Self {
         Self {
             item: queue_item,
             spinner: None,
@@ -48,14 +48,14 @@ impl<'a> FancyAlbumQueueItem<'a> {
     }
 }
 
-impl<'a> QueueItem<AlbumItemFinishedResult> for FancyAlbumQueueItem<'a> {
+impl<'a> QueueItem<AlbumQueueItemFinishedResult> for FancyAlbumQueueItem<'a> {
     #[inline]
     fn get_id(&self) -> QueueItemID {
         self.item.get_id()
     }
 
     #[inline]
-    fn get_state(&self) -> QueueItemGenericState {
+    fn get_state(&self) -> GenericQueueItemState {
         self.item.get_state()
     }
 
@@ -69,7 +69,7 @@ impl<'a> QueueItem<AlbumItemFinishedResult> for FancyAlbumQueueItem<'a> {
         self.enable_spinner(SpinnerStyle::Pixel, None);
     }
 
-    fn on_item_finished(&mut self, result: AlbumItemFinishedResult) {
+    fn on_item_finished(&mut self, result: AlbumQueueItemFinishedResult) {
         self.item.on_item_finished(result);
 
         self.disable_spinner();
@@ -112,7 +112,7 @@ impl<'a, 'b> RenderableQueueItem<Text<'b>> for FancyAlbumQueueItem<'a> {
  * FILE QUEUE ITEM implementation (fancy backend-specific)
  */
 pub struct FancyFileQueueItem<'item> {
-    pub item: FileItem<'item>,
+    pub item: FileQueueItem<'item>,
 
     pub spinner: Option<AnimatedSpinner>,
 
@@ -120,7 +120,7 @@ pub struct FancyFileQueueItem<'item> {
 }
 
 impl<'a> FancyFileQueueItem<'a> {
-    pub fn new(queue_item: FileItem<'a>) -> Self {
+    pub fn new(queue_item: FileQueueItem<'a>) -> Self {
         Self {
             item: queue_item,
             spinner: None,
@@ -141,14 +141,14 @@ impl<'a> FancyFileQueueItem<'a> {
     }
 }
 
-impl<'a> QueueItem<FileItemFinishedResult> for FancyFileQueueItem<'a> {
+impl<'a> QueueItem<FileQueueItemFinishedResult> for FancyFileQueueItem<'a> {
     #[inline]
     fn get_id(&self) -> QueueItemID {
         self.item.get_id()
     }
 
     #[inline]
-    fn get_state(&self) -> QueueItemGenericState {
+    fn get_state(&self) -> GenericQueueItemState {
         self.item.get_state()
     }
 
@@ -162,7 +162,7 @@ impl<'a> QueueItem<FileItemFinishedResult> for FancyFileQueueItem<'a> {
         self.enable_spinner(SpinnerStyle::Square, None);
     }
 
-    fn on_item_finished(&mut self, result: FileItemFinishedResult) {
+    fn on_item_finished(&mut self, result: FileQueueItemFinishedResult) {
         self.item.on_item_finished(result);
 
         self.disable_spinner();
@@ -180,9 +180,9 @@ impl<'a, 'b> RenderableQueueItem<Text<'b>> for FancyFileQueueItem<'a> {
         };
 
         let file_type_str = match self.item.file_type {
-            FileItemType::Audio => "[audio]",
-            FileItemType::Data => " [data]",
-            FileItemType::Unknown => "   [??]",
+            FileQueueItemType::Audio => "[audio]",
+            FileQueueItemType::Data => " [data]",
+            FileQueueItemType::Unknown => "   [??]",
         };
 
         // TODO Add colouring based on completion.

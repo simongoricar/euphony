@@ -5,9 +5,9 @@ use crate::console::backends::fancy::queue::{
     FancyFileQueueItem,
 };
 use crate::console::backends::fancy::terminal::LOG_JOURNAL_MAX_LINES;
-use crate::console::backends::shared::queue_v2::{
-    AlbumItemFinishedResult,
-    FileItemFinishedResult,
+use crate::console::backends::shared::queue::{
+    AlbumQueueItemFinishedResult,
+    FileQueueItemFinishedResult,
     Queue,
 };
 use crate::console::backends::shared::ProgressState;
@@ -16,12 +16,13 @@ use crate::console::backends::shared::ProgressState;
 /// for a render pass.
 pub struct TerminalUIState<'config> {
     /// Album queue, if any (`None` if disabled).
-    pub album_queue:
-        Option<Queue<FancyAlbumQueueItem<'config>, AlbumItemFinishedResult>>,
+    pub album_queue: Option<
+        Queue<FancyAlbumQueueItem<'config>, AlbumQueueItemFinishedResult>,
+    >,
 
     /// File queue, if any (`None` if disabled).
     pub file_queue:
-        Option<Queue<FancyFileQueueItem<'config>, FileItemFinishedResult>>,
+        Option<Queue<FancyFileQueueItem<'config>, FileQueueItemFinishedResult>>,
 
     /// When the progress bar is enabled, this contains the progress bar state.
     pub progress: Option<ProgressState>,

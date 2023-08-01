@@ -1,15 +1,15 @@
 use std::fmt::Display;
-use std::path::PathBuf;
+use std::path::Path;
 use std::thread::Scope;
 
-use crossbeam::channel::Receiver;
 use miette::Result;
+use tokio::sync::broadcast;
 
-use crate::console::backends::shared::queue_v2::{
-    AlbumItem,
-    AlbumItemFinishedResult,
-    FileItem,
-    FileItemFinishedResult,
+use crate::console::backends::shared::queue::{
+    AlbumQueueItem,
+    AlbumQueueItemFinishedResult,
+    FileQueueItem,
+    FileQueueItemFinishedResult,
     QueueItemID,
 };
 
@@ -19,7 +19,7 @@ use crate::console::backends::shared::queue_v2::{
 /// For further information details see `src/console/backends/mod.rs`.
 pub trait TerminalBackend<'scope, 'scope_env: 'scope> {
     /// Initialize the terminal backend.
-    fn setup(&mut self, scope: &'scope Scope<'scope, 'scope_env>) -> Result<()>;
+    fn setup(&self, scope: &'scope Scope<'scope, 'scope_env>) -> Result<()>;
 
     /// Clean up the terminal backend.
     fn destroy(self) -> Result<()>;
@@ -34,6 +34,16 @@ pub trait LogBackend {
     fn log_println<D: Display>(&self, content: D);
 }
 
+/// Allows saving `LogBackend`'s log output to file (usually in addition to the terminal or whatever).
+pub trait LogToFileBackend<'scope, 'scope_env: 'scope> {
+    fn enable_saving_logs_to_file<P: AsRef<Path>>(
+        &self,
+        log_file_path: P,
+        scope: &'scope Scope<'scope, 'scope_env>,
+    ) -> Result<()>;
+    fn disable_saving_logs_to_file(&self) -> Result<()>;
+}
+
 /// Allows backends to be used in transcoding process. This means the implementor
 /// must maintain some form of (purely visual) queue system and a way of monitoring progress.
 pub trait TranscodeBackend<'config> {
@@ -42,89 +52,116 @@ pub trait TranscodeBackend<'config> {
      */
     /// Initialize the album queue system.
     /// This should be called before any other `queue_album_*` methods.
-    fn queue_album_enable(&mut self);
+    fn queue_album_enable(&self);
 
     /// Clean up and disable the album queue system.
-    fn queue_album_disable(&mut self);
+    fn queue_album_disable(&self);
 
     /// Clear the whole album queue.
-    fn queue_album_clear(&mut self) -> Result<()>;
+    fn queue_album_clear(&self) -> Result<()>;
 
     /// Add an album to the album queue. This will give it the `AlbumItemState::Queued` state.
     fn queue_album_item_add(
-        &mut self,
-        item: AlbumItem<'config>,
+        &self,
+        item: AlbumQueueItem<'config>,
     ) -> Result<QueueItemID>;
 
     /// Mark the given album in the album queue as "in-progress".
     /// This will give it the `AlbumItemState::InProgress` state.
-    fn queue_album_item_start(&mut self, item_id: QueueItemID) -> Result<()>;
+    fn queue_album_item_start(&self, item_id: QueueItemID) -> Result<()>;
 
     /// Mark the given album in the album queue as "finished".
     /// This will give it the `AlbumItemState:Finished` state and the given `result`.
     fn queue_album_item_finish(
-        &mut self,
+        &self,
         item_id: QueueItemID,
-        result: AlbumItemFinishedResult,
+        result: AlbumQueueItemFinishedResult,
     ) -> Result<()>;
 
     /// Remove an album from the album queue.
     fn queue_album_item_remove(
-        &mut self,
+        &self,
         item_id: QueueItemID,
-    ) -> Result<AlbumItem<'config>>;
+    ) -> Result<AlbumQueueItem<'config>>;
 
     /*
      * File queue
      */
     /// Initialize the file queue system.
     /// This should be called before any other `queue_file_*` methods.
-    fn queue_file_enable(&mut self);
+    fn queue_file_enable(&self);
 
     /// Clean up and disable the file queue system.
-    fn queue_file_disable(&mut self);
+    fn queue_file_disable(&self);
 
     /// Clear the whole file queue.
-    fn queue_file_clear(&mut self) -> Result<()>;
+    fn queue_file_clear(&self) -> Result<()>;
 
     /// Add a file to the file queue. This will give it the `FileItemState::Queued` state.
     fn queue_file_item_add(
-        &mut self,
-        item: FileItem<'config>,
+        &self,
+        item: FileQueueItem<'config>,
     ) -> Result<QueueItemID>;
 
     /// Mark the given file in the file queue as "in-progress".
     /// This will give it the `FileItemState::InProgress` state.
-    fn queue_file_item_start(&mut self, item_id: QueueItemID) -> Result<()>;
+    fn queue_file_item_start(&self, item_id: QueueItemID) -> Result<()>;
 
     /// Mark the given file in the file queue as "finished".
     /// This will give it the `FileItemState:Finished` state and the given `result`.
     fn queue_file_item_finish(
-        &mut self,
+        &self,
         item_id: QueueItemID,
-        result: FileItemFinishedResult,
+        result: FileQueueItemFinishedResult,
     ) -> Result<()>;
 
     /// Remove a file from the file queue.
     fn queue_file_item_remove(
-        &mut self,
+        &self,
         item_id: QueueItemID,
-    ) -> Result<FileItem<'config>>;
+    ) -> Result<FileQueueItem<'config>>;
 
     /*
      * Progress bar
      */
     /// Enable the progress bar. This must be called before any other `progress_*` methods.
-    fn progress_enable(&mut self);
+    fn progress_enable(&self);
 
     /// Disable the progress bar (potentially represented in the implementor as hiding the bar or greying it out).
-    fn progress_disable(&mut self);
+    fn progress_disable(&self);
 
     /// Set the total number of tasks to show in the progress bar.
-    fn progress_set_total(&mut self, num_total: usize) -> Result<()>;
+    fn progress_set_total(&self, num_total: usize) -> Result<()>;
 
-    /// Set the currently completed number of tasks to show in the progress bar (should be less or equal to total).
-    fn progress_set_current(&mut self, num_finished: usize) -> Result<()>;
+    fn progress_set_audio_files_currently_processing(
+        &self,
+        num_audio_files_currently_processing: usize,
+    ) -> Result<()>;
+
+    fn progress_set_data_files_currently_processing(
+        &self,
+        num_data_files_currently_processing: usize,
+    ) -> Result<()>;
+
+    fn progress_set_audio_files_finished_ok(
+        &self,
+        num_audio_files_finished_ok: usize,
+    ) -> Result<()>;
+
+    fn progress_set_data_files_finished_ok(
+        &self,
+        num_data_files_finished_ok: usize,
+    ) -> Result<()>;
+
+    fn progress_set_audio_files_errored(
+        &self,
+        num_audio_files_errored: usize,
+    ) -> Result<()>;
+
+    fn progress_set_data_files_errored(
+        &self,
+        num_data_files_errored: usize,
+    ) -> Result<()>;
 }
 
 /// Shared format for validation errors.
@@ -167,15 +204,6 @@ pub enum UserControlMessage {
 /// It is up to the backend to parse and kind of raw user input and parse it into a `UserControlMessage`.
 pub trait UserControllableBackend {
     fn get_user_control_receiver(
-        &mut self,
-    ) -> Result<Receiver<UserControlMessage>>;
-}
-
-/// Allows saving `LogBackend`'s log output to file (usually in addition to the terminal or whatever).
-pub trait LogToFileBackend {
-    fn enable_saving_logs_to_file(
-        &mut self,
-        log_file_path: PathBuf,
-    ) -> Result<()>;
-    fn disable_saving_logs_to_file(&mut self) -> Result<()>;
+        &self,
+    ) -> Result<broadcast::Receiver<UserControlMessage>>;
 }

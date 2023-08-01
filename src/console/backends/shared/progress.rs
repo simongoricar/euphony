@@ -1,17 +1,49 @@
 /// A small progress bar abstraction that contains just two fields: `current` out of `total` progress.
-#[derive(Default)]
-pub struct ProgressState {
-    pub current: usize,
-    pub total: usize,
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
+pub struct Progress {
+    pub total_files: usize,
+
+    pub audio_files_currently_processing: usize,
+    pub data_files_currently_processing: usize,
+
+    pub audio_files_finished_ok: usize,
+    pub data_files_finished_ok: usize,
+
+    pub audio_files_errored: usize,
+    pub data_files_errored: usize,
 }
 
-impl ProgressState {
-    /// Get the progress bar completion percentage.
-    pub fn get_percent(&self) -> u16 {
-        if self.total == 0 {
-            0
+impl Progress {
+    #[inline]
+    pub fn total_not_pending(&self) -> usize {
+        self.audio_files_currently_processing
+            + self.data_files_currently_processing
+            + self.audio_files_finished_ok
+            + self.data_files_finished_ok
+            + self.audio_files_errored
+            + self.data_files_errored
+    }
+
+    #[inline]
+    pub fn total_finished_or_errored(&self) -> usize {
+        self.audio_files_finished_ok
+            + self.data_files_finished_ok
+            + self.audio_files_errored
+            + self.data_files_errored
+    }
+
+    #[inline]
+    pub fn total_pending(&self) -> usize {
+        self.total_files - self.total_not_pending()
+    }
+
+    /// Get progress percentage.
+    #[inline]
+    pub fn completion_ratio(&self) -> f64 {
+        if self.total_files == 0 {
+            0f64
         } else {
-            (self.current as f32 / self.total as f32 * 100.0) as u16
+            self.total_finished_or_errored() as f64 / self.total_files as f64
         }
     }
 }

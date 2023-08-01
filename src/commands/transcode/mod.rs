@@ -1,5 +1,3 @@
-use std::ops::DerefMut;
-use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -7,7 +5,6 @@ use crossbeam::channel;
 use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
 use crossterm::style::Stylize;
 use miette::{miette, Context, IntoDiagnostic, Result};
-use parking_lot::RwLock;
 
 use crate::commands::transcode::album_state::{AlbumFileChangesV2, FileType};
 use crate::commands::transcode::jobs::{
@@ -16,19 +13,19 @@ use crate::commands::transcode::jobs::{
     FileJobResult,
 };
 use crate::commands::transcode::views::{
-    ArcRwLock,
     LibraryView,
     SharedAlbumView,
     SharedArtistView,
     SharedLibraryView,
 };
 use crate::configuration::Config;
-use crate::console::backends::shared::queue_v2::{
-    AlbumItem,
-    FileItem,
-    FileItemErrorType,
-    FileItemFinishedResult,
-    FileItemType,
+use crate::console::backends::shared::queue::{
+    AlbumQueueItem,
+    AlbumQueueItemFinishedResult,
+    FileQueueItem,
+    FileQueueItemErrorType,
+    FileQueueItemFinishedResult,
+    FileQueueItemType,
     QueueItemID,
 };
 use crate::console::backends::TranscodeTerminal;
@@ -68,9 +65,9 @@ type QueuedChangedAlbums<'a> = Vec<(
     AlbumFileChangesV2<'a>,
 )>;
 
-pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
+pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
     configuration: &'config Config,
-    mut terminal: &mut TranscodeTerminal<'config, 'scope>,
+    terminal: &TranscodeTerminal<'config, 'scope>,
 ) -> Result<()> {
     let time_full_processing_start = Instant::now();
 
@@ -85,7 +82,7 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
     // We can receive such messages through this receiver.
     // The tui (fancy) backend for example implements the "q" keybind
     // that sends UserControlMessage::Exit.
-    let terminal_user_input = terminal.get_user_control_receiver()?;
+    let mut terminal_user_input = terminal.get_user_control_receiver()?;
 
 
     let libraries_with_changes =
@@ -123,8 +120,24 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
     let queued_work_per_library =
         queue_all_libraries_with_changes(terminal, libraries_with_changes)?;
 
-    let mut files_finished: usize = 0;
-    terminal.progress_set_current(files_finished)?;
+    let mut audio_files_currently_processing: usize = 0;
+    let mut data_files_currently_processing: usize = 0;
+    let mut audio_files_finished_ok: usize = 0;
+    let mut data_files_finished_ok: usize = 0;
+    let mut audio_files_errored: usize = 0;
+    let mut data_files_errored: usize = 0;
+
+    terminal.progress_set_audio_files_currently_processing(
+        audio_files_currently_processing,
+    )?;
+    terminal.progress_set_data_files_currently_processing(
+        data_files_currently_processing,
+    )?;
+    terminal.progress_set_audio_files_finished_ok(audio_files_finished_ok)?;
+    terminal.progress_set_data_files_finished_ok(data_files_finished_ok)?;
+    terminal.progress_set_audio_files_errored(audio_files_errored)?;
+    terminal.progress_set_data_files_errored(data_files_errored)?;
+
     terminal.progress_set_total(total_changed_files)?;
 
     for (album, album_queue_id, album_changes) in queued_work_per_library
@@ -165,13 +178,10 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
 
         let mut exit_was_requested = false;
 
-        // Temporarily wrap the terminal in an ArcRwLock (only for album processing - we'll need to send the terminal reference to a thread).
-        let shared_terminal = ArcRwLock::new(RwLock::new(terminal));
-
         thread::scope::<'_, _, Result<()>>(|scope| {
             let processing_handle = scope.spawn(|| {
                 process_album_changes(
-                    shared_terminal.clone(),
+                    terminal,
                     album.clone(),
                     &album_changes,
                     worker_tx,
@@ -189,61 +199,120 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
                     worker_rx.recv_timeout(Duration::from_millis(1));
                 match worker_message {
                     Ok(message) => {
-                        let mut terminal_locked = shared_terminal.write();
-
-                        // TODO Temporary
-                        #[allow(unused_variables)]
                         match message {
-                            FileJobMessage::Starting { queue_item } => {
-                                terminal_locked
-                                    .deref_mut()
-                                    .queue_file_item_start(queue_item)?;
+                            FileJobMessage::Starting {
+                                queue_item,
+                                file_type,
+                                ..
+                            } => {
+                                terminal.queue_file_item_start(queue_item)?;
+
+                                if file_type == FileType::Audio {
+                                    audio_files_currently_processing += 1;
+                                } else if file_type == FileType::Data
+                                    || file_type == FileType::Unknown
+                                {
+                                    data_files_currently_processing += 1;
+                                }
+
+                                terminal.progress_set_audio_files_currently_processing(audio_files_currently_processing)?;
+                                terminal.progress_set_data_files_currently_processing(data_files_currently_processing)?;
                             }
                             FileJobMessage::Finished {
                                 queue_item,
+                                file_type,
                                 processing_result,
+                                file_path,
                             } => {
+                                if is_verbose_enabled() {
+                                    terminal.log_println(format!(
+                                        "File finished: {file_path} ({file_type:?}) result={processing_result:?}"
+                                    ));
+                                }
+
+                                if file_type == FileType::Audio {
+                                    audio_files_currently_processing -= 1;
+                                } else if file_type == FileType::Data
+                                    || file_type == FileType::Unknown
+                                {
+                                    data_files_currently_processing -= 1;
+                                }
+
+                                terminal.progress_set_audio_files_currently_processing(audio_files_currently_processing)?;
+                                terminal.progress_set_data_files_currently_processing(data_files_currently_processing)?;
+
+
                                 // TODO Missing verbosity print (Okay and Errored contain verbose info).
                                 let item_result = match processing_result {
                                     FileJobResult::Okay { .. } => {
-                                        FileItemFinishedResult::Ok
+                                        match file_type {
+                                            FileType::Audio => {
+                                                audio_files_finished_ok += 1;
+                                                terminal.progress_set_audio_files_finished_ok(
+                                                    audio_files_finished_ok,
+                                                )?;
+                                            }
+                                            FileType::Data => {
+                                                data_files_finished_ok += 1;
+                                                terminal.progress_set_data_files_finished_ok(
+                                                    data_files_finished_ok,
+                                                )?;
+                                            }
+                                            FileType::Unknown => {
+                                                terminal.log_println("Developer WARNING: unexpected OK FileType::Unknown.");
+                                            }
+                                        };
+
+                                        FileQueueItemFinishedResult::Ok
                                     }
                                     FileJobResult::Errored { error, .. } => {
-                                        FileItemFinishedResult::Failed(
-                                            FileItemErrorType::Errored { error },
+                                        match file_type {
+                                            FileType::Audio => {
+                                                audio_files_errored += 1;
+                                                terminal.progress_set_audio_files_errored(
+                                                    audio_files_errored,
+                                                )?;
+                                            }
+                                            FileType::Data => {
+                                                data_files_errored += 1;
+                                                terminal.progress_set_data_files_errored(
+                                                    data_files_errored,
+                                                )?;
+                                            }
+                                            FileType::Unknown => {
+                                                terminal.log_println("Developer WARNING: unexpected ERR FileType::Unknown.");
+                                            }
+                                        };
+
+                                        FileQueueItemFinishedResult::Failed(
+                                            FileQueueItemErrorType::Errored {
+                                                error,
+                                            },
                                         )
                                     }
                                 };
 
-                                terminal_locked
-                                    .deref_mut()
-                                    .queue_file_item_finish(
-                                        queue_item,
-                                        item_result,
-                                    )?;
-
-                                files_finished += 1;
-                                terminal_locked
-                                    .deref_mut()
-                                    .progress_set_current(files_finished)?;
+                                terminal.queue_file_item_finish(
+                                    queue_item,
+                                    item_result,
+                                )?;
 
                                 // TODO How to handle errored files? Previous implementation
                                 //      returned an `Err`, but that's a bit extreme, no?
                             }
-                            FileJobMessage::Cancelled { queue_item } => {
-                                let item_result = FileItemFinishedResult::Failed(
-                                    FileItemErrorType::Cancelled,
-                                );
+                            FileJobMessage::Cancelled { queue_item, .. } => {
+                                let item_result =
+                                    FileQueueItemFinishedResult::Failed(
+                                        FileQueueItemErrorType::Cancelled,
+                                    );
 
-                                terminal_locked
-                                    .deref_mut()
-                                    .queue_file_item_finish(
-                                        queue_item,
-                                        item_result,
-                                    )?;
+                                terminal.queue_file_item_finish(
+                                    queue_item,
+                                    item_result,
+                                )?;
                             }
                             FileJobMessage::Log { content } => {
-                                terminal_locked.log_println(content);
+                                terminal.log_println(content);
                             }
                         }
                     }
@@ -256,20 +325,22 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
                     }
                 }
 
-                // TODO Add additional user input, such as a way to view an expanded log view, etc.
                 // Check for user input from the terminal backend.
-                let user_control =
-                    terminal_user_input.recv_timeout(Duration::from_millis(1));
-
-                // We ignore any disconnects intentionally (we shouldn't error over that I think).
-                if let Ok(message) = user_control {
+                // We ignore any disconnects intentionally (we shouldn't error over that, I think).
+                if let Ok(message) = terminal_user_input.try_recv() {
                     match message {
-                        UserControlMessage::Exit => {
+                        UserControlMessage::Exit if !exit_was_requested => {
                             exit_was_requested = true;
+
+                            terminal.log_println(
+                                "User requested exit, stopping transcode.",
+                            );
+
                             processing_control_tx
                                 .send(MainThreadMessage::StopProcessing)
                                 .into_diagnostic()?;
                         }
+                        _ => {}
                     }
                 }
 
@@ -283,11 +354,6 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
                 .join()
                 .expect("Processing thread panicked.")
         })?;
-
-        // Loop has ended, get the shared terminal back out of ArcRwLock.
-        terminal = Arc::try_unwrap(shared_terminal)
-            .expect("Can't unwrap Arc - someone is still holding a reference to the TranscodeTerminal.")
-            .into_inner();
 
         if exit_was_requested {
             // TODO Implement deletion of partial transcodes and similar rollback mechanisms.
@@ -332,6 +398,10 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
         }
 
 
+        terminal.queue_album_item_finish(
+            album_queue_id,
+            AlbumQueueItemFinishedResult::new_ok(),
+        )?;
         terminal.queue_file_clear()?;
 
         let time_album_elapsed = time_album_start.elapsed().as_secs_f64();
@@ -356,7 +426,7 @@ pub fn cmd_transcode_all<'config, 'scope, 'scope_env: 'scope_env>(
 
 fn collect_libraries_with_changes<'config>(
     configuration: &'config Config,
-    terminal: &mut TranscodeTerminal<'config, '_>,
+    terminal: &TranscodeTerminal<'config, '_>,
 ) -> Result<SortedLibrariesWithChanges<'config>> {
     // `LibraryView` is the root abstraction here - we use it to discover artists and their albums.
     let mut libraries: Vec<SharedLibraryView<'config>> = configuration
@@ -393,7 +463,7 @@ fn collect_libraries_with_changes<'config>(
     // but we will now have all the work we need to perform.
     libraries
         .into_iter()
-        .map(|library| {
+        .filter_map(|library| {
             let library_read = library.read();
 
             if is_verbose_enabled() {
@@ -402,8 +472,13 @@ fn collect_libraries_with_changes<'config>(
                 ));
             }
 
-            let scan = library_read
-                .scan_for_artists_with_changed_albums()?;
+            let scan = match library_read
+                .scan_for_artists_with_changed_albums() {
+                Ok(scan) => scan,
+                Err(error) => {
+                    return Some(Err(error))
+                }
+            };
 
             if is_verbose_enabled() {
                 terminal.log_println(format!(
@@ -421,6 +496,10 @@ fn collect_libraries_with_changes<'config>(
                     })
                         .collect::<Vec<String>>(),
                 ));
+            }
+
+            if scan.is_empty() {
+                return None;
             }
 
             let mut ordered_artists: SortedArtistsWithChanges = scan
@@ -452,13 +531,13 @@ fn collect_libraries_with_changes<'config>(
 
             drop(library_read);
 
-            Ok((library, ordered_artists))
+            Some(Ok((library, ordered_artists)))
         })
         .collect::<Result<SortedLibrariesWithChanges<'config>>>()
 }
 
 fn queue_all_libraries_with_changes<'config: 'scope, 'scope>(
-    terminal: &mut TranscodeTerminal<'config, 'scope>,
+    terminal: &TranscodeTerminal<'config, 'scope>,
     libraries_with_changes: SortedLibrariesWithChanges<'config>,
 ) -> Result<QueuedChangedLibraries<'config>> {
     // Queue all libraries and all the changed albums inside it.
@@ -482,11 +561,12 @@ fn queue_all_libraries_with_changes<'config: 'scope, 'scope>(
             .map(|(_, view, changes)| (view, changes));
 
         for (album_view, changes) in all_albums_in_library {
-            let num_of_file_changes = changes.number_of_changed_files();
-
-            let queued_album_item_id = terminal.queue_album_item_add(
-                AlbumItem::new(album_view.clone(), num_of_file_changes),
-            )?;
+            let queued_album_item_id =
+                terminal.queue_album_item_add(AlbumQueueItem::new(
+                    album_view.clone(),
+                    changes.number_of_changed_audio_files(),
+                    changes.number_of_changed_data_files(),
+                ))?;
 
             library_queue.push((
                 album_view.clone(),
@@ -518,7 +598,7 @@ enum MainThreadMessage {
 ///
 /// This function returns with `Ok(())` when the album has been processed.
 fn process_album_changes<'config>(
-    terminal: ArcRwLock<&mut TranscodeTerminal<'config, '_>>,
+    terminal: &TranscodeTerminal<'config, '_>,
     album: SharedAlbumView<'config>,
     changes: &AlbumFileChangesV2,
     worker_progress_sender: Sender<FileJobMessage>,
@@ -543,26 +623,22 @@ fn process_album_changes<'config>(
     let jobs = changes.generate_file_jobs(|file_type, file_path| {
         // Parse queue item details.
         let file_item_type = match file_type {
-            FileType::Audio => FileItemType::Audio,
-            FileType::Data => FileItemType::Data,
-            FileType::Unknown => FileItemType::Unknown,
+            FileType::Audio => FileQueueItemType::Audio,
+            FileType::Data => FileQueueItemType::Data,
+            FileType::Unknown => FileQueueItemType::Unknown,
         };
 
         let file_name =
             file_path.file_name().unwrap_or_default().to_string_lossy();
 
         // Instantiate `FileItem` and add to queue.
-        let file_item = FileItem::<'config>::new(
+        let file_item = FileQueueItem::<'config>::new(
             album.clone(),
             file_item_type,
             file_name.to_string(),
         );
 
-        let queued_file_item_id = {
-            let mut terminal_locked = terminal.write();
-
-            terminal_locked.deref_mut().queue_file_item_add(file_item)?
-        };
+        let queued_file_item_id = terminal.queue_file_item_add(file_item)?;
 
         Ok(queued_file_item_id)
     })?;

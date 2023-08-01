@@ -12,8 +12,9 @@ use miette::{miette, Context, IntoDiagnostic, Result};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
+use crate::commands::transcode::album_state::FileType;
 use crate::commands::transcode::views::SharedAlbumView;
-use crate::console::backends::shared::queue_v2::QueueItemID;
+use crate::console::backends::shared::queue::QueueItemID;
 use crate::filesystem::get_path_extension_or_empty;
 use crate::globals::is_verbose_enabled;
 
@@ -372,6 +373,7 @@ impl CancellableThreadPoolV2 {
  */
 
 /// Task state for completed `FileJob`s.
+#[derive(Debug)]
 pub enum FileJobResult {
     Okay {
         verbose_info: Option<String>,
@@ -383,17 +385,24 @@ pub enum FileJobResult {
 }
 
 /// Message enum that file job workers send back to the main thread.
+// TODO Introduce additional info here (file name, file type, ...).
 pub enum FileJobMessage {
     Starting {
         queue_item: QueueItemID,
+        file_type: FileType,
+        file_path: String,
     },
     // TODO Some sort of progress message?
     Finished {
         queue_item: QueueItemID,
+        file_type: FileType,
+        file_path: String,
         processing_result: FileJobResult,
     },
     Cancelled {
         queue_item: QueueItemID,
+        file_type: FileType,
+        file_path: String,
     },
     Log {
         content: String,
@@ -401,19 +410,42 @@ pub enum FileJobMessage {
 }
 
 impl FileJobMessage {
-    pub fn new_starting(queue_item: QueueItemID) -> Self {
-        Self::Starting { queue_item }
+    pub fn new_starting<P: Into<String>>(
+        queue_item: QueueItemID,
+        file_type: FileType,
+        file_path: P,
+    ) -> Self {
+        Self::Starting {
+            queue_item,
+            file_type,
+            file_path: file_path.into(),
+        }
     }
 
-    pub fn new_finished(queue_item: QueueItemID, result: FileJobResult) -> Self {
+    pub fn new_finished<P: Into<String>>(
+        queue_item: QueueItemID,
+        file_type: FileType,
+        file_path: P,
+        result: FileJobResult,
+    ) -> Self {
         Self::Finished {
             queue_item,
+            file_type,
+            file_path: file_path.into(),
             processing_result: result,
         }
     }
 
-    pub fn new_cancelled(queue_item: QueueItemID) -> Self {
-        Self::Cancelled { queue_item }
+    pub fn new_cancelled<P: Into<String>>(
+        queue_item: QueueItemID,
+        file_type: FileType,
+        file_path: P,
+    ) -> Self {
+        Self::Cancelled {
+            queue_item,
+            file_type,
+            file_path: file_path.into(),
+        }
     }
 
     pub fn new_log<S: Into<String>>(log_string: S) -> Self {
@@ -467,6 +499,9 @@ where
 pub struct TranscodeAudioFileJob {
     /// Path to the target file's directory (for missing directory creation purposes).
     target_file_directory_path: PathBuf,
+
+    /// Path to the target file that will be created.
+    target_file_path: PathBuf,
 
     /// Path to the ffmpeg binary.
     ffmpeg_binary_path: String,
@@ -549,6 +584,7 @@ impl TranscodeAudioFileJob {
         // job across threads easily.
         Ok(Self {
             target_file_directory_path: target_file_directory.to_path_buf(),
+            target_file_path: PathBuf::from(target_file_path_str),
             ffmpeg_binary_path: config.tools.ffmpeg.binary.clone(),
             ffmpeg_arguments,
             queue_item,
@@ -563,7 +599,11 @@ impl FileJob for TranscodeAudioFileJob {
         message_sender: &Sender<FileJobMessage>,
     ) -> Result<()> {
         message_sender
-            .send(FileJobMessage::new_starting(self.queue_item))
+            .send(FileJobMessage::new_starting(
+                self.queue_item,
+                FileType::Audio,
+                self.target_file_path.to_string_lossy(),
+            ))
             .into_diagnostic()
             .wrap_err_with(|| {
                 miette!("Could not send FileJobMessage::Starting.")
@@ -579,7 +619,7 @@ impl FileJob for TranscodeAudioFileJob {
             let verbose_info = is_verbose_enabled()
                 .then(|| format!("fs::create_dir_all error: {error}"));
 
-            message_sender.send(FileJobMessage::new_finished(self.queue_item, FileJobResult::Errored {
+            message_sender.send(FileJobMessage::new_finished(self.queue_item, FileType::Audio, self.target_file_path.to_string_lossy(), FileJobResult::Errored {
                 error: "Could not create target file's missing parent directory.".to_string(),
                 verbose_info
             }))
@@ -632,7 +672,11 @@ impl FileJob for TranscodeAudioFileJob {
         if final_cancellation_flag {
             // Process was killed because of cancellation.
             message_sender
-                .send(FileJobMessage::new_cancelled(self.queue_item))
+                .send(FileJobMessage::new_cancelled(
+                    self.queue_item,
+                    FileType::Audio,
+                    self.target_file_path.to_string_lossy(),
+                ))
                 .into_diagnostic()
                 .wrap_err_with(|| {
                     miette!("Could not send FileJobMessage::Cancelled.")
@@ -698,6 +742,8 @@ impl FileJob for TranscodeAudioFileJob {
             message_sender
                 .send(FileJobMessage::new_finished(
                     self.queue_item,
+                    FileType::Audio,
+                    self.target_file_path.to_string_lossy(),
                     processing_result,
                 ))
                 .into_diagnostic()
@@ -776,7 +822,11 @@ impl FileJob for CopyFileJob {
         message_sender: &Sender<FileJobMessage>,
     ) -> Result<()> {
         message_sender
-            .send(FileJobMessage::new_starting(self.queue_item))
+            .send(FileJobMessage::new_starting(
+                self.queue_item,
+                FileType::Data,
+                self.target_file_path.to_string_lossy(),
+            ))
             .into_diagnostic()
             .wrap_err_with(|| {
                 miette!("Could not send FileJobMessage::Starting.")
@@ -792,7 +842,7 @@ impl FileJob for CopyFileJob {
             let verbose_info = is_verbose_enabled()
                 .then(|| format!("fs::create_dir_all error: {error}"));
 
-            message_sender.send(FileJobMessage::new_finished(self.queue_item, FileJobResult::Errored {
+            message_sender.send(FileJobMessage::new_finished(self.queue_item, FileType::Data, self.target_file_path.to_string_lossy(), FileJobResult::Errored {
                 error: "Could not create target file's missing parent directory.".to_string(),
                 verbose_info
             }))
@@ -839,6 +889,8 @@ impl FileJob for CopyFileJob {
         message_sender
             .send(FileJobMessage::new_finished(
                 self.queue_item,
+                FileType::Data,
+                self.target_file_path.to_string_lossy(),
                 processing_result,
             ))
             .into_diagnostic()
@@ -859,6 +911,8 @@ pub struct DeleteProcessedFileJob {
     /// Path to the file to delete.
     target_file_path: PathBuf,
 
+    file_type: FileType,
+
     /// If `true` we should ignore the error if `target_file_path` does not exist.
     ignore_if_missing: bool,
 
@@ -871,6 +925,7 @@ impl DeleteProcessedFileJob {
     /// If the file is missing
     pub fn new(
         target_file_path: PathBuf,
+        file_type: FileType,
         ignore_if_missing: bool,
         queue_item: QueueItemID,
     ) -> Result<Self> {
@@ -887,6 +942,7 @@ impl DeleteProcessedFileJob {
 
         Ok(Self {
             target_file_path,
+            file_type,
             ignore_if_missing,
             queue_item,
         })
@@ -900,7 +956,11 @@ impl FileJob for DeleteProcessedFileJob {
         message_sender: &Sender<FileJobMessage>,
     ) -> Result<()> {
         message_sender
-            .send(FileJobMessage::new_starting(self.queue_item))
+            .send(FileJobMessage::new_starting(
+                self.queue_item,
+                self.file_type,
+                self.target_file_path.to_string_lossy(),
+            ))
             .into_diagnostic()
             .wrap_err_with(|| {
                 miette!("Could not send FileJobMessage::Starting.")
@@ -933,6 +993,8 @@ impl FileJob for DeleteProcessedFileJob {
         message_sender
             .send(FileJobMessage::new_finished(
                 self.queue_item,
+                self.file_type,
+                self.target_file_path.to_string_lossy(),
                 processing_result,
             ))
             .into_diagnostic()

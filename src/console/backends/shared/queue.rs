@@ -1,311 +1,459 @@
 use std::fmt::Debug;
+use std::marker::PhantomData;
+use std::ops::Deref;
 
+use linked_hash_map::{Iter, LinkedHashMap};
 use miette::{miette, Result};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Span, Text};
-use ratatui::widgets::ListItem;
 
-use crate::console::backends::shared::queue_v2::{
-    QueueItem,
-    QueueItemGenericState,
-    QueueItemStateQuery,
-    RenderableQueueItem,
-};
+use crate::commands::transcode::views::SharedAlbumView;
 
+/// Unique queue item ID.
+///
+/// Behind the scenes, this is represented with a `u32`
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub struct QueueItemID(u32);
 
-/// Represents a set of `tui::style::Style` rules to apply when rendering a dynamic item queue.
-#[derive(Clone)]
-pub struct ListItemStyleRules {
-    /// Style to apply to items that are pending.
-    pub item_pending_style: Style,
-
-    /// Style to apply to items that are in progress.
-    pub item_in_progress_style: Style,
-
-    /// Style to apply to items that have finished successfully.
-    pub item_finished_ok_style: Style,
-
-    /// Style to apply to items that have finished unsuccessfully.
-    pub item_finished_not_ok_style: Style,
-
-    /// Style to apply to the potential leading "... (N completed) ..." message at the top of the queue.
-    pub leading_completed_items_style: Style,
-
-    /// Style to apply to the potential trailing "... (N remaining) ..." message at the bottom of the queue.
-    pub trailing_hidden_pending_items_style: Style,
+impl QueueItemID {
+    /// Generate a new random 32-bit `QueueItemID`.
+    pub fn new_random() -> Self {
+        Self(rand::random::<u32>())
+    }
 }
 
-/// Given a full list of `QueueItem`s, rules for styling the items and the maximum lines
-/// to generate, this function will generate a dynamic queue (a `Vec<ListItem>`).
-///
-/// The idea behind the dynamic queue is as follows:
-/// - `QueueItem`s can be pending, in-progress or completed,
-/// - as such we should hide the leading group of completed items, shifting the "live" view of the queue
-///   to a more relevant part where items are in-progress and pending.
-/// - additionally, to give a sense of progress, we should also add two special list items:
-///    - the leading "... (N completed) ..." when N leading items have been completed (when N >= 2)
-///    - the trailing "... (N hidden) ..." when there are N trailing items that don't fit in the given view.
-///
-///
-/// ### Example
-/// `task_queue` contains items ITEM #1 though ITEM #17 (#1 to #12 are completed), `max_list_lines = 5`
-/// ```
-/// ... (12 completed) ...
-/// ITEM #13
-/// ITEM #14
-/// ITEM #15
-/// ... (2 hidden) ...
-/// ```
-pub fn generate_dynamic_task_list<
-    'a,
-    Item: QueueItem<R> + RenderableQueueItem<RenderOutput> + 'a,
-    R: Debug,
-    RenderOutput: Into<Text<'a>>,
-    ItemIterator: ExactSizeIterator<Item = &'a Item>,
->(
-    task_queue: ItemIterator,
-    list_style_rules: ListItemStyleRules,
-    max_list_lines: usize,
-) -> Result<Vec<ListItem<'a>>> {
-    let task_queue: Vec<&'a Item> = task_queue.collect();
+impl Deref for QueueItemID {
+    type Target = u32;
 
-    let queue_size = task_queue.len();
-    let mut dynamic_task_list: Vec<ListItem> =
-        Vec::with_capacity(max_list_lines);
-
-
-    let mut lines_used: usize = 0;
-    let mut current_queue_offset: usize = 0;
-
-    // Generates leading text "... (N completed) ..." if there are at least
-    // two completed items at the top of the queue that we can squash and if the total length
-    // of the task queue is longer than we can display. This means we don't squash completed items
-    // if we can display them all.
-    let leading_items_completed_count = task_queue
-        .iter()
-        .take_while(|item| item.is_finished())
-        .count();
-
-    if leading_items_completed_count >= 2 && queue_size > max_list_lines {
-        let leading_completed_text = Span::styled(
-            format!(
-                "... ({} completed) ...",
-                leading_items_completed_count
-            ),
-            Style::default().add_modifier(Modifier::ITALIC),
-        );
-
-        dynamic_task_list.push(
-            ListItem::new(leading_completed_text)
-                .style(list_style_rules.leading_completed_items_style),
-        );
-
-        current_queue_offset += leading_items_completed_count;
-        lines_used += 1;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
-
-    // Before we add normal lines we calculate if we will need a trailing "... (N hidden) ..." entry.
-    // This is only shown when the remaining items would overflow.
-    let should_add_trailing =
-        (queue_size - current_queue_offset + 1) > (max_list_lines - lines_used);
-    if should_add_trailing {
-        lines_used += 1;
-    }
-
-    // Add as many normal lines as possible.
-    while lines_used < max_list_lines && current_queue_offset < queue_size {
-        let next_item = task_queue
-            .get(current_queue_offset)
-            .ok_or_else(|| miette!("BUG: Could not get queue item."))?;
-
-        let wanted_item_style = match next_item.get_state() {
-            QueueItemGenericState::Pending => {
-                list_style_rules.item_pending_style
-            }
-            QueueItemGenericState::Queued => list_style_rules.item_pending_style,
-            QueueItemGenericState::InProgress => {
-                list_style_rules.item_in_progress_style
-            }
-            QueueItemGenericState::Finished { ok } => match ok {
-                true => list_style_rules.item_finished_ok_style,
-                false => list_style_rules.item_finished_not_ok_style,
-            },
-        };
-
-        let item = ListItem::new(next_item.render()).style(wanted_item_style);
-
-        dynamic_task_list.push(item);
-
-        current_queue_offset += 1;
-        lines_used += 1;
-    }
-
-    if should_add_trailing {
-        let hidden_item_count = queue_size - current_queue_offset + 2;
-
-        // FIXME Figure out why I had to insert this and fix the source of the problem.
-        dynamic_task_list.pop();
-        dynamic_task_list.pop();
-
-        let trailing_hidden_text = Span::styled(
-            format!("... ({} hidden) ...", hidden_item_count),
-            Style::default().add_modifier(Modifier::ITALIC),
-        );
-
-        dynamic_task_list.push(
-            ListItem::new(trailing_hidden_text)
-                .style(list_style_rules.trailing_hidden_pending_items_style),
-        );
-    }
-
-    Ok(dynamic_task_list)
 }
+
+/// A bare version of `AlbumItemState` and `FileItemState` that only has
+/// the essential additional context.
+///
+/// Useful as a general state enum in `QueueItem` so we
+/// don't have to parametrize another type.
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum GenericQueueItemState {
+    /// Item has been initialized, but not queued yet.
+    Pending,
+
+    /// Item has been queued and is waiting to be started.
+    Queued,
+
+    /// Item has been queued and is currently in progress
+    /// (transcoding, copying, etc. - depending on context).
+    InProgress,
+
+    /// Item has been queued and has finished.
+    ///
+    /// The `ok` field indicates whether the operation this item represents
+    /// has completed successfully.
+    Finished { ok: bool },
+}
+
+
+/// `QueueItem` includes general methods of accessing queue items state and information.
+///
+/// Implement on specific queue items (e.g. `AlbumItem<'_>`, see below).
+pub trait QueueItem<FinishResult: Debug> {
+    /// Get the `QueueItem`s ID.
+    fn get_id(&self) -> QueueItemID;
+
+    /// Get the state the queue item is currently in.
+    /// The returned type is a `QueueItemGenericState`, which is
+    /// a simply, context-less version of `AlbumItemState` and `FileItemState`.
+    ///
+    /// This was done to avoid having another generic, but it means implementations
+    /// must do one more state conversion.
+    fn get_state(&self) -> GenericQueueItemState;
+
+    /// Called by the queue when the item is queued.
+    fn on_item_enqueued(&mut self);
+
+    /// Called by the queue when the item is marked as started.
+    fn on_item_started(&mut self);
+
+    /// Called by the queue when the item is marked as finished.
+    fn on_item_finished(&mut self, result: FinishResult);
+}
+
+/// To be implemented by queue items that can be rendered to the screen.
+pub trait RenderableQueueItem<RenderOutput> {
+    fn render(&self) -> RenderOutput;
+}
+
+
+/// Ease of use trait to help with queue item state queries.
+///
+/// *Not intended to be implemented manually, see blanket implementation below.*
+pub trait QueueItemStateQuery<R: Debug> {
+    fn is_pending(&self) -> bool;
+    fn is_queued(&self) -> bool;
+    fn is_in_progress(&self) -> bool;
+    fn is_finished(&self) -> bool;
+}
+
+// Blanket implementation on basically all `QueueItem`s to help with querying for states.
+impl<I: QueueItem<R>, R: Debug> QueueItemStateQuery<R> for I {
+    fn is_pending(&self) -> bool {
+        matches!(self.get_state(), GenericQueueItemState::Pending)
+    }
+
+    fn is_queued(&self) -> bool {
+        matches!(self.get_state(), GenericQueueItemState::Queued)
+    }
+
+    fn is_in_progress(&self) -> bool {
+        matches!(
+            self.get_state(),
+            GenericQueueItemState::InProgress
+        )
+    }
+
+    fn is_finished(&self) -> bool {
+        matches!(
+            self.get_state(),
+            GenericQueueItemState::Finished { .. }
+        )
+    }
+}
+
 
 /*
-/// Given a full list of `QueueItem`s, rules for styling the items and the maximum lines to generate,
-/// this function will generate a dynamic queue (a `Vec<ListItem>`).
-///
-/// The idea behind the dynamic queue is as follows:
-/// - `QueueItem`s can be pending, in-progress or completed,
-/// - as such we should hide the leading group of completed items, shifting the "live" view of the queue
-///   to a more relevant part where items are in-progress and pending.
-/// - additionally, to give a sense of progress, we should also add two special list items:
-///    - the leading "... (N completed) ..." when N leading items have been completed (when N >= 2)
-///    - the trailing "... (N remaining) ..." when there are N trailing items that don't fit in the given view.
-///
-/// Example: `full_queue` contains items ITEM #1 though ITEM #17 (#1 to #12 are completed), `max_lines = 5`
-/// ```
-/// ... (12 completed) ...
-/// ITEM #13
-/// ITEM #14
-/// ITEM #15
-/// ... (2 remaining) ...
-/// ```
-// TODO Pending rewrite. When finished, move into queue_v2.rs
-pub fn generate_dynamic_list_from_queue_items<Item: QueueItem<R>, R: Debug>(
-    full_queue: &Vec<Item>,
-    list_style_rules: ListItemStyleRules,
-    max_lines: usize,
-) -> Result<Vec<ListItem>> {
-    let total_queue_size = full_queue.len();
-    let mut dynamic_list: Vec<ListItem> = Vec::with_capacity(max_lines);
+ * ALBUM QUEUE ITEM implementation
+ */
+#[derive(Copy, Clone, Debug)]
+pub struct AlbumQueueItemFinishedResult {
+    pub ok: bool,
+}
 
-    let leading_items_completed_count = full_queue
-        .iter()
-        .take_while(|item| item.finished_state.is_some())
-        .count();
+impl AlbumQueueItemFinishedResult {
+    pub fn new_ok() -> Self {
+        Self { ok: true }
+    }
+}
 
-    // Generate dynamic list.
-    let mut lines_used: usize = 0;
-    let mut current_queue_offset: usize = 0;
 
-    // Additionally, don't generate the leading and trailing lines if
-    // the amount of tasks fits in the window anyway.
+#[derive(Copy, Clone)]
+pub enum AlbumQueueItemState {
+    /// Initialized, but not even queued yet.
+    Pending,
 
-    // Generates leading "... (12 completed) ..." if there are
-    // at least two completed items at the top of the queue.
-    if leading_items_completed_count >= 2 && total_queue_size > max_lines {
-        dynamic_list.push(
-            ListItem::new(Span::styled(
-                format!(
-                    "  ... ({leading_items_completed_count} completed) ...",
-                ),
-                Style::default().add_modifier(Modifier::ITALIC),
-            ))
-            .style(list_style_rules.leading_completed_items_style),
-        );
-        current_queue_offset += leading_items_completed_count;
-        lines_used += 1;
+    /// Queued and waiting to be started.
+    Queued,
+
+    /// Queued and in progress.
+    InProgress,
+
+    /// Queued and finished.
+    Finished { ok: bool },
+}
+
+pub struct AlbumQueueItem<'config> {
+    pub id: QueueItemID,
+
+    pub album_view: SharedAlbumView<'config>,
+
+    pub num_changed_audio_files: usize,
+    pub num_changed_data_files: usize,
+
+    pub state: AlbumQueueItemState,
+}
+
+impl<'a> AlbumQueueItem<'a> {
+    pub fn new(
+        album: SharedAlbumView<'a>,
+        num_changed_audio_files: usize,
+        num_changed_data_files: usize,
+    ) -> Self {
+        let random_id = QueueItemID::new_random();
+
+        Self {
+            id: random_id,
+            album_view: album,
+            num_changed_audio_files,
+            num_changed_data_files,
+            state: AlbumQueueItemState::Pending,
+        }
+    }
+}
+
+impl<'a> QueueItem<AlbumQueueItemFinishedResult> for AlbumQueueItem<'a> {
+    #[inline]
+    fn get_id(&self) -> QueueItemID {
+        self.id
     }
 
-    // Preparation for trailing "... (23 remaining) ..." line.
-    // This trailing message is shown only if there are more items that are hidden.
-    let add_trailing =
-        total_queue_size - current_queue_offset + 1 > max_lines - lines_used;
-    if add_trailing {
-        lines_used += 1;
-    }
-
-    // Generates as many "normal" lines as possible.
-    while lines_used < max_lines && current_queue_offset < total_queue_size {
-        let next_item = full_queue
-            .get(current_queue_offset)
-            .ok_or_else(|| miette!("Could not get queue item."))?;
-
-        let item_style = match next_item.get_state() {
-            QueueItemState::Pending => list_style_rules.item_pending_style,
-            QueueItemState::InProgress => {
-                list_style_rules.item_in_progress_style
+    #[inline]
+    fn get_state(&self) -> GenericQueueItemState {
+        match self.state {
+            AlbumQueueItemState::Pending => GenericQueueItemState::Pending,
+            AlbumQueueItemState::Queued => GenericQueueItemState::Queued,
+            AlbumQueueItemState::InProgress => GenericQueueItemState::InProgress,
+            AlbumQueueItemState::Finished { ok } => {
+                GenericQueueItemState::Finished { ok }
             }
-            QueueItemState::Finished => {
-                match next_item
-                    .finished_state
-                    .as_ref()
-                    .expect(
-                        "QueueItemState::Finished, but finished state is None?!",
-                    )
-                    .is_ok
-                {
-                    true => list_style_rules.item_finished_ok_style,
-                    false => list_style_rules.item_finished_not_ok_style,
+        }
+    }
+
+    fn on_item_enqueued(&mut self) {
+        self.state = AlbumQueueItemState::Queued;
+    }
+
+    fn on_item_started(&mut self) {
+        self.state = AlbumQueueItemState::InProgress;
+    }
+
+    fn on_item_finished(&mut self, result: AlbumQueueItemFinishedResult) {
+        self.state = AlbumQueueItemState::Finished { ok: result.ok }
+    }
+}
+
+impl<'a> RenderableQueueItem<String> for AlbumQueueItem<'a> {
+    fn render(&self) -> String {
+        // This is just a placeholder implementation as concrete backend implementations
+        // are expected to "subclass" (enclose) this struct with their specific implementation.
+        let album_locked = self.album_view.read();
+
+        format!(
+            "{} - {}",
+            album_locked.read_lock_artist().name,
+            album_locked.title,
+        )
+    }
+}
+
+
+/*
+ * FILE QUEUE ITEM implementation
+ */
+#[derive(Copy, Clone)]
+pub enum FileQueueItemType {
+    /// Audio files, as configured per-library.
+    Audio,
+
+    /// Data (non-audio) files, as configured per-library.
+    Data,
+
+    /// Unknown (non-audio, non-data) files.
+    ///
+    /// This type only appears in cases of "excess" files in the transcoded library
+    /// (see `AlbumFileChangesV2::generate_from_source_and_transcoded_state`).
+    Unknown,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum FileQueueItemState {
+    /// Initialized, but not even queued yet.
+    Pending,
+
+    /// Queued and waiting to be started.
+    Queued,
+
+    /// Queued and in progress.
+    InProgress,
+
+    /// Queued and finished.
+    Finished { result: FileQueueItemFinishedResult },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FileQueueItemErrorType {
+    Cancelled,
+    Errored { error: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FileQueueItemFinishedResult {
+    Ok,
+    Failed(FileQueueItemErrorType),
+}
+
+pub struct FileQueueItem<'config> {
+    pub id: QueueItemID,
+
+    pub album_view: SharedAlbumView<'config>,
+
+    pub file_type: FileQueueItemType,
+
+    pub file_name: String,
+
+    pub state: FileQueueItemState,
+}
+
+impl<'config> FileQueueItem<'config> {
+    pub fn new(
+        album: SharedAlbumView<'config>,
+        file_type: FileQueueItemType,
+        file_name: String,
+    ) -> Self {
+        let random_id = QueueItemID::new_random();
+
+        Self {
+            id: random_id,
+            album_view: album,
+            file_type,
+            file_name,
+            state: FileQueueItemState::Pending,
+        }
+    }
+}
+
+impl<'config> QueueItem<FileQueueItemFinishedResult> for FileQueueItem<'config> {
+    #[inline]
+    fn get_id(&self) -> QueueItemID {
+        self.id
+    }
+
+    #[inline]
+    fn get_state(&self) -> GenericQueueItemState {
+        match &self.state {
+            FileQueueItemState::Pending => GenericQueueItemState::Pending,
+            FileQueueItemState::Queued => GenericQueueItemState::Queued,
+            FileQueueItemState::InProgress => GenericQueueItemState::InProgress,
+            FileQueueItemState::Finished { result } => {
+                GenericQueueItemState::Finished {
+                    ok: result == &FileQueueItemFinishedResult::Ok,
                 }
             }
-        };
-
-        dynamic_list.push(
-            ListItem::new(Spans(vec![
-                Span::raw(
-                    if let Some(spinner) = &next_item.spinner {
-                        format!(" {} ", spinner.get_current_phase())
-                    } else {
-                        match next_item.spaces_when_spinner_is_disabled {
-                            true => "   ".into(),
-                            false => "".into(),
-                        }
-                    },
-                ),
-                Span::styled(
-                    if let Some(prefix) = &next_item.prefix {
-                        prefix
-                    } else {
-                        ""
-                    },
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(next_item.content.clone()),
-                Span::styled(
-                    if let Some(suffix) = &next_item.suffix {
-                        suffix
-                    } else {
-                        ""
-                    },
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-            ]))
-            .style(item_style),
-        );
-
-        current_queue_offset += 1;
-        lines_used += 1;
+        }
     }
 
-    // If there are still (overflowing) trailing pending tasks, we show them in the last line
-    // as "... (54 remaining) ...".
-    if add_trailing {
-        let hidden_pending_item_count =
-            total_queue_size - current_queue_offset + 2;
-
-        dynamic_list.pop();
-        dynamic_list.pop();
-        dynamic_list.push(
-            ListItem::new(Span::styled(
-                format!("  ... ({hidden_pending_item_count} remaining) ...",),
-                Style::default().add_modifier(Modifier::ITALIC),
-            ))
-            .style(list_style_rules.trailing_hidden_pending_items_style),
-        );
+    fn on_item_enqueued(&mut self) {
+        self.state = FileQueueItemState::Queued;
     }
 
-    Ok(dynamic_list)
+    fn on_item_started(&mut self) {
+        self.state = FileQueueItemState::InProgress;
+    }
+
+    fn on_item_finished(&mut self, result: FileQueueItemFinishedResult) {
+        self.state = FileQueueItemState::Finished { result }
+    }
 }
-*/
+
+impl<'config> RenderableQueueItem<String> for FileQueueItem<'config> {
+    fn render(&self) -> String {
+        // This is just a placeholder implementation as concrete backend implementations
+        // are expected to "subclass" (enclose) this struct with their specific implementation.
+        format!(
+            "{} {}",
+            match self.file_type {
+                FileQueueItemType::Audio => "[audio]",
+                FileQueueItemType::Data => " [data]",
+                FileQueueItemType::Unknown => "   [??]",
+            },
+            self.file_name,
+        )
+    }
+}
+
+
+/*
+ * QUEUE implementation
+ */
+
+/// A generic queue. Its items must implement `QueueItem`,
+/// making the queue items identifiable by their `QueueItemID`
+/// as well as having several event handlers.
+pub struct Queue<Item: QueueItem<FinishedResult>, FinishedResult: Debug> {
+    /// We use `LinkedHashMap` because we need to preserve the insertion order
+    /// and also be able to quickly get specific items by their keys.
+    items: LinkedHashMap<QueueItemID, Item>,
+
+    /// Couldn't make the compiler ignore that `R` is unused, so I added `PhantomData`.
+    /// Maybe I'm just stupid? We need that R in `impl` below.
+    _phantom_data: PhantomData<FinishedResult>,
+}
+
+impl<I: QueueItem<R>, R: Debug> Queue<I, R> {
+    /// Instantiate a new empty `Queue`.
+    pub fn new() -> Self {
+        Self {
+            items: LinkedHashMap::new(),
+            _phantom_data: PhantomData,
+        }
+    }
+
+    /// Get a reference to the item with the given `QueueItemID`.
+    ///
+    /// If an item with the given ID exists, `Some(&mut queue_item)` is returned.
+    ///
+    /// If no such item exists, `None` is returned.
+    pub fn item(&mut self, item_id: QueueItemID) -> Option<&I> {
+        self.items.get(&item_id)
+    }
+
+    /// Get a mutable reference to the item with the given `QueueItemID`.
+    ///
+    /// If an item with the given ID exists, `Some(&mut queue_item)` is returned.
+    ///
+    /// If no such item exists, `None` is returned.
+    pub fn item_mut(&mut self, item_id: QueueItemID) -> Option<&mut I> {
+        self.items.get_mut(&item_id)
+    }
+
+    pub fn items(&self) -> Iter<QueueItemID, I> {
+        self.items.iter()
+    }
+
+    /// Adds an item to the queue.
+    pub fn queue_item(&mut self, mut item: I) -> Result<()> {
+        let item_id = item.get_id();
+        if self.items.contains_key(&item_id) {
+            return Err(miette!("This queue item already exists."));
+        }
+
+        item.on_item_enqueued();
+        self.items.insert(item_id, item);
+        Ok(())
+    }
+
+    /// Remove a queue item by its `QueueItemID`. If no such item exists,
+    /// this method returns `Err`, otherwise `Ok(removed_item)`.
+    pub fn remove_item(&mut self, item_id: QueueItemID) -> Result<I> {
+        let removed_item = self
+            .items
+            .remove(&item_id)
+            .ok_or_else(|| miette!("No such queue item."))?;
+
+        Ok(removed_item)
+    }
+
+    /// Put the given item into its "in-progress" state by calling its `start` method.
+    pub fn start_item(&mut self, item_id: QueueItemID) -> Result<()> {
+        let item = self
+            .item_mut(item_id)
+            .ok_or_else(|| miette!("No such queue item."))?;
+
+        item.on_item_started();
+
+        Ok(())
+    }
+
+    /// Put the given item into its "finished" state by calling its `finish` method.
+    /// The parameter `result` should contain the result, the type of which depends on the
+    /// items in the queue (see `QueueItem`'s `FinishResult` generic).
+    pub fn finish_item(
+        &mut self,
+        item_id: QueueItemID,
+        result: R,
+    ) -> Result<()> {
+        let item = self
+            .item_mut(item_id)
+            .ok_or_else(|| miette!("No such queue item."))?;
+
+        item.on_item_finished(result);
+
+        Ok(())
+    }
+
+    /// Clear the queue.
+    ///
+    /// Note that this does not free up the existing allocated memory of the `Vec` backing this queue
+    /// (same behaviour as `Vec` - the existing capacity remains).
+    pub fn clear(&mut self) {
+        self.items.clear();
+    }
+}
