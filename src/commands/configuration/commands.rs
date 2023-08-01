@@ -27,7 +27,7 @@ fn terminal_print_group_header<S: AsRef<str>>(
 ///
 /// Prints the entire configuration.
 pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
-    terminal.log_println(&format!(
+    terminal.log_println(format!(
         "Configuration file: {}",
         config.configuration_file_path.to_string_lossy(),
     ));
@@ -35,21 +35,29 @@ pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
 
 
     // Essentials
-    terminal_print_group_header(terminal, "essentials");
-    terminal.log_println(&format!(
+    terminal_print_group_header(terminal, "paths");
+    terminal.log_println(format!(
         "    base_library_path = {}",
         config.paths.base_library_path,
     ));
-    terminal.log_println(&format!(
+    terminal.log_println(format!(
         "    base_tools_path = {}",
         config.paths.base_tools_path,
     ));
     terminal.log_newline();
 
 
+    // Logging
+    terminal_print_group_header(terminal, "logging");
+    terminal.log_println(format!(
+        "    default_log_output_path = {:?}",
+        config.logging.default_log_output_path
+    ));
+
+
     // Validation (basics)
     terminal_print_group_header(terminal, "validation");
-    terminal.log_println(&format!(
+    terminal.log_println(format!(
         "    extensions_considered_audio_files = {:?}",
         config.validation.extensions_considered_audio_files,
     ));
