@@ -38,11 +38,11 @@ pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
     terminal_print_group_header(terminal, "essentials");
     terminal.log_println(&format!(
         "    base_library_path = {}",
-        config.essentials.base_library_path,
+        config.paths.base_library_path,
     ));
     terminal.log_println(&format!(
         "    base_tools_path = {}",
-        config.essentials.base_tools_path,
+        config.paths.base_tools_path,
     ));
     terminal.log_newline();
 

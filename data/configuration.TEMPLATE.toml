@@ -3,7 +3,7 @@
 # This configuration table contains the most essential configuration values.
 # You may use the `{SELF}` placeholder in these two configuration values - it refers to
 # the location (directory) of the CLI binary.
-[essentials]
+[paths]
 # `base_library_path` will become the `{LIBRARY_BASE}` placeholder in several tables below:
 # - libraries,
 # - aggregated_library.
@@ -11,6 +11,14 @@ base_library_path = "D:/_temp/MusicTesting"
 # `base_tools_path` will become the `{TOOLS_BASE}` placeholder for use in the `tools` configuration table below.
 base_tools_path = "{SELF}/tools/"
 
+
+#####
+## LOGGING
+# This controls how logging is performed.
+# Can be unset, in which case no logs are saved by default.
+# Even if set, it can be overriden with `--log-to-file`.
+[logging]
+default_log_output_path = "{LIBRARY_BASE}/euphony.log"
 
 
 #####

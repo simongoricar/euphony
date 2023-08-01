@@ -25,7 +25,7 @@ use crate::commands::transcode::views::{
     SharedAlbumView,
     SortedFileMap,
 };
-use crate::configuration::{Config, ConfigLibrary};
+use crate::configuration::{Config, LibraryConfig};
 use crate::console::backends::shared::queue::QueueItemID;
 
 const SOURCE_ALBUM_STATE_FILE_NAME: &str = ".album.source-state.euphony";
@@ -319,7 +319,7 @@ impl SourceAlbumState {
     /// This method will do the necessary file extension swapping (e.g. FLAC -> MP3).
     pub fn get_transcoded_file_path<P: AsRef<Path>>(
         configuration: &Config,
-        library_configuration: &ConfigLibrary,
+        library_configuration: &LibraryConfig,
         source_file_path: P,
     ) -> Result<PathBuf> {
         let source_file_path = source_file_path.as_ref();
@@ -1530,7 +1530,7 @@ impl<'view> AlbumFileChangesV2<'view> {
         I: IntoIterator<Item = P>,
     >(
         configuration: &Config,
-        library_configuration: &ConfigLibrary,
+        library_configuration: &LibraryConfig,
         source_base_directory: S,
         target_base_directory: T,
         paths: I,

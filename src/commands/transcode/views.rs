@@ -15,7 +15,7 @@ use crate::commands::transcode::album_state::{
     SourceAlbumState,
     TranscodedAlbumState,
 };
-use crate::configuration::{Config, ConfigLibrary};
+use crate::configuration::{Config, LibraryConfig};
 use crate::filesystem::DirectoryScan;
 
 /*
@@ -54,14 +54,14 @@ pub struct LibraryView<'config> {
     pub euphony_configuration: &'config Config,
 
     /// The associated `ConfigLibrary` instance.
-    pub library_configuration: &'config ConfigLibrary,
+    pub library_configuration: &'config LibraryConfig,
 }
 
 impl<'config> LibraryView<'config> {
     /// Instantiate a new `LibraryView` from the library's configuration struct.
     pub fn from_library_configuration(
         config: &'config Config,
-        library_config: &'config ConfigLibrary,
+        library_config: &'config LibraryConfig,
     ) -> SharedLibraryView<'config> {
         Arc::new_cyclic(|weak| {
             RwLock::new(Self {
@@ -497,7 +497,7 @@ impl<'config> AlbumView<'config> {
     }
 
     /// Return the relevant `ConfigLibrary` (configuration for the specific library).
-    pub fn library_configuration(&self) -> &'config ConfigLibrary {
+    pub fn library_configuration(&self) -> &'config LibraryConfig {
         self.read_lock_artist()
             .read_lock_library()
             .library_configuration

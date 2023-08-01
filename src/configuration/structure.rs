@@ -17,16 +17,18 @@ use crate::filesystem::get_path_extension_or_empty;
 /// from tool paths to libraries and so forth.
 #[derive(Deserialize, Clone)]
 pub struct Config {
-    pub essentials: ConfigEssentials,
+    pub paths: ConfigPaths,
 
-    pub validation: ConfigValidation,
+    pub logging: LoggingConfig,
 
-    pub tools: ConfigTools,
+    pub validation: ValidationConfig,
 
-    pub libraries: BTreeMap<String, ConfigLibrary>,
+    pub tools: ToolsConfig,
 
-    // TODO Rename "aggregated library" to something else, like "transcoded library".
-    pub aggregated_library: ConfigAggregated,
+    pub libraries: BTreeMap<String, LibraryConfig>,
+
+    // TODO Should I rename "aggregated library" to something else, like "transcoded library"?
+    pub aggregated_library: AggregatedLibraryConfig,
 
     #[serde(skip)]
     pub configuration_file_path: PathBuf,
@@ -52,17 +54,15 @@ impl Config {
 
         // Run init methods for all configuration sub-tables.
 
-        config.essentials.after_load_init()?;
+        config.paths.after_load_init()?;
         config.validation.after_load_init()?;
 
         for library in config.libraries.values_mut() {
-            library.after_load_init(&config.essentials)?;
+            library.after_load_init(&config.paths)?;
         }
 
-        config
-            .aggregated_library
-            .after_load_init(&config.essentials)?;
-        config.tools.after_load_init(&config.essentials)?;
+        config.aggregated_library.after_load_init(&config.paths)?;
+        config.tools.after_load_init(&config.paths)?;
 
         Ok(config)
     }
@@ -103,21 +103,21 @@ impl Config {
     pub fn get_library_by_full_name<S: AsRef<str>>(
         &self,
         library_name: S,
-    ) -> Option<&ConfigLibrary> {
+    ) -> Option<&LibraryConfig> {
         self.libraries
             .values()
             .find(|library| library.name.eq(library_name.as_ref()))
     }
 }
 
-/// Basic configuration - reusable values such as the base library path and base tools path.
+/// Base paths - reusable values such as the base library path and base tools path.
 #[derive(Deserialize, Clone)]
-pub struct ConfigEssentials {
+pub struct ConfigPaths {
     pub base_library_path: String,
     pub base_tools_path: String,
 }
 
-impl AfterLoadInitable for ConfigEssentials {
+impl AfterLoadInitable for ConfigPaths {
     fn after_load_init(&mut self) -> Result<()> {
         // Replaces any placeholders and validates the paths.
         let executable_directory = get_running_executable_directory()?
@@ -151,12 +151,20 @@ impl AfterLoadInitable for ConfigEssentials {
     }
 }
 
+
+// TODO Integrate (with --log-to-file override)
 #[derive(Deserialize, Clone)]
-pub struct ConfigValidation {
+pub struct LoggingConfig {
+    pub default_log_output_path: Option<PathBuf>,
+}
+
+
+#[derive(Deserialize, Clone)]
+pub struct ValidationConfig {
     pub extensions_considered_audio_files: Vec<String>,
 }
 
-impl AfterLoadInitable for ConfigValidation {
+impl AfterLoadInitable for ValidationConfig {
     fn after_load_init(&mut self) -> Result<()> {
         for ext in &mut self.extensions_considered_audio_files {
             ext.make_ascii_lowercase();
@@ -166,13 +174,14 @@ impl AfterLoadInitable for ConfigValidation {
     }
 }
 
+
 #[derive(Deserialize, Clone)]
-pub struct ConfigTools {
-    pub ffmpeg: ConfigToolsFFMPEG,
+pub struct ToolsConfig {
+    pub ffmpeg: FFMPEGToolsConfig,
 }
 
-impl AfterLoadWithEssentialsInitable for ConfigTools {
-    fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
+impl AfterLoadWithEssentialsInitable for ToolsConfig {
+    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
         self.ffmpeg.after_load_init(essentials)?;
 
         Ok(())
@@ -180,7 +189,7 @@ impl AfterLoadWithEssentialsInitable for ConfigTools {
 }
 
 #[derive(Deserialize, Clone)]
-pub struct ConfigToolsFFMPEG {
+pub struct FFMPEGToolsConfig {
     /// Configures the ffmpeg binary location.
     /// The {TOOLS_BASE} placeholder is available (see `base_tools_path` in the `essentials` table)
     pub binary: String,
@@ -194,7 +203,7 @@ pub struct ConfigToolsFFMPEG {
     pub audio_transcoding_output_extension: String,
 }
 
-impl ConfigToolsFFMPEG {
+impl FFMPEGToolsConfig {
     /// Returns `Ok(true)` if the given path's extension matches the ffmpeg transcoding
     /// output path.
     /// Returns `Err` if the extension is not valid UTF-8.
@@ -208,8 +217,8 @@ impl ConfigToolsFFMPEG {
     }
 }
 
-impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
-    fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
+impl AfterLoadWithEssentialsInitable for FFMPEGToolsConfig {
+    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
         let ffmpeg = self
             .binary
             .replace("{TOOLS_BASE}", &essentials.base_tools_path);
@@ -232,8 +241,9 @@ impl AfterLoadWithEssentialsInitable for ConfigToolsFFMPEG {
     }
 }
 
+
 #[derive(Deserialize, Clone)]
-pub struct ConfigLibrary {
+pub struct LibraryConfig {
     /// Library display name.
     pub name: String,
 
@@ -244,14 +254,14 @@ pub struct ConfigLibrary {
     pub ignored_directories_in_base_directory: Option<Vec<String>>,
 
     /// Validation-related configuration for this library.
-    pub validation: ConfigLibraryValidation,
+    pub validation: LibraryValidationConfig,
 
     /// Transcoding-related configuration for this library.
-    pub transcoding: ConfigLibraryTranscoding,
+    pub transcoding: LibraryTranscodingConfig,
 }
 
-impl AfterLoadWithEssentialsInitable for ConfigLibrary {
-    fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
+impl AfterLoadWithEssentialsInitable for LibraryConfig {
+    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
         let parsed_path = self
             .path
             .replace("{LIBRARY_BASE}", &essentials.base_library_path);
@@ -281,8 +291,9 @@ impl AfterLoadWithEssentialsInitable for ConfigLibrary {
     }
 }
 
+
 #[derive(Deserialize, Clone)]
-pub struct ConfigLibraryValidation {
+pub struct LibraryValidationConfig {
     /// A list of allowed audio extensions. Any not specified here are forbidden
     /// (flagged when running validation), see configuration template for more information.
     pub allowed_audio_file_extensions: Vec<String>,
@@ -292,7 +303,7 @@ pub struct ConfigLibraryValidation {
     pub allowed_other_files_by_name: Vec<String>,
 }
 
-impl AfterLoadInitable for ConfigLibraryValidation {
+impl AfterLoadInitable for LibraryValidationConfig {
     fn after_load_init(&mut self) -> Result<()> {
         // Make extensions lowercase.
         for ext in &mut self.allowed_audio_file_extensions {
@@ -303,8 +314,9 @@ impl AfterLoadInitable for ConfigLibraryValidation {
     }
 }
 
+
 #[derive(Deserialize, Clone)]
-pub struct ConfigLibraryTranscoding {
+pub struct LibraryTranscodingConfig {
     /// A list of audio file extensions (e.g. "mp3", "flac" - don't include ".").
     /// Files with these extensions are considered audio files and are transcoded using ffmpeg
     /// (see `tools.ffmpeg`).
@@ -319,7 +331,7 @@ pub struct ConfigLibraryTranscoding {
     pub all_tracked_extensions: Vec<String>,
 }
 
-impl ConfigLibraryTranscoding {
+impl LibraryTranscodingConfig {
     /// Returns `Ok(true)` when the given file path's extension is considered an audio file.
     /// Returns `Err` if the extension is invalid UTF-8.
     pub fn is_path_audio_file_by_extension<P: AsRef<Path>>(
@@ -343,7 +355,7 @@ impl ConfigLibraryTranscoding {
     }
 }
 
-impl AfterLoadInitable for ConfigLibraryTranscoding {
+impl AfterLoadInitable for LibraryTranscodingConfig {
     fn after_load_init(&mut self) -> Result<()> {
         // Make extensions lowercase.
         for ext in &mut self.audio_file_extensions {
@@ -363,8 +375,9 @@ impl AfterLoadInitable for ConfigLibraryTranscoding {
     }
 }
 
+
 #[derive(Deserialize, Clone)]
-pub struct ConfigAggregated {
+pub struct AggregatedLibraryConfig {
     pub path: String,
 
     pub transcode_threads: usize,
@@ -374,8 +387,8 @@ pub struct ConfigAggregated {
     pub failure_delay_seconds: u16,
 }
 
-impl AfterLoadWithEssentialsInitable for ConfigAggregated {
-    fn after_load_init(&mut self, essentials: &ConfigEssentials) -> Result<()> {
+impl AfterLoadWithEssentialsInitable for AggregatedLibraryConfig {
+    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
         self.path = self
             .path
             .replace("{LIBRARY_BASE}", &essentials.base_library_path);

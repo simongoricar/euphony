@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crossterm::style::Stylize;
 use miette::{miette, Context, Result};
 
-use crate::configuration::{Config, ConfigLibrary};
+use crate::configuration::{Config, LibraryConfig};
 use crate::console::backends::ValidationTerminal;
 use crate::console::{LogBackend, ValidationBackend, ValidationErrorInfo};
 use crate::filesystem::DirectoryScan;
@@ -27,7 +27,7 @@ impl<'a> ValidationError<'a> {
     /// Initialize a new validation error: an unexpected file.
     pub fn new_unexpected_file<P: Into<PathBuf>>(
         file_path: P,
-        library: &'a ConfigLibrary,
+        library: &'a LibraryConfig,
         reason: UnexpectedFileType,
     ) -> Self {
         Self::UnexpectedFile(UnexpectedFile::new(file_path, library, reason))
@@ -71,7 +71,7 @@ pub struct UnexpectedFile<'a> {
     file_path: PathBuf,
 
     /// What library the unexpected file is part of.
-    library: &'a ConfigLibrary,
+    library: &'a LibraryConfig,
 
     /// Specific reason for why this is unexpected.
     reason: UnexpectedFileType,
@@ -80,7 +80,7 @@ pub struct UnexpectedFile<'a> {
 impl<'a> UnexpectedFile<'a> {
     pub fn new<P: Into<PathBuf>>(
         file_path: P,
-        library: &'a ConfigLibrary,
+        library: &'a LibraryConfig,
         reason: UnexpectedFileType,
     ) -> Self {
         Self {
@@ -146,7 +146,7 @@ impl<'a> ValidationErrorDisplay for UnexpectedFile<'a> {
 pub struct ValidationAlbumEntry<'a> {
     pub artist_name: String,
     pub album_title: String,
-    pub library: &'a ConfigLibrary,
+    pub library: &'a LibraryConfig,
 }
 
 impl<'a> ValidationAlbumEntry<'a> {
@@ -155,7 +155,7 @@ impl<'a> ValidationAlbumEntry<'a> {
     pub fn new<S: Into<String>>(
         artist_name: S,
         album_title: S,
-        library: &'a ConfigLibrary,
+        library: &'a LibraryConfig,
     ) -> Self {
         Self {
             artist_name: artist_name.into(),
@@ -292,7 +292,7 @@ impl<'a> CollectionCollisionValidator<'a> {
         &mut self,
         artist_name: S,
         album_title: S,
-        library: &'a ConfigLibrary,
+        library: &'a LibraryConfig,
     ) -> Result<()> {
         let artist_name = artist_name.into();
         let album_title = album_title.into();

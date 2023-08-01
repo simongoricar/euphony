@@ -72,7 +72,7 @@ struct TranscodeAllArgs {
         long = "log-to-file",
         help = "Path to the log file. If this is unset, no logs are saved."
     )]
-    log_to_file: Option<String>,
+    log_to_file: Option<PathBuf>,
 }
 
 #[derive(Args, Eq, PartialEq)]
@@ -81,7 +81,7 @@ struct ValidateAllArgs {
         long = "log-to-file",
         help = "Path to the log file. If this is unset, no logs are saved."
     )]
-    log_to_file: Option<String>,
+    log_to_file: Option<PathBuf>,
 }
 
 #[derive(Parser)]
@@ -160,9 +160,12 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
         let terminal = get_transcode_terminal(transcode_args.bare_terminal);
 
-        if let Some(log_file_path) = transcode_args.log_to_file {
+        if let Some(log_file_path) = transcode_args
+            .log_to_file
+            .or_else(|| config.logging.default_log_output_path.clone())
+        {
             terminal
-                .enable_saving_logs_to_file(PathBuf::from(log_file_path), scope)
+                .enable_saving_logs_to_file(log_file_path, scope)
                 .map_err(|_| 1)?;
         }
 
@@ -181,9 +184,12 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
     } else if let CLICommand::ValidateAll(args) = args.command {
         let mut terminal: ValidationTerminal = BareTerminalBackend::new().into();
 
-        if let Some(log_file_path) = args.log_to_file {
+        if let Some(log_file_path) = args
+            .log_to_file
+            .or_else(|| config.logging.default_log_output_path.clone())
+        {
             terminal
-                .enable_saving_logs_to_file(PathBuf::from(log_file_path), scope)
+                .enable_saving_logs_to_file(log_file_path, scope)
                 .map_err(|_| 1)?;
         }
 
