@@ -281,6 +281,8 @@ impl<'config, 'text> RenderableQueueItem<Line<'text>>
             .to_string(),
         };
 
+        // TODO At first glance this might look like [a]... and [d]elete!
+        //      Item types are pretty useless anyway, modify this to show what kind of change it was instead (is it being encoded/copied/deleted, and why).
         let file_type_str: &'static str = match self.item.file_type {
             FileQueueItemType::Audio => "[a]",
             FileQueueItemType::Data => "[d]",

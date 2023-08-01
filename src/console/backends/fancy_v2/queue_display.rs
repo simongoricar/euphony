@@ -33,6 +33,7 @@ pub fn generate_smart_collapsible_queue<
     let mut used_up_height = 0;
 
     let mut leading_explainer: Option<usize> = None;
+    let mut is_first_element_finished: bool = false;
     let mut has_already_stripped_leading_finished_items: bool = false;
     let mut trailing_explainer: Option<usize> = None;
 
@@ -43,22 +44,34 @@ pub fn generate_smart_collapsible_queue<
         let rendered_item = item.render().into();
         let rendered_item_lines = rendered_item.lines.len();
 
-        let mut fixed_trailing_line_cost = 0;
+        let mut fixed_line_cost_offset = 0;
         if leading_explainer.is_some() {
-            fixed_trailing_line_cost += 1;
+            fixed_line_cost_offset += 1;
         }
         if trailing_explainer.is_some() {
-            fixed_trailing_line_cost += 1;
+            fixed_line_cost_offset += 1;
+        }
+
+        let mut dynamic_line_cost_offset = 2;
+        if !is_first_element_finished && leading_explainer.is_none() {
+            // If the first element isn't finished and we don't have a leading explainer,
+            // meaning there can only be a trailing explainer, which could take up only one additional line.
+            dynamic_line_cost_offset -= 1;
         }
 
         if (item_index + 1) == queue_size
             && (used_up_height + rendered_item_lines)
-                <= (available_height - fixed_trailing_line_cost)
+                <= (available_height - fixed_line_cost_offset)
         {
             // This is the last element and we can fill up the available height without having
             // to pre-/append explainers about remaining items above and below.
 
             // This also respects having less space if e.g. the leading explainer has already been confirmed.
+
+            // No need to track `is_first_element_finished` anymore.
+            // if included_items.is_empty() {
+            //     is_first_element_finished = item.is_finished();
+            // }
 
             included_items.push((
                 ListItem::new(rendered_item),
@@ -71,11 +84,16 @@ pub fn generate_smart_collapsible_queue<
 
             break;
         } else if (used_up_height + rendered_item_lines)
-            <= (available_height - 2)
+            <= (available_height - dynamic_line_cost_offset)
         {
             // This is *not* the last element, and there is enough space to fit this queue element
             // on the screen, even if we'll have to add an explainer at the top and on the bottom
             // in the future.
+
+            if included_items.is_empty() {
+                is_first_element_finished = item.is_finished();
+            }
+
             included_items.push((
                 ListItem::new(rendered_item),
                 rendered_item_lines,
@@ -122,6 +140,10 @@ pub fn generate_smart_collapsible_queue<
             if let Some(cut_index) = index_to_cut_at {
                 included_items.drain(0..cut_index);
                 used_up_height -= sum_of_freed_lines;
+
+                if let Some((_, _, is_finished)) = included_items.first() {
+                    is_first_element_finished = *is_finished;
+                }
 
                 leading_explainer = Some(cut_index);
             } else {

@@ -364,7 +364,7 @@ fn render_progress_footer(
 
     terminal_frame.render_widget(progress_bar_gauge, footer_inner_layout[0]);
 
-    // General PENDING/IN-PROGRESS/FINISHED/FAILED status line
+    // General PENDING/IN PROGRESS/FINISHED/FAILED status line
     let general_ok_err_status_line = Paragraph::new(Line::from(vec![
         Span::styled("PENDING: ", MUTED_TEXT_STYLE),
         Span::styled(
@@ -372,7 +372,7 @@ fn render_progress_footer(
             PROGRESS_DESCRIPTION_PENDING_FILES_VALUES_STYLE,
         ),
         Span::styled(" => ", MUTED_TEXT_STYLE),
-        Span::styled("IN-PROGRESS: ", MUTED_TEXT_STYLE),
+        Span::styled("IN PROGRESS: ", MUTED_TEXT_STYLE),
         Span::styled(
             format!(
                 "{} audio, {} data",
