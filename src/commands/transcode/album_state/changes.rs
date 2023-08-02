@@ -22,11 +22,11 @@ use crate::commands::transcode::utilities::{
     SortedFileList,
     SourceAndTargetPair,
 };
+use crate::commands::transcode::views::common::SortedFileMap;
 use crate::commands::transcode::views::{
     AlbumSourceFileList,
     AlbumView,
     SharedAlbumView,
-    SortedFileMap,
 };
 use crate::configuration::{Config, LibraryConfig};
 use crate::console::frontends::shared::queue::QueueItemID;
