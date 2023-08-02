@@ -16,18 +16,6 @@ use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
 use crate::configuration::Config;
-use crate::console::backends::fancy_v2::queue_items::{
-    FancyAlbumQueueItem,
-    FancyFileQueueItem,
-};
-use crate::console::backends::fancy_v2::rendering;
-use crate::console::backends::fancy_v2::state::{
-    LogOutputMode,
-    LogState,
-    TerminalState,
-    UIPage,
-    UIState,
-};
 use crate::console::backends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
@@ -38,6 +26,18 @@ use crate::console::backends::shared::queue::{
     QueueItemID,
 };
 use crate::console::backends::shared::Progress;
+use crate::console::backends::terminal_ui::queue_items::{
+    FancyAlbumQueueItem,
+    FancyFileQueueItem,
+};
+use crate::console::backends::terminal_ui::rendering;
+use crate::console::backends::terminal_ui::state::{
+    LogOutputMode,
+    LogState,
+    TerminalState,
+    UIPage,
+    UIState,
+};
 use crate::console::{
     LogBackend,
     LogToFileBackend,

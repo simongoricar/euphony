@@ -8,7 +8,7 @@ use crossterm::style::Stylize;
 use miette::{miette, Context, Result};
 
 use crate::configuration::Config;
-use crate::console::backends::fancy_v2::terminal::FancyTerminalBackend;
+use crate::console::backends::terminal_ui::terminal::FancyTerminalBackend;
 use crate::console::backends::{
     BareTerminalBackend,
     SimpleTerminal,
@@ -157,7 +157,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
 ) -> std::result::Result<(), i32> {
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
         // `transcode`/`transcode-all` has two available terminal backends:
-        // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
+        // - the fancy one uses `ratatui` for a full-fledged terminal UI with progress bars and multiple "windows",
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
         let terminal =
             get_transcode_terminal(config, transcode_args.bare_terminal);
@@ -173,7 +173,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
 
         terminal
             .setup(scope)
-            .expect("Could not set up tui terminal backend.");
+            .expect("Could not set up terminal UI backend.");
 
         let result = commands::cmd_transcode_all(config, &terminal);
         if let Err(error) = result {

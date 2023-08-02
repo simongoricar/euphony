@@ -25,8 +25,8 @@ use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
 use crate::configuration::TranscodingUIConfig;
-use crate::console::backends::fancy_v2::queue_display::generate_smart_collapsible_queue;
-use crate::console::backends::fancy_v2::state::{LogState, UIPage, UIState};
+use crate::console::backends::terminal_ui::queue_display::generate_smart_collapsible_queue;
+use crate::console::backends::terminal_ui::state::{LogState, UIPage, UIState};
 use crate::console::colours::{
     X061_SLATE_BLUE3,
     X064_CHARTREUSE4,

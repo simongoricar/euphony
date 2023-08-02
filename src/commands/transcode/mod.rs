@@ -79,8 +79,7 @@ pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
 
     // The user may send control messages via the selected backend (such as an abort message).
     // We can receive such messages through this receiver.
-    // The tui (fancy) backend for example implements the "q" keybind
-    // that sends UserControlMessage::Exit.
+    // The terminal UI backend for example implements the "q" keybind that sends UserControlMessage::Exit.
     let mut terminal_user_input = terminal.get_user_control_receiver()?;
 
 

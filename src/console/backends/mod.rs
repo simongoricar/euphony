@@ -121,7 +121,6 @@ use std::thread::Scope;
 
 pub use bare::*;
 
-use crate::console::backends::fancy_v2::terminal::FancyTerminalBackend;
 use crate::console::backends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
@@ -129,6 +128,7 @@ use crate::console::backends::shared::queue::{
     FileQueueItemFinishedResult,
     QueueItemID,
 };
+use crate::console::backends::terminal_ui::terminal::FancyTerminalBackend;
 use crate::console::{
     LogBackend,
     LogToFileBackend,
@@ -150,9 +150,9 @@ use crate::{
 };
 
 mod bare;
-pub mod fancy_v2;
 mod macro_impls;
 pub mod shared;
+pub mod terminal_ui;
 
 
 
