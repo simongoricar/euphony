@@ -10,11 +10,8 @@ use crate::commands::transcode::album_state::changes::{
     AlbumFileChangesV2,
     FileType,
 };
-use crate::commands::transcode::jobs::{
-    CancellableThreadPoolV2,
-    FileJobMessage,
-    FileJobResult,
-};
+use crate::commands::transcode::jobs::common::FileJobMessage;
+use crate::commands::transcode::jobs::{CancellableThreadPool, FileJobResult};
 use crate::commands::transcode::views::{
     LibraryView,
     SharedAlbumView,
@@ -616,7 +613,7 @@ fn process_album_changes<'config>(
     // TODO Missing verbose messages.
 
     let mut thread_pool =
-        CancellableThreadPoolV2::new(thread_pool_size, worker_progress_sender);
+        CancellableThreadPool::new(thread_pool_size, worker_progress_sender);
     thread_pool.start()?;
 
     if is_verbose_enabled() {

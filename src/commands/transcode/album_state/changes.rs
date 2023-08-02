@@ -10,11 +10,11 @@ use crate::commands::transcode::album_state::common::FileTrackedMetadata;
 use crate::commands::transcode::album_state::source::SourceAlbumState;
 use crate::commands::transcode::album_state::transcoded::TranscodedAlbumState;
 use crate::commands::transcode::jobs::{
-    CancellableTaskV2,
+    CancellableTask,
     CopyFileJob,
     DeleteProcessedFileJob,
     FileJobMessage,
-    IntoCancellableTaskV2,
+    IntoCancellableTask,
     TranscodeAudioFileJob,
 };
 use crate::commands::transcode::utilities::{
@@ -145,7 +145,7 @@ fn add_transcode_job<
     F: Fn(FileJobContext) -> Result<QueueItemID>,
     P: Into<PathBuf>,
 >(
-    global_job_array: &mut Vec<CancellableTaskV2<FileJobMessage>>,
+    global_job_array: &mut Vec<CancellableTask<FileJobMessage>>,
     album_view: &SharedAlbumView,
     queue_item_id_generator: &F,
     absolute_source_to_target_path_map: &SortedFileMap<PathBuf, PathBuf>,
@@ -190,7 +190,7 @@ fn add_file_copy_job<
     F: Fn(FileJobContext) -> Result<QueueItemID>,
     P: Into<PathBuf>,
 >(
-    global_job_array: &mut Vec<CancellableTaskV2<FileJobMessage>>,
+    global_job_array: &mut Vec<CancellableTask<FileJobMessage>>,
     album_view: &SharedAlbumView,
     queue_item_id_generator: &F,
     absolute_source_to_target_path_map: &SortedFileMap<PathBuf, PathBuf>,
@@ -235,7 +235,7 @@ fn add_aggregated_file_deletion_job<
     F: Fn(FileJobContext) -> Result<QueueItemID>,
     P: Into<PathBuf>,
 >(
-    global_job_array: &mut Vec<CancellableTaskV2<FileJobMessage>>,
+    global_job_array: &mut Vec<CancellableTask<FileJobMessage>>,
     album_view: &SharedAlbumView,
     queue_item_id_generator: &F,
     target_path: P,
@@ -802,8 +802,8 @@ impl<'view> AlbumFileChangesV2<'view> {
     pub fn generate_file_jobs<F: Fn(FileJobContext) -> Result<QueueItemID>>(
         &self,
         queue_item_id_generator: F,
-    ) -> Result<Vec<CancellableTaskV2<FileJobMessage>>> {
-        let mut jobs: Vec<CancellableTaskV2<FileJobMessage>> =
+    ) -> Result<Vec<CancellableTask<FileJobMessage>>> {
+        let mut jobs: Vec<CancellableTask<FileJobMessage>> =
             Vec::with_capacity(self.number_of_changed_files());
 
         let absolute_source_to_target_path_map = self
