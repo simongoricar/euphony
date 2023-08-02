@@ -31,7 +31,7 @@ if ($LASTEXITCODE -gt 0) {
 
 
 # Copy euphony.exe to ./bin/
-Write-Host -ForegroundColor DarkMagenta "Copying binary to ./bin"
+Write-Host -ForegroundColor DarkMagenta "Copying release binary (./target/release/euphony.exe) to ./bin"
 
 $TargetReleaseBinary = Join-Path $PSScriptRoot "target/release/euphony.exe"
 
@@ -52,5 +52,5 @@ Copy-Item -Path $SourceConfigurationTemplate -Destination $BinDataDirectory
 
 Write-Host ""
 Write-Host -ForegroundColor Green "-- BUILD AND COPY COMPLETE --"
-Write-Host -ForegroundColor DarkBlue "Make sure you copy ./bin/data/configuration.TEMLPLATE.toml to ./bin/data/configuration.toml and fill out the details."
-Write-Host -ForegroundColor DarkMagenta "If you want euphony in your path, add $BinDirectory to your PATH variable."
+Write-Host -ForegroundColor DarkBlue "Make sure you rename ./bin/data/configuration.TEMLPLATE.toml to ./bin/data/configuration.toml and fill out the details."
+Write-Host -ForegroundColor DarkMagenta "If you want euphony in your path, add $BinDirectory to your PATH."
