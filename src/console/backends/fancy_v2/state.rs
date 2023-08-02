@@ -5,7 +5,7 @@ use std::io::{BufWriter, Stdout};
 use std::sync::Arc;
 use std::thread::ScopedJoinHandle;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 use miette::Result;
 use parking_lot::Mutex;
 use ratatui::backend::CrosstermBackend;
@@ -60,7 +60,7 @@ impl<'thread_scope> Default for LogOutputMode<'thread_scope> {
 }
 
 pub struct LogJournal {
-    journal: VecDeque<(String, DateTime<Utc>)>,
+    journal: VecDeque<(String, DateTime<Local>)>,
     maximum_history: usize,
 }
 
@@ -79,10 +79,10 @@ impl LogJournal {
             self.journal.pop_back();
         }
 
-        self.journal.push_front((entry.into(), Utc::now()));
+        self.journal.push_front((entry.into(), Local::now()));
     }
 
-    pub fn iter_most_recent_first(&self) -> Iter<'_, (String, DateTime<Utc>)> {
+    pub fn iter_most_recent_first(&self) -> Iter<'_, (String, DateTime<Local>)> {
         self.journal.iter()
     }
 }
