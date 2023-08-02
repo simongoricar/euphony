@@ -6,7 +6,10 @@ use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
 use crossterm::style::Stylize;
 use miette::{miette, Context, IntoDiagnostic, Result};
 
-use crate::commands::transcode::album_state::{AlbumFileChangesV2, FileType};
+use crate::commands::transcode::album_state::changes::{
+    AlbumFileChangesV2,
+    FileType,
+};
 use crate::commands::transcode::jobs::{
     CancellableThreadPoolV2,
     FileJobMessage,
@@ -39,6 +42,7 @@ use crate::globals::is_verbose_enabled;
 pub mod album_configuration;
 pub mod album_state;
 pub mod jobs;
+mod utilities;
 pub mod views;
 
 type SortedLibrariesWithChanges<'a> = Vec<(

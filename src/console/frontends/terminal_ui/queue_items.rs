@@ -3,7 +3,7 @@ use std::time::Duration;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
-use crate::commands::transcode::album_state::{
+use crate::commands::transcode::album_state::changes::{
     CopyProcessingReason,
     DeleteInTranscodedProcessingReason,
     FileProcessingAction,
@@ -354,7 +354,7 @@ impl<'config, 'text> RenderableQueueItem<Text<'text>>
                 FileProcessingAction::Copy { reason, .. } => match reason {
                     CopyProcessingReason::AddedInSourceLibrary => "(why: newly added)",
                     CopyProcessingReason::ChangedInSourceLibrary => "(why: source changed)",
-                    CopyProcessingReason::MissingInTranscodedLibrary => "(why: copy missing)",
+                    CopyProcessingReason::MissingInTranscodedLibrary => "(why: target copy missing)",
                 }
                 FileProcessingAction::DeleteInTranscoded { reason, .. } => match reason {
                     DeleteInTranscodedProcessingReason::RemovedFromSourceLibrary => "(why: removed from source)",

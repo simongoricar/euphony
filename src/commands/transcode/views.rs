@@ -8,11 +8,9 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::transcode::album_configuration::AlbumConfiguration;
-use crate::commands::transcode::album_state::{
-    AlbumFileChangesV2,
-    SourceAlbumState,
-    TranscodedAlbumState,
-};
+use crate::commands::transcode::album_state::changes::AlbumFileChangesV2;
+use crate::commands::transcode::album_state::source::SourceAlbumState;
+use crate::commands::transcode::album_state::transcoded::TranscodedAlbumState;
 use crate::configuration::{Config, LibraryConfig};
 use crate::filesystem::DirectoryScan;
 

@@ -12,7 +12,7 @@ use miette::{miette, Context, IntoDiagnostic, Result};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
-use crate::commands::transcode::album_state::FileType;
+use crate::commands::transcode::album_state::changes::FileType;
 use crate::commands::transcode::views::SharedAlbumView;
 use crate::console::frontends::shared::queue::QueueItemID;
 use crate::filesystem::get_path_extension_or_empty;

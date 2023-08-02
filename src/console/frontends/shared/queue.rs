@@ -5,7 +5,10 @@ use std::ops::Deref;
 use linked_hash_map::{Iter, LinkedHashMap};
 use miette::{miette, Result};
 
-use crate::commands::transcode::album_state::{FileJobContext, FileType};
+use crate::commands::transcode::album_state::changes::{
+    FileJobContext,
+    FileType,
+};
 use crate::commands::transcode::views::SharedAlbumView;
 
 /// Unique queue item ID.
