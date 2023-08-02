@@ -248,7 +248,12 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
 ///
 /// Parses CLI arguments, loads the configuration file and starts executing the requested command.
 fn main() -> Result<()> {
-    // TODO .album.euphony should have a version lock inside it
+    // TODO .album.euphony should have a version lock inside.
+
+    // TODO We need a source library-wide file (e.g. `.library.euphony` that tracks all existing albums).
+    //      If an album disappears from the list between two transcodes,
+    //      we should delete the transcoded version of the album as well.
+
     let args = CLIArgs::parse();
     VERBOSE.set(args.verbose);
 
