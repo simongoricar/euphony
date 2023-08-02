@@ -1,7 +1,7 @@
 use crossterm::style::Stylize;
 
 use crate::configuration::Config;
-use crate::console::backends::SimpleTerminal;
+use crate::console::frontends::SimpleTerminal;
 use crate::console::LogBackend;
 
 /// Prints a configuration group header, for example: `|----- your header here -----|`.

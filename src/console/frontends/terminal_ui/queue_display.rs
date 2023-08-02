@@ -4,13 +4,13 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{List, ListItem};
 
-use crate::console::backends::shared;
-use crate::console::backends::shared::queue::{
+use crate::console::colours::X242_GREY42;
+use crate::console::frontends::shared;
+use crate::console::frontends::shared::queue::{
     QueueItem,
     QueueItemStateQuery,
     RenderableQueueItem,
 };
-use crate::console::colours::X242_GREY42;
 
 const LEADING_HIDDEN_ITEMS_EXPLAINER_STYLE: Style = X242_GREY42;
 const TRAILING_HIDDEN_ITEMS_EXPLAINER_STYLE: Style = X242_GREY42;

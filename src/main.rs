@@ -8,8 +8,8 @@ use crossterm::style::Stylize;
 use miette::{miette, Context, Result};
 
 use crate::configuration::Config;
-use crate::console::backends::terminal_ui::terminal::FancyTerminalBackend;
-use crate::console::backends::{
+use crate::console::frontends::terminal_ui::terminal::FancyTerminalBackend;
+use crate::console::frontends::{
     BareTerminalBackend,
     SimpleTerminal,
     TranscodeTerminal,
@@ -156,7 +156,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
     scope: &'scope Scope<'scope, 'scope_env>,
 ) -> std::result::Result<(), i32> {
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
-        // `transcode`/`transcode-all` has two available terminal backends:
+        // `transcode`/`transcode-all` has two available terminal frontends:
         // - the fancy one uses `ratatui` for a full-fledged terminal UI with progress bars and multiple "windows",
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
         let terminal =

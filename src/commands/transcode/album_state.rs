@@ -26,7 +26,7 @@ use crate::commands::transcode::views::{
     SortedFileMap,
 };
 use crate::configuration::{Config, LibraryConfig};
-use crate::console::backends::shared::queue::QueueItemID;
+use crate::console::frontends::shared::queue::QueueItemID;
 
 const SOURCE_ALBUM_STATE_FILE_NAME: &str = ".album.source-state.euphony";
 const SOURCE_ALBUM_STATE_SCHEMA_VERSION: u32 = 2;

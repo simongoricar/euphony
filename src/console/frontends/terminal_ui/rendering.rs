@@ -25,8 +25,6 @@ use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
 use crate::configuration::TranscodingUIConfig;
-use crate::console::backends::terminal_ui::queue_display::generate_smart_collapsible_queue;
-use crate::console::backends::terminal_ui::state::{LogState, UIPage, UIState};
 use crate::console::colours::{
     X061_SLATE_BLUE3,
     X064_CHARTREUSE4,
@@ -41,6 +39,8 @@ use crate::console::colours::{
     X244_GREY50,
     X245_GREY54,
 };
+use crate::console::frontends::terminal_ui::queue_display::generate_smart_collapsible_queue;
+use crate::console::frontends::terminal_ui::state::{LogState, UIPage, UIState};
 use crate::console::UserControlMessage;
 
 const EUPHONY_VERSION: &str = env!("CARGO_PKG_VERSION");

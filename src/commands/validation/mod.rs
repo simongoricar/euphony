@@ -6,7 +6,7 @@ use crossterm::style::Stylize;
 use miette::{miette, Context, Result};
 
 use crate::configuration::{Config, LibraryConfig};
-use crate::console::backends::ValidationTerminal;
+use crate::console::frontends::ValidationTerminal;
 use crate::console::{LogBackend, ValidationBackend, ValidationErrorInfo};
 use crate::filesystem::DirectoryScan;
 

@@ -14,7 +14,7 @@ use rand::{thread_rng, Rng};
 
 use crate::commands::transcode::album_state::FileType;
 use crate::commands::transcode::views::SharedAlbumView;
-use crate::console::backends::shared::queue::QueueItemID;
+use crate::console::frontends::shared::queue::QueueItemID;
 use crate::filesystem::get_path_extension_or_empty;
 use crate::globals::is_verbose_enabled;
 

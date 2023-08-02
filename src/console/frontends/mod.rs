@@ -1,4 +1,4 @@
-//! There are three sets of functionality that can be implemented for terminal backends,
+//! There are three sets of functionality that can be implemented for terminal frontends,
 //! each of which makes them available for different commands (e.g. a UI backend that implements
 //! everything we need for transcoding might not have everything we need for validation).
 //!
@@ -6,7 +6,7 @@
 //!
 //!
 //!
-//! ## Enums (types of backends)
+//! ## Enums (types of frontends)
 //!
 //! **The first is `SimpleTerminal`** (`TerminalTrait` + `LogBackend` + `LogToFileBackend` traits).
 //!
@@ -48,7 +48,7 @@
 //!
 //! The technique in use here is **enum dispatching**, similar to what is used in the
 //! [enum_dispatch](https://docs.rs/enum_dispatch) crate.
-//! We basically add the concrete implementations of individual backends as one enum variant each,
+//! We basically add the concrete implementations of individual frontends as one enum variant each,
 //! then implement the relevant traits they implement on the enum itself. In those implementations
 //! we forward the calls to each variant by using a `match` statement.
 //!
@@ -121,14 +121,14 @@ use std::thread::Scope;
 
 pub use bare::*;
 
-use crate::console::backends::shared::queue::{
+use crate::console::frontends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
     FileQueueItem,
     FileQueueItemFinishedResult,
     QueueItemID,
 };
-use crate::console::backends::terminal_ui::terminal::FancyTerminalBackend;
+use crate::console::frontends::terminal_ui::terminal::FancyTerminalBackend;
 use crate::console::{
     LogBackend,
     LogToFileBackend,

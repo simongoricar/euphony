@@ -13,13 +13,13 @@ use ratatui::Terminal;
 use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
-use crate::console::backends::shared::queue::{
+use crate::console::frontends::shared::queue::{
     AlbumQueueItemFinishedResult,
     FileQueueItemFinishedResult,
     Queue,
 };
-use crate::console::backends::shared::Progress;
-use crate::console::backends::terminal_ui::queue_items::{
+use crate::console::frontends::shared::Progress;
+use crate::console::frontends::terminal_ui::queue_items::{
     FancyAlbumQueueItem,
     FancyFileQueueItem,
 };

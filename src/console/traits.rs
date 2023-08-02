@@ -5,7 +5,7 @@ use std::thread::Scope;
 use miette::Result;
 use tokio::sync::broadcast;
 
-use crate::console::backends::shared::queue::{
+use crate::console::frontends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
     FileQueueItem,
@@ -13,10 +13,10 @@ use crate::console::backends::shared::queue::{
     QueueItemID,
 };
 
-/// The way multiple UI backends are done in euphony is via a set of terminal backend traits.
-/// **This is the base. All terminal backends must implement this.**
+/// The way multiple UI frontends are done in euphony is via a set of terminal backend traits.
+/// **This is the base. All terminal frontends must implement this.**
 ///
-/// For further information details see `src/console/backends/mod.rs`.
+/// For further information details see `src/console/frontends/mod.rs`.
 pub trait TerminalBackend<'scope, 'scope_env: 'scope> {
     /// Initialize the terminal backend.
     fn setup(&self, scope: &'scope Scope<'scope, 'scope_env>) -> Result<()>;
@@ -25,7 +25,7 @@ pub trait TerminalBackend<'scope, 'scope_env: 'scope> {
     fn destroy(self) -> Result<()>;
 }
 
-/// Allows backends to print out content and newlines.
+/// Allows terminal frontends to print out content and newlines.
 pub trait LogBackend {
     /// Print a new empty line into the log.
     fn log_newline(&self);
@@ -44,7 +44,7 @@ pub trait LogToFileBackend<'scope, 'scope_env: 'scope> {
     fn disable_saving_logs_to_file(&self) -> Result<()>;
 }
 
-/// Allows backends to be used in transcoding process. This means the implementor
+/// Allows frontends to be used in transcoding process. This means the implementor
 /// must maintain some form of (purely visual) queue system and a way of monitoring progress.
 pub trait TranscodeBackend<'config> {
     /*
@@ -188,7 +188,7 @@ impl ValidationErrorInfo {
     }
 }
 
-/// Allows backends to be used for displaying collection validation results.
+/// Allows frontends to be used for displaying collection validation results.
 pub trait ValidationBackend {
     fn validation_add_error(&self, error: ValidationErrorInfo);
 }

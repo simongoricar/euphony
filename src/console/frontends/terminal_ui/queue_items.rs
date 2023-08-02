@@ -9,19 +9,6 @@ use crate::commands::transcode::album_state::{
     FileProcessingAction,
     TranscodeProcessingReason,
 };
-use crate::console::backends::shared::queue::{
-    AlbumQueueItem,
-    AlbumQueueItemFinishedResult,
-    AlbumQueueItemState,
-    FileQueueItem,
-    FileQueueItemErrorType,
-    FileQueueItemFinishedResult,
-    FileQueueItemState,
-    GenericQueueItemState,
-    QueueItem,
-    RenderableQueueItem,
-};
-use crate::console::backends::shared::{AnimatedSpinner, SpinnerStyle};
 use crate::console::colours::{
     X009_RED,
     X060_MEDIUM_PURPLE4,
@@ -40,6 +27,19 @@ use crate::console::colours::{
     X246_GREY58,
     X248_GREY66,
 };
+use crate::console::frontends::shared::queue::{
+    AlbumQueueItem,
+    AlbumQueueItemFinishedResult,
+    AlbumQueueItemState,
+    FileQueueItem,
+    FileQueueItemErrorType,
+    FileQueueItemFinishedResult,
+    FileQueueItemState,
+    GenericQueueItemState,
+    QueueItem,
+    RenderableQueueItem,
+};
+use crate::console::frontends::shared::{AnimatedSpinner, SpinnerStyle};
 
 
 pub struct FancyAlbumQueueItem<'config> {
@@ -73,7 +73,7 @@ impl<'config> QueueItem<AlbumQueueItemFinishedResult>
     for FancyAlbumQueueItem<'config>
 {
     #[inline]
-    fn get_id(&self) -> crate::console::backends::shared::queue::QueueItemID {
+    fn get_id(&self) -> crate::console::frontends::shared::queue::QueueItemID {
         self.item.get_id()
     }
 
@@ -212,7 +212,7 @@ impl<'config> QueueItem<FileQueueItemFinishedResult>
     for FancyFileQueueItem<'config>
 {
     #[inline]
-    fn get_id(&self) -> crate::console::backends::shared::queue::QueueItemID {
+    fn get_id(&self) -> crate::console::frontends::shared::queue::QueueItemID {
         self.item.get_id()
     }
 

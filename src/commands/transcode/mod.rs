@@ -19,7 +19,7 @@ use crate::commands::transcode::views::{
     SharedLibraryView,
 };
 use crate::configuration::Config;
-use crate::console::backends::shared::queue::{
+use crate::console::frontends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
     FileQueueItem,
@@ -27,7 +27,7 @@ use crate::console::backends::shared::queue::{
     FileQueueItemFinishedResult,
     QueueItemID,
 };
-use crate::console::backends::TranscodeTerminal;
+use crate::console::frontends::TranscodeTerminal;
 use crate::console::{
     LogBackend,
     TranscodeBackend,

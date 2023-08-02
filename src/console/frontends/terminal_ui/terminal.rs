@@ -16,7 +16,7 @@ use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
 use crate::configuration::Config;
-use crate::console::backends::shared::queue::{
+use crate::console::frontends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
     FileQueueItem,
@@ -25,13 +25,13 @@ use crate::console::backends::shared::queue::{
     QueueItem,
     QueueItemID,
 };
-use crate::console::backends::shared::Progress;
-use crate::console::backends::terminal_ui::queue_items::{
+use crate::console::frontends::shared::Progress;
+use crate::console::frontends::terminal_ui::queue_items::{
     FancyAlbumQueueItem,
     FancyFileQueueItem,
 };
-use crate::console::backends::terminal_ui::rendering;
-use crate::console::backends::terminal_ui::state::{
+use crate::console::frontends::terminal_ui::rendering;
+use crate::console::frontends::terminal_ui::state::{
     LogOutputMode,
     LogState,
     TerminalState,

@@ -9,7 +9,7 @@ use miette::{miette, Context, IntoDiagnostic, Result};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::broadcast;
 
-use crate::console::backends::shared::queue::{
+use crate::console::frontends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
     FileQueueItem,
@@ -19,7 +19,7 @@ use crate::console::backends::shared::queue::{
     QueueItemID,
     RenderableQueueItem,
 };
-use crate::console::backends::shared::Progress;
+use crate::console::frontends::shared::Progress;
 use crate::console::traits::{
     LogToFileBackend,
     UserControllableBackend,
