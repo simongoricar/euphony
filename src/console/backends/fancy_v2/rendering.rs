@@ -180,9 +180,6 @@ fn render_logs_tab(
     body_rect: Rect,
     log_state: &LogState,
 ) -> Result<()> {
-    // TODO Render top-down instead
-    //      (currently most recent logs are at the top, which is easier to implement, but harder to read)
-
     let logs_block = Block::default()
         .title(Span::styled(" Logs ", LOGS_TAB_TITLE_STYLE))
         .title_alignment(Alignment::Left)
