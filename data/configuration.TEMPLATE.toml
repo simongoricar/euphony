@@ -12,13 +12,28 @@ base_library_path = "D:/_temp/MusicTesting"
 base_tools_path = "{SELF}/tools/"
 
 
+
 #####
 ## LOGGING
+[logging]
 # This controls how logging is performed.
 # Can be unset, in which case no logs are saved by default.
 # Even if set, it can be overriden with `--log-to-file`.
-[logging]
 default_log_output_path = "{LIBRARY_BASE}/euphony.log"
+
+
+
+#####
+## LOGGING
+[ui]
+[ui.transcoding]
+# If set to `true` (and using the fancy terminal UI), euphony
+# will switch back to the log tab (shortcut `l`) just before the transcoding process finishes.
+# This can be useful to highlight any potential errors that happened while running.
+# NOTE: Remember that the log tab is not infinite, which is why you should preferably set
+# the `default_log_output_path` above in case you need to see where something went wrong.
+show_logs_tab_on_exit = false
+
 
 
 #####

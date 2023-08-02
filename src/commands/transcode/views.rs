@@ -1,5 +1,3 @@
-//! TODO: This is a work-in-progress rewrite of the way albums are processed.
-
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;

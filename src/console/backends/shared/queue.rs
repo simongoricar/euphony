@@ -5,6 +5,7 @@ use std::ops::Deref;
 use linked_hash_map::{Iter, LinkedHashMap};
 use miette::{miette, Result};
 
+use crate::commands::transcode::album_state::{FileJobContext, FileType};
 use crate::commands::transcode::views::SharedAlbumView;
 
 /// Unique queue item ID.
@@ -228,6 +229,8 @@ impl<'a> RenderableQueueItem<String> for AlbumQueueItem<'a> {
 /*
  * FILE QUEUE ITEM implementation
  */
+#[deprecated]
+#[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub enum FileQueueItemType {
     /// Audio files, as configured per-library.
@@ -275,9 +278,9 @@ pub struct FileQueueItem<'config> {
 
     pub album_view: SharedAlbumView<'config>,
 
-    pub file_type: FileQueueItemType,
-
     pub file_name: String,
+
+    pub context: FileJobContext,
 
     pub state: FileQueueItemState,
 }
@@ -285,16 +288,16 @@ pub struct FileQueueItem<'config> {
 impl<'config> FileQueueItem<'config> {
     pub fn new(
         album: SharedAlbumView<'config>,
-        file_type: FileQueueItemType,
         file_name: String,
+        context: FileJobContext,
     ) -> Self {
         let random_id = QueueItemID::new_random();
 
         Self {
             id: random_id,
             album_view: album,
-            file_type,
             file_name,
+            context,
             state: FileQueueItemState::Pending,
         }
     }
@@ -339,10 +342,10 @@ impl<'config> RenderableQueueItem<String> for FileQueueItem<'config> {
         // are expected to "subclass" (enclose) this struct with their specific implementation.
         format!(
             "{} {}",
-            match self.file_type {
-                FileQueueItemType::Audio => "[audio]",
-                FileQueueItemType::Data => " [data]",
-                FileQueueItemType::Unknown => "   [??]",
+            match self.context.file_type {
+                FileType::Audio => "[audio]",
+                FileType::Data => "[data]",
+                FileType::Unknown => "    [??]",
             },
             self.file_name,
         )

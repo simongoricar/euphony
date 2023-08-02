@@ -15,6 +15,7 @@ use ratatui::Terminal;
 use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
+use crate::configuration::Config;
 use crate::console::backends::fancy_v2::queue_items::{
     FancyAlbumQueueItem,
     FancyFileQueueItem,
@@ -98,10 +99,12 @@ pub struct FancyTerminalBackend<'thread_scope, 'config> {
     log_state: Arc<Mutex<LogState<'thread_scope>>>,
 
     ui_state: Arc<RwLock<UIState<'config>>>,
+
+    config: &'config Config,
 }
 
 impl<'thread_scope, 'config> FancyTerminalBackend<'thread_scope, 'config> {
-    pub fn new() -> Result<Self> {
+    pub fn new(config: &'config Config) -> Result<Self> {
         let terminal_state = Arc::new(Mutex::new(None));
         let log_state = Arc::new(Mutex::new(LogState::new()));
         let ui_state = Arc::new(RwLock::new(UIState::new()));
@@ -110,6 +113,7 @@ impl<'thread_scope, 'config> FancyTerminalBackend<'thread_scope, 'config> {
             terminal_state,
             log_state,
             ui_state,
+            config,
         })
     }
 }
@@ -167,9 +171,12 @@ impl<'scope, 'scope_env: 'scope, 'config: 'scope>
         let user_control_sender_clone = user_control_sender.clone();
         let render_cancellation_token_clone = render_cancellation_token.clone();
 
+        let transcoding_ui_config = self.config.ui.transcoding.clone();
+
         let render_thread_join_handle = scope.spawn(move || {
             rendering::run_render_loop(
                 terminal_arc_mutex_clone,
+                transcoding_ui_config,
                 log_state_arc_clone,
                 ui_state_arc_clone,
                 &user_control_sender_clone,
@@ -274,6 +281,9 @@ impl<'thread_scope, 'config> LogBackend
                 locked_buf_writer.write_all(message.as_bytes()).expect(
                     "Failed to write println contents to log file output.",
                 );
+                locked_buf_writer
+                    .write_all("\n".as_bytes())
+                    .expect("Failed to write newline to log file output.");
             }
             LogOutputMode::None => {}
         }

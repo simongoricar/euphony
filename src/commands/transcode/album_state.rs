@@ -746,6 +746,20 @@ fn sort_pathbuf_iterator<'a, I: IntoIterator<Item = &'a PathBuf>>(
     vector
 }
 
+#[inline]
+fn sort_paired_pathbuf_iterator<
+    'a,
+    I: IntoIterator<Item = &'a SourceAndTargetPair<PathBuf>>,
+>(
+    iterator: I,
+) -> Vec<&'a SourceAndTargetPair<PathBuf>> {
+    let mut vector: Vec<&SourceAndTargetPair<PathBuf>> =
+        iterator.into_iter().collect();
+    vector.sort_unstable_by_key(|pair| &pair.source_path);
+
+    vector
+}
+
 
 
 /// Describes one of three possible file types (audio, data, unknown).
@@ -762,6 +776,203 @@ pub enum FileType {
     /// This type only appears in cases of "excess" files in the transcoded library
     /// (see `AlbumFileChangesV2::generate_from_source_and_transcoded_state`).
     Unknown,
+}
+
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Copy, Clone)]
+pub enum TranscodeProcessingReason {
+    AddedInSourceLibrary,
+    ChangedInSourceLibrary,
+    MissingInTranscodedLibrary,
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Copy, Clone)]
+pub enum CopyProcessingReason {
+    AddedInSourceLibrary,
+    ChangedInSourceLibrary,
+    MissingInTranscodedLibrary,
+}
+
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Copy, Clone)]
+pub enum DeleteInTranscodedProcessingReason {
+    RemovedFromSourceLibrary,
+    ExcessInTranscodedLibrary,
+}
+
+
+#[derive(Clone)]
+pub enum FileProcessingAction {
+    Transcode {
+        source_path: PathBuf,
+        target_path: PathBuf,
+        reason: TranscodeProcessingReason,
+    },
+    Copy {
+        source_path: PathBuf,
+        target_path: PathBuf,
+        reason: CopyProcessingReason,
+    },
+    DeleteInTranscoded {
+        target_path: PathBuf,
+        reason: DeleteInTranscodedProcessingReason,
+    },
+}
+
+impl FileProcessingAction {
+    pub fn target_path(&self) -> &Path {
+        match self {
+            FileProcessingAction::Transcode { target_path, .. } => {
+                target_path.as_ref()
+            }
+            FileProcessingAction::Copy { target_path, .. } => {
+                target_path.as_ref()
+            }
+            FileProcessingAction::DeleteInTranscoded { target_path, .. } => {
+                target_path.as_ref()
+            }
+        }
+    }
+}
+
+
+#[derive(Clone)]
+pub struct FileJobContext {
+    pub file_type: FileType,
+    pub action: FileProcessingAction,
+}
+
+
+fn add_transcode_job<
+    F: Fn(FileJobContext) -> Result<QueueItemID>,
+    P: Into<PathBuf>,
+>(
+    global_job_array: &mut Vec<CancellableTaskV2<FileJobMessage>>,
+    album_view: &SharedAlbumView,
+    queue_item_id_generator: &F,
+    absolute_source_to_target_path_map: &SortedFileMap<PathBuf, PathBuf>,
+    source_path: P,
+    file_type: FileType,
+    transcode_reason: TranscodeProcessingReason,
+) -> Result<()> {
+    let source_path = source_path.into();
+
+    let target_path = absolute_source_to_target_path_map
+        .get(&source_path)
+        .ok_or_else(|| {
+            miette!(
+                "BUG(add_transcode_job): Map is missing audio file entry: {:?}.",
+                source_path
+            )
+        })?;
+
+    let queue_item_id = queue_item_id_generator(FileJobContext {
+        file_type,
+        action: FileProcessingAction::Transcode {
+            source_path: source_path.clone(),
+            target_path: target_path.to_path_buf(),
+            reason: transcode_reason,
+        },
+    })?;
+
+    let transcoding_job = TranscodeAudioFileJob::new(
+        album_view.clone(),
+        source_path,
+        target_path.to_path_buf(),
+        queue_item_id,
+    )
+    .wrap_err_with(|| miette!("Could not create TranscodeAudioFileJob."))?;
+
+    global_job_array.push(transcoding_job.into_cancellable_task());
+
+    Ok(())
+}
+
+fn add_file_copy_job<
+    F: Fn(FileJobContext) -> Result<QueueItemID>,
+    P: Into<PathBuf>,
+>(
+    global_job_array: &mut Vec<CancellableTaskV2<FileJobMessage>>,
+    album_view: &SharedAlbumView,
+    queue_item_id_generator: &F,
+    absolute_source_to_target_path_map: &SortedFileMap<PathBuf, PathBuf>,
+    source_path: P,
+    file_type: FileType,
+    copy_reason: CopyProcessingReason,
+) -> Result<()> {
+    let source_path = source_path.into();
+
+    let target_path = absolute_source_to_target_path_map
+        .get(&source_path)
+        .ok_or_else(|| {
+            miette!(
+                "BUG(add_file_copy_job): Map is missing audio file entry: {:?}.",
+                source_path
+            )
+        })?;
+
+    let queue_item_id = queue_item_id_generator(FileJobContext {
+        file_type,
+        action: FileProcessingAction::Copy {
+            source_path: source_path.clone(),
+            target_path: target_path.to_path_buf(),
+            reason: copy_reason,
+        },
+    })?;
+
+    let copy_job = CopyFileJob::new(
+        album_view.clone(),
+        source_path,
+        target_path.to_path_buf(),
+        queue_item_id,
+    )
+    .wrap_err_with(|| miette!("Could not create CopyFileJob."))?;
+
+    global_job_array.push(copy_job.into_cancellable_task());
+
+    Ok(())
+}
+
+fn add_aggregated_file_deletion_job<
+    F: Fn(FileJobContext) -> Result<QueueItemID>,
+    P: Into<PathBuf>,
+>(
+    global_job_array: &mut Vec<CancellableTaskV2<FileJobMessage>>,
+    album_view: &SharedAlbumView,
+    queue_item_id_generator: &F,
+    target_path: P,
+    file_type: FileType,
+    deletion_reason: DeleteInTranscodedProcessingReason,
+) -> Result<()> {
+    let target_path = target_path.into();
+
+    let queue_item_id = queue_item_id_generator(FileJobContext {
+        file_type,
+        action: FileProcessingAction::DeleteInTranscoded {
+            target_path: target_path.clone(),
+            reason: deletion_reason,
+        },
+    })?;
+
+    let transcoded_album_directory =
+        album_view.read().album_directory_in_transcoded_library();
+
+    if !target_path.starts_with(transcoded_album_directory) {
+        return Err(miette!("Suspicious file deletion job (doesn't match transcoded directory): {:?}", target_path));
+    }
+
+    let copy_job =
+        DeleteProcessedFileJob::new(target_path, file_type, true, queue_item_id)
+            .wrap_err_with(|| {
+                miette!("Could not create DeleteProcessedFileJob.")
+            })?;
+
+    global_job_array.push(copy_job.into_cancellable_task());
+
+    Ok(())
 }
 
 
@@ -1293,163 +1504,161 @@ impl<'view> AlbumFileChangesV2<'view> {
     ///
     /// The closure should return an `Ok(QueueItemID)`.
     /// If `Err` is returned, this method will exit early, propagating the error.
-    pub fn generate_file_jobs<
-        F: Fn(FileType, &PathBuf) -> Result<QueueItemID>,
-    >(
+    pub fn generate_file_jobs<F: Fn(FileJobContext) -> Result<QueueItemID>>(
         &self,
         queue_item_id_generator: F,
     ) -> Result<Vec<CancellableTaskV2<FileJobMessage>>> {
         let mut jobs: Vec<CancellableTaskV2<FileJobMessage>> =
             Vec::with_capacity(self.number_of_changed_files());
 
-        let source_to_target_absolute_path_map = self
+        let absolute_source_to_target_path_map = self
             .tracked_files
             .map_source_file_paths_to_transcoded_file_paths_absolute();
 
 
-        // Parse file lists to separate their change types
-        // (some files need to be transcoded, some copied, some deleted).
-        let audio_files_to_transcode = sort_pathbuf_iterator(
-            self.added_in_source_since_last_transcode
-                .audio
-                .iter()
-                .chain(self.changed_in_source_since_last_transcode.audio.iter())
-                .chain(self.missing_in_transcoded.audio.iter()),
-        );
-
-        let data_files_to_copy_to_transcoded_dir = sort_pathbuf_iterator(
-            self.added_in_source_since_last_transcode
-                .data
-                .iter()
-                .chain(self.changed_in_source_since_last_transcode.data.iter())
-                .chain(self.missing_in_transcoded.data.iter()),
-        );
-
-        // TODO Make removing excess files configurable.
-        let audio_files_to_delete_from_transcoded_dir = sort_pathbuf_iterator(
-            self.removed_from_source_since_last_transcode
-                .audio
-                .iter()
-                .map(|pair| &pair.target_path)
-                .chain(self.excess_in_transcoded.audio.iter()),
-        );
-        let data_files_to_delete_from_transcoded_dir = sort_pathbuf_iterator(
-            self.removed_from_source_since_last_transcode
-                .data
-                .iter()
-                .map(|pair| &pair.target_path)
-                .chain(self.excess_in_transcoded.data.iter()),
-        );
-        let unknown_files_to_delete_from_transcoded_dir =
-            sort_pathbuf_iterator(self.excess_in_transcoded.unknown.iter());
-
-
-        // Generate jobs from the parsed file lists.
-        for file_path in audio_files_to_transcode {
-            let source_path = file_path;
-            let target_path = source_to_target_absolute_path_map
-                .audio
-                .get(source_path)
-                .ok_or_else(|| {
-                    miette!(
-                        "BUG: Map is missing audio file entry: {:?}.",
-                        source_path
-                    )
-                })?;
-
-            let queue_item_id =
-                queue_item_id_generator(FileType::Audio, source_path)?;
-
-            let transcoding_job = TranscodeAudioFileJob::new(
-                self.album_view.clone(),
-                source_path.to_path_buf(),
-                target_path.to_path_buf(),
-                queue_item_id,
-            )
-            .wrap_err_with(|| {
-                miette!("Could not create TranscodeAudioFileJob.")
-            })?;
-
-            jobs.push(transcoding_job.into_cancellable_task());
-        }
-
-        for file_path in data_files_to_copy_to_transcoded_dir {
-            let source_path = file_path;
-            let target_path = source_to_target_absolute_path_map
-                .data
-                .get(source_path)
-                .ok_or_else(|| {
-                    miette!("BUG: Map is missing data file entry.")
-                })?;
-
-            let queue_item_id =
-                queue_item_id_generator(FileType::Data, source_path)?;
-
-            let copy_job = CopyFileJob::new(
-                self.album_view.clone(),
-                source_path.to_path_buf(),
-                target_path.to_path_buf(),
-                queue_item_id,
-            )
-            .wrap_err_with(|| miette!("Could not create CopyFileJob."))?;
-
-            jobs.push(copy_job.into_cancellable_task());
-        }
-
-
-        for target_file_path in audio_files_to_delete_from_transcoded_dir {
-            let queue_item_id =
-                queue_item_id_generator(FileType::Audio, target_file_path)?;
-
-            let delete_from_processed_job = DeleteProcessedFileJob::new(
-                target_file_path.to_path_buf(),
+        // Audio transcoding
+        for path in sort_pathbuf_iterator(
+            &self.added_in_source_since_last_transcode.audio,
+        ) {
+            add_transcode_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                &absolute_source_to_target_path_map,
+                path,
                 FileType::Audio,
-                true,
-                queue_item_id,
-            )
-            .wrap_err_with(|| {
-                miette!("Could not create DeleteProcessedFileJob.")
-            })?;
-
-            jobs.push(delete_from_processed_job.into_cancellable_task());
+                TranscodeProcessingReason::AddedInSourceLibrary,
+            )?;
         }
 
-        for file_path in data_files_to_delete_from_transcoded_dir {
-            let target_path = file_path;
+        for path in sort_pathbuf_iterator(
+            &self.changed_in_source_since_last_transcode.audio,
+        ) {
+            add_transcode_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                &absolute_source_to_target_path_map,
+                path,
+                FileType::Audio,
+                TranscodeProcessingReason::ChangedInSourceLibrary,
+            )?;
+        }
 
-            let queue_item_id =
-                queue_item_id_generator(FileType::Data, target_path)?;
+        for path in sort_pathbuf_iterator(&self.missing_in_transcoded.audio) {
+            add_transcode_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                &absolute_source_to_target_path_map,
+                path,
+                FileType::Audio,
+                TranscodeProcessingReason::MissingInTranscodedLibrary,
+            )?;
+        }
 
-            let delete_from_processed_job = DeleteProcessedFileJob::new(
-                target_path.to_path_buf(),
+
+        // Data file copying
+        for path in sort_pathbuf_iterator(
+            &self.added_in_source_since_last_transcode.data,
+        ) {
+            add_file_copy_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                &absolute_source_to_target_path_map,
+                path,
                 FileType::Data,
-                true,
-                queue_item_id,
-            )
-            .wrap_err_with(|| {
-                miette!("Could not create DeleteProcessedFileJob.")
-            })?;
-
-            jobs.push(delete_from_processed_job.into_cancellable_task());
+                CopyProcessingReason::AddedInSourceLibrary,
+            )?;
         }
 
-        for file_path in unknown_files_to_delete_from_transcoded_dir {
-            let target_path = file_path;
+        for path in sort_pathbuf_iterator(
+            &self.changed_in_source_since_last_transcode.data,
+        ) {
+            add_file_copy_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                &absolute_source_to_target_path_map,
+                path,
+                FileType::Data,
+                CopyProcessingReason::ChangedInSourceLibrary,
+            )?;
+        }
 
-            let queue_item_id =
-                queue_item_id_generator(FileType::Unknown, target_path)?;
+        for path in sort_pathbuf_iterator(&self.missing_in_transcoded.data) {
+            add_file_copy_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                &absolute_source_to_target_path_map,
+                path,
+                FileType::Data,
+                CopyProcessingReason::MissingInTranscodedLibrary,
+            )?;
+        }
 
-            let delete_from_processed_job = DeleteProcessedFileJob::new(
-                target_path.to_path_buf(),
+
+        // Transcoded library file deletion
+        for path_pair in sort_paired_pathbuf_iterator(
+            &self.removed_from_source_since_last_transcode.audio,
+        ) {
+            add_aggregated_file_deletion_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                &path_pair.target_path,
+                FileType::Audio,
+                DeleteInTranscodedProcessingReason::RemovedFromSourceLibrary,
+            )?;
+        }
+
+        for path_pair in sort_paired_pathbuf_iterator(
+            &self.removed_from_source_since_last_transcode.data,
+        ) {
+            add_aggregated_file_deletion_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                &path_pair.target_path,
+                FileType::Data,
+                DeleteInTranscodedProcessingReason::RemovedFromSourceLibrary,
+            )?;
+        }
+
+
+        for path in sort_pathbuf_iterator(&self.excess_in_transcoded.audio) {
+            add_aggregated_file_deletion_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                path,
+                FileType::Audio,
+                DeleteInTranscodedProcessingReason::ExcessInTranscodedLibrary,
+            )?;
+        }
+
+        for path in sort_pathbuf_iterator(&self.excess_in_transcoded.data) {
+            add_aggregated_file_deletion_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                path,
+                FileType::Data,
+                DeleteInTranscodedProcessingReason::ExcessInTranscodedLibrary,
+            )?;
+        }
+
+        for path in sort_pathbuf_iterator(&self.excess_in_transcoded.unknown) {
+            add_aggregated_file_deletion_job(
+                &mut jobs,
+                &self.album_view,
+                &queue_item_id_generator,
+                path,
                 FileType::Unknown,
-                true,
-                queue_item_id,
-            )
-            .wrap_err_with(|| {
-                miette!("Could not create DeleteProcessedFileJob.")
-            })?;
-
-            jobs.push(delete_from_processed_job.into_cancellable_task());
+                DeleteInTranscodedProcessingReason::ExcessInTranscodedLibrary,
+            )?;
         }
 
         Ok(jobs)

@@ -24,6 +24,7 @@ use ratatui::{Frame, Terminal};
 use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
+use crate::configuration::TranscodingUIConfig;
 use crate::console::backends::fancy_v2::queue_display::generate_smart_collapsible_queue;
 use crate::console::backends::fancy_v2::state::{LogState, UIPage, UIState};
 use crate::console::colours::{
@@ -37,6 +38,7 @@ use crate::console::colours::{
     X189_LIGHT_STEEL_BLUE1,
     X216_LIGHT_SALMON1,
     X242_GREY42,
+    X244_GREY50,
     X245_GREY54,
 };
 use crate::console::UserControlMessage;
@@ -51,6 +53,8 @@ const TRANSCODING_TAB_TITLE_STYLE: Style = X216_LIGHT_SALMON1;
 
 const LOGS_TAB_BORDER_STYLE: Style = X104_MEDIUM_PURPLE;
 const LOGS_TAB_TITLE_STYLE: Style = X189_LIGHT_STEEL_BLUE1;
+
+const LOGS_TAB_LOG_TIME_STYLE: Style = X244_GREY50;
 
 const HEADER_TRANSCODING_TAB_TEXT_STYLE: Style = TRANSCODING_TAB_TITLE_STYLE;
 const HEADER_LOGS_TAB_TEXT_STYLE: Style = LOGS_TAB_TITLE_STYLE;
@@ -177,7 +181,8 @@ fn render_logs_tab(
     log_state: &LogState,
 ) -> Result<()> {
     // TODO Render top-down instead
-    //      (currently most recent logs are at the top, which is easier to implement, but harder to read).
+    //      (currently most recent logs are at the top, which is easier to implement, but harder to read)
+
     let logs_block = Block::default()
         .title(Span::styled(" Logs ", LOGS_TAB_TITLE_STYLE))
         .title_alignment(Alignment::Left)
@@ -189,47 +194,88 @@ fn render_logs_tab(
     let max_line_width = logs_inner_rect.width as usize;
     let max_lines = logs_inner_rect.height as usize;
 
-    let mut log: Vec<Line> = Vec::with_capacity(max_lines);
+    let mut log_lines: Vec<Line> = Vec::with_capacity(max_lines);
 
-    for log_entry in log_state.log_journal.iter_most_recent_first() {
-        let log_entry_length = log_entry.len();
+    let mut log_iterator = log_state.log_journal.iter_most_recent_first();
+    while log_lines.len() < max_lines {
+        let Some((log_content, log_time)) = log_iterator.next() else {
+            break;
+        };
 
-        if log_entry_length <= max_line_width {
+        let log_content_length = log_content.len();
+
+        let formatted_log_time = format!("{} ", log_time.format("%H:%M:%S"));
+        let formatted_log_time_length = formatted_log_time.len();
+        let formatted_log_time =
+            Span::styled(formatted_log_time, LOGS_TAB_LOG_TIME_STYLE);
+
+
+        if (formatted_log_time_length + log_content_length) <= max_line_width {
             // Log entry fits in one line, no need to wrap.
             let log_entry_as_text =
-                log_entry.as_bytes().into_text().into_diagnostic()?;
+                log_content.as_bytes().into_text().into_diagnostic()?;
             let log_entry_as_first_line = log_entry_as_text
                 .lines
                 .get(0)
                 .ok_or_else(|| miette!("BUG: No text generated."))?
                 .clone();
 
-            log.push(log_entry_as_first_line);
+            let mut formatted_line_spans: Vec<Span> = Vec::with_capacity(2);
+            formatted_line_spans.push(formatted_log_time);
+            formatted_line_spans.extend(log_entry_as_first_line.spans);
+
+            log_lines.insert(0, Line::from(formatted_line_spans));
         } else {
             let wrapped_text = textwrap::wrap(
-                log_entry.as_str(),
-                textwrap::Options::new(max_line_width).break_words(false),
+                log_content.as_str(),
+                textwrap::Options::new(
+                    max_line_width - formatted_log_time_length,
+                )
+                .break_words(false),
             );
 
-            log.extend(
-                wrapped_text
-                    .into_iter()
-                    .map(|line| {
-                        let as_text =
-                            line.as_bytes().into_text().into_diagnostic()?;
+            assert!(wrapped_text.len() >= 2);
 
-                        Ok(as_text
-                            .lines
-                            .get(0)
-                            .ok_or_else(|| miette!("BUG: No lines generated."))?
-                            .clone())
-                    })
-                    .collect::<Result<Vec<Line>>>()?,
-            );
+            if wrapped_text.len() + log_lines.len() > max_lines {
+                break;
+            }
+
+            // Add first line.
+            let first_line =
+                wrapped_text[0].as_bytes().into_text().into_diagnostic()?;
+
+            let mut first_formatted_line_spans: Vec<Span> =
+                Vec::with_capacity(2);
+            first_formatted_line_spans.push(formatted_log_time);
+            first_formatted_line_spans.extend(first_line.lines[0].spans.clone());
+
+            log_lines.insert(0, Line::from(first_formatted_line_spans));
+
+
+            // Add the rest of the lines.
+            for (index, line) in wrapped_text.iter().enumerate().skip(1) {
+                let styled_line =
+                    line.as_bytes().into_text().into_diagnostic()?;
+
+                let mut next_formatted_line_spans: Vec<Span> =
+                    Vec::with_capacity(2);
+                next_formatted_line_spans
+                    .push(Span::raw(" ".repeat(formatted_log_time_length)));
+                next_formatted_line_spans
+                    .extend(styled_line.lines[0].spans.clone());
+
+                log_lines.insert(index, Line::from(next_formatted_line_spans));
+            }
         }
     }
 
-    let logs_paragraph = Paragraph::new(log);
+    // Fill any potential remaining space at the top with empty lines.
+    let num_empty_lines_needed = max_lines - log_lines.len();
+    for _ in 0..num_empty_lines_needed {
+        log_lines.insert(0, Line::default());
+    }
+
+    let logs_paragraph = Paragraph::new(log_lines);
 
     terminal_frame.render_widget(logs_block, body_rect);
     terminal_frame.render_widget(logs_paragraph, logs_inner_rect);
@@ -425,12 +471,11 @@ fn render_ui(
     terminal_frame: &mut Frame<CrosstermBackend<Stdout>>,
     is_final_render: bool,
 ) -> Result<()> {
-    // TODO
-    // general layout to implement:
+    // # Interface layout (approximately)
     //
-    // Log page:
+    // ## Log page:
     // /------- euphony 2.0.0 ----------- help ---------------------------\
-    // | transcoding <t> | logs <L>     | quit transcoding <q>            |
+    // | transcoding <t> | LOGS <L>     | quit <q>                        |
     // |------------------------------------------------------------------|
     // |- Logs -----------------------------------------------------------|
     // | lorem ipsum dolor sir amet                                       |
@@ -445,8 +490,8 @@ fn render_ui(
     // |                                                                  |
     // |                                                                  |
     // |- Transcoding ----------------------------------------------------|
-    // |   OK files (audio/data): 19/1 | FAILED files (audio/data): 1/1   |
     // | █ █ █ █ █ █ █ █ █ █ █  (22 / 91 files) 56%                       |
+    // |   OK files (audio/data): 19/1 | FAILED files (audio/data): 1/1   |
     // |------------------------------------------------------------------|
     //
     //
@@ -469,8 +514,8 @@ fn render_ui(
     // |                           |                                          |
     // |                           |                                          |
     // |- Transcoding --------------------------------------------------------|
-    // |     OK files (audio/data): 19/1 | FAILED files (audio/data): 1/1     |
     // | █ █ █ █ █ █ █ █ █ █ █    (22 / 91 files) 56%                         |
+    // |     OK files (audio/data): 19/1 | FAILED files (audio/data): 1/1     |
     // |----------------------------------------------------------------------|
     //
 
@@ -530,6 +575,7 @@ const TERMINAL_REFRESH_INTERVAL_IN_SECONDS: f64 = 1f64 / 30f64;
 
 pub fn run_render_loop(
     terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
+    transcoding_ui_config: TranscodingUIConfig,
     log_state: Arc<Mutex<LogState>>,
     ui_state: Arc<RwLock<UIState>>,
     user_control_sender: &broadcast::Sender<UserControlMessage>,
@@ -552,7 +598,6 @@ pub fn run_render_loop(
             let locked_ui_state = ui_state.read();
             let locked_log_state = log_state.lock();
 
-            // TODO Fix the weird UI layout.
             locked_terminal
                 .draw(|frame| {
                     render_ui(&locked_log_state, &locked_ui_state, frame, false)
@@ -596,9 +641,10 @@ pub fn run_render_loop(
                 {
                     if let KeyCode::Char(char) = key.code {
                         if char == 'q' {
-                            // DEBUGONLY Uncomment after debugging.
-                            // let mut locked_ui_state = ui_state.write();
-                            // locked_ui_state.current_page = UIPage::Logs;
+                            if transcoding_ui_config.show_logs_tab_on_exit {
+                                let mut locked_ui_state = ui_state.write();
+                                locked_ui_state.current_page = UIPage::Logs;
+                            }
 
                             let _ = user_control_sender
                                 .send(UserControlMessage::Exit);

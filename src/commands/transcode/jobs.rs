@@ -126,7 +126,6 @@ impl CancellableThreadPoolV2 {
         let pending_tasks_copy = self.pending_tasks.clone();
         let running_tasks_copy = self.running_tasks.clone();
 
-        // TODO Fix this and the rest of the errors, then finally test the new rewrite.
         let coordinator_thread_handle = thread::spawn(move || {
             let out_of_loop_sender = worker_message_sender.clone();
 
@@ -385,7 +384,6 @@ pub enum FileJobResult {
 }
 
 /// Message enum that file job workers send back to the main thread.
-// TODO Introduce additional info here (file name, file type, ...).
 pub enum FileJobMessage {
     Starting {
         queue_item: QueueItemID,

@@ -25,7 +25,6 @@ use crate::console::backends::shared::queue::{
     FileQueueItem,
     FileQueueItemErrorType,
     FileQueueItemFinishedResult,
-    FileQueueItemType,
     QueueItemID,
 };
 use crate::console::backends::TranscodeTerminal;
@@ -160,9 +159,7 @@ pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
 
         terminal.queue_album_item_start(album_queue_id)?;
         terminal.log_println(format!(
-            "↳ Transcoding album\
-            \n    {album_artist_name} - {album_title}\
-            \n    Library: {album_library_name}"
+            "↳ Transcoding album \"{album_artist_name} - {album_title}\" (library: {album_library_name})"
         ));
 
         if is_verbose_enabled() {
@@ -619,23 +616,31 @@ fn process_album_changes<'config>(
         CancellableThreadPoolV2::new(thread_pool_size, worker_progress_sender);
     thread_pool.start()?;
 
-    // Generate and queue all file jobs.
-    let jobs = changes.generate_file_jobs(|file_type, file_path| {
-        // Parse queue item details.
-        let file_item_type = match file_type {
-            FileType::Audio => FileQueueItemType::Audio,
-            FileType::Data => FileQueueItemType::Data,
-            FileType::Unknown => FileQueueItemType::Unknown,
-        };
+    if is_verbose_enabled() {
+        terminal.log_println(format!(
+            "absolute_source_file_paths_to_transcoded_file_paths_map={:?}",
+            changes
+                .tracked_files
+                .map_source_file_paths_to_transcoded_file_paths_absolute()
+        ));
+    }
 
-        let file_name =
-            file_path.file_name().unwrap_or_default().to_string_lossy();
+    // Generate and queue all file jobs.
+    let jobs = changes.generate_file_jobs(|context| {
+        // Parse queue item details.
+        let target_path = context.action.target_path();
+        let file_name = target_path
+            .file_name()
+            .ok_or_else(|| {
+                miette!("Invalid path: no file name: {:?}.", target_path)
+            })?
+            .to_string_lossy();
 
         // Instantiate `FileItem` and add to queue.
         let file_item = FileQueueItem::<'config>::new(
             album.clone(),
-            file_item_type,
             file_name.to_string(),
+            context,
         );
 
         let queued_file_item_id = terminal.queue_file_item_add(file_item)?;

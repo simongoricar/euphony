@@ -21,6 +21,8 @@ pub struct Config {
 
     pub logging: LoggingConfig,
 
+    pub ui: UIConfig,
+
     pub validation: ValidationConfig,
 
     pub tools: ToolsConfig,
@@ -152,10 +154,21 @@ impl AfterLoadInitable for ConfigPaths {
 }
 
 
-// TODO Integrate (with --log-to-file override)
 #[derive(Deserialize, Clone)]
 pub struct LoggingConfig {
     pub default_log_output_path: Option<PathBuf>,
+}
+
+
+#[derive(Deserialize, Clone)]
+pub struct UIConfig {
+    pub transcoding: TranscodingUIConfig,
+}
+
+
+#[derive(Deserialize, Clone)]
+pub struct TranscodingUIConfig {
+    pub show_logs_tab_on_exit: bool,
 }
 
 

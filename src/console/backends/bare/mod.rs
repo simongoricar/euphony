@@ -521,7 +521,6 @@ impl<'config> UserControllableBackend for BareTerminalBackend<'config> {
     }
 }
 
-// TODO Finish refactoring from here down (modified the base traits, modify these implementations to fit them).
 impl<'config, 'scope, 'scope_env: 'scope> LogToFileBackend<'scope, 'scope_env>
     for BareTerminalBackend<'config>
 {

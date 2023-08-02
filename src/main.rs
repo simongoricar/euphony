@@ -137,12 +137,13 @@ fn get_configuration(args: &CLIArgs) -> Result<Config> {
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console,
 /// making it much easier to track down bugs or parse output in some other program.
 fn get_transcode_terminal<'config, 'scope>(
+    config: &'config Config,
     use_bare_terminal: bool,
 ) -> TranscodeTerminal<'config, 'scope> {
     if use_bare_terminal {
         BareTerminalBackend::new().into()
     } else {
-        FancyTerminalBackend::new()
+        FancyTerminalBackend::new(config)
             .expect("Could not create fancy terminal UI backend.")
             .into()
     }
@@ -158,7 +159,8 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
         // `transcode`/`transcode-all` has two available terminal backends:
         // - the fancy one uses `tui` for a full-fledged terminal UI with progress bars and multiple "windows",
         // - the bare one (enabled with --bare-terminal) is a simple console echo implementation (no progress bars, etc.).
-        let terminal = get_transcode_terminal(transcode_args.bare_terminal);
+        let terminal =
+            get_transcode_terminal(config, transcode_args.bare_terminal);
 
         if let Some(log_file_path) = transcode_args
             .log_to_file
@@ -175,7 +177,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
 
         let result = commands::cmd_transcode_all(config, &terminal);
         if let Err(error) = result {
-            terminal.log_println(format!("ERROR: {error:?}"));
+            terminal.log_println(format!("{error}").dark_red());
         }
 
         terminal.destroy().map_err(|_| 1)?;
