@@ -25,6 +25,7 @@ mod console;
 mod filesystem;
 mod globals;
 
+pub const EUPHONY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(PartialEq, Eq)]
 #[derive(Subcommand)]

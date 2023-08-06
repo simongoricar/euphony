@@ -1,5 +1,6 @@
+use std::env::args;
 use std::fmt::Display;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
@@ -7,6 +8,7 @@ use std::thread;
 use std::thread::Scope;
 use std::time::Duration;
 
+use chrono::Local;
 use crossterm::ExecutableCommand;
 use miette::{miette, Context, IntoDiagnostic, Result};
 use parking_lot::{Mutex, RwLock};
@@ -46,6 +48,7 @@ use crate::console::{
     UserControlMessage,
     UserControllableBackend,
 };
+use crate::EUPHONY_VERSION;
 
 const LOG_FILE_OUTPUT_FLUSHING_INTERVAL: Duration = Duration::from_secs(8);
 const FLUSHING_THREAD_CANCELLATION_CHECK_INTERVAL: Duration =
@@ -276,8 +279,15 @@ impl<'thread_scope, 'config> LogBackend
         // If enabled, write message into the log file (its BufWriter, to be precise).
         match &state.log_output {
             LogOutputMode::ToFile { buf_writer, .. } => {
+                let time_now = Local::now();
+                let formatted_time_now =
+                    time_now.format("%d-%m-%Y@%H:%M:%S%.3f ");
+
                 let mut locked_buf_writer = buf_writer.lock();
 
+                locked_buf_writer
+                    .write_all(formatted_time_now.to_string().as_bytes())
+                    .expect("Failed to write formatted time to log file output");
                 locked_buf_writer.write_all(message.as_bytes()).expect(
                     "Failed to write println contents to log file output.",
                 );
@@ -302,14 +312,34 @@ impl<'scope, 'scope_env: 'scope, 'config: 'scope>
         log_output_file_path: P,
         scope: &'scope Scope<'scope, 'scope_env>,
     ) -> Result<()> {
-        let output_file = File::create(log_output_file_path)
+        let output_file = OpenOptions::new()
+            .append(true)
+            .open(log_output_file_path)
             .into_diagnostic()
             .wrap_err_with(|| {
-            miette!("Failed to create log output file.")
-        })?;
+                miette!("Failed to open log output file for appending.")
+            })?;
 
         let ansi_escaping_writer = strip_ansi_escapes::Writer::new(output_file);
-        let buf_writer = BufWriter::with_capacity(1024, ansi_escaping_writer);
+        let mut buf_writer =
+            BufWriter::with_capacity(1024, ansi_escaping_writer);
+
+        // Write an "invocation header", marking the start of euphony.
+        let time_now = Local::now();
+        let formatted_time_now = time_now.format("%d-%m-%Y@%H:%M:%S%.3f");
+
+        buf_writer
+            .write_all(
+                format!(
+                    "{} Hello from euphony {}. Started with arguments: {:?}",
+                    formatted_time_now,
+                    EUPHONY_VERSION,
+                    args()
+                )
+                .as_bytes(),
+            )
+            .expect("Could not write invocation header to file.");
+
 
         let buf_writer_arc_mutex = Arc::new(Mutex::new(buf_writer));
         let buf_writer_arc_mutex_clone = buf_writer_arc_mutex.clone();

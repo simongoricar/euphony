@@ -42,8 +42,8 @@ use crate::console::colours::{
 use crate::console::frontends::terminal_ui::queue_display::generate_smart_collapsible_queue;
 use crate::console::frontends::terminal_ui::state::{LogState, UIPage, UIState};
 use crate::console::UserControlMessage;
+use crate::EUPHONY_VERSION;
 
-const EUPHONY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const MUTED_BORDER_STYLE: Style = X242_GREY42;
 const MUTED_TEXT_STYLE: Style = MUTED_BORDER_STYLE;
@@ -148,7 +148,7 @@ fn render_header(
     // Help section
     let help_block = Block::default()
         .title(Span::styled(
-            format!(" Help (euphony {EUPHONY_VERSION}) "),
+            format!(" Help (euphony {}) ", EUPHONY_VERSION),
             MUTED_TEXT_STYLE,
         ))
         .title_alignment(Alignment::Left)
