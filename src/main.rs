@@ -90,9 +90,9 @@ struct ValidateAllArgs {
     name = "euphony",
     author = "Simon G. <simon.peter.goricar@gmail.com>",
     about = "An opinionated music library transcode manager.",
-    long_about = "Euphony is an opinionated music library transcode manager that allows the user to \
-                  retain high quality audio files in multiple separate libraries while also \
-                  helping to transcode their collection into a smaller format (MP3 V0). That smaller \
+    long_about = "Euphony is a music library transcode manager that allows the user to \
+                  retain high quality audio files in one or more libraries while also \
+                  helping to transcode their collection into a smaller format. That smaller \
                   version of the library can then be used on portable devices or similar occasions where space has a larger impact. \
                   For more info, see the README file in the repository.",
     version

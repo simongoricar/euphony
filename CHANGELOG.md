@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.0] - 2023-08-06
+**This version includes breaking changes.**
+
+### Added
+- Now using [`rustfmt`](https://github.com/rust-lang/rustfmt) as the code formatter for this project. Not perfect, but a good way to introduce deterministic formatting for now.
+- `euphony` is now able to detect fully removed albums or even entire artists. This was previously a not insignificant limitation, but with this change `euphony transcode` should now replicate any changes you make in your source libraries, including album and artist deletion.
+
+### Changed
+- Configuration file structure has been rewritten and is **incompatible with previous versions**.
+- Now using [`ratatui`](https://github.com/ratatui-org/ratatui) as the terminal UI library as `tui` is currently unmaintained.
+- The fancy terminal UI has received some UI improvements, including a separate view for transcoding progress and log output.
+- Log output is now timestamped both in the live log view and the configurable log file output.
+- Internals:
+  - Libraries, artists and individual albums have been abstracted into *views*, making code cleaner and more modular. This will also make adding support for library structures other than `<Library>/<Artist>/<Album>` easier to implement in the future, if that comes up.
+  - A lot of other internal systems have been rewritten to be more efficient, easier to reason about and maintain.
+
 
 ## [1.3.1] - 2023-01-29
 
