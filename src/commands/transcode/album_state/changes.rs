@@ -768,8 +768,6 @@ impl<'view> AlbumFileChangesV2<'view> {
         // that we consider to have transcoded/copied ourselves.
         // This means loading the `.album.transcode-state.euphony` file and deleting just tracked files.
 
-        // TODO Delete the entire directory at the end if it's empty.
-
         let saved_transcoded_state =
             match TranscodedAlbumState::load_from_directory(
                 &transcoded_album_directory,

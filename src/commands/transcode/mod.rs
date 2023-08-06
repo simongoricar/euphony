@@ -119,10 +119,10 @@ fn process_album<'config>(
         // - spawn workers that will work on jobs generated from `queued_album.changes`,
         // - fill up the file queue on the terminal frontend.
         let processing_thread_handle = scope.spawn(|| {
-            process_album_changes(
-                terminal,
-                queued_album.album.clone(),
+            process_changes(
                 &queued_album.changes,
+                queued_album.album.clone(),
+                terminal,
                 worker_tx,
                 processing_control_rx,
             )
@@ -475,7 +475,6 @@ fn process_library<'config>(
     // completely removed from the source library). In that case, it's a good idea to check
     // whether the artist directory is now empty - in that case we should delete the now-empty artist directory
     // (in the transcoded directory; we never touch the source directory).
-    // TODO Continue/Test from here on.
     for fully_removed_artist in queued_library.fully_removed_artists {
         let artist_transcoded_directory_path = fully_removed_artist
             .read()
@@ -554,8 +553,6 @@ pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
 
     let libraries = collect_sorted_libraries(configuration, terminal)?;
 
-    // FIXME Fully removed artists aren't being detected (also individual removed albums).
-    // TODO Remove empty directories after albums that have only remove operations.
     let fresh_library_states = collect_full_library_states(&libraries)?;
     let libraries_with_changes =
         collect_changes(&fresh_library_states, terminal)?;
@@ -1165,14 +1162,13 @@ enum MainThreadMessage {
 /// to signal `MainThreadMessage`s (currently just an "abort processing" message).
 ///
 /// This function returns with `Ok(())` when the album has been processed.
-fn process_album_changes<'config>(
-    terminal: &TranscodeTerminal<'config, '_>,
+fn process_changes<'config>(
+    album_changes: &AlbumFileChangesV2,
     album: SharedAlbumView<'config>,
-    changes: &AlbumFileChangesV2,
+    terminal: &TranscodeTerminal<'config, '_>,
     worker_progress_sender: Sender<FileJobMessage>,
     main_thread_receiver: Receiver<MainThreadMessage>,
 ) -> Result<()> {
-    // TODO Rename this function to avoid similar name with `process_album` at the top.
     let thread_pool_size = {
         let album_locked = album.read();
 
@@ -1182,8 +1178,6 @@ fn process_album_changes<'config>(
             .transcode_threads
     };
 
-    // TODO Missing verbose messages.
-
     let mut thread_pool =
         CancellableThreadPool::new(thread_pool_size, worker_progress_sender);
     thread_pool.start()?;
@@ -1191,7 +1185,7 @@ fn process_album_changes<'config>(
     if is_verbose_enabled() {
         terminal.log_println(format!(
             "absolute_source_file_paths_to_transcoded_file_paths_map={:?}",
-            changes
+            album_changes
                 .tracked_source_files
                 .as_ref()
                 .map(|files| files
@@ -1201,7 +1195,7 @@ fn process_album_changes<'config>(
     }
 
     // Generate and queue all file jobs.
-    let jobs = changes.generate_file_jobs(|context| {
+    let jobs = album_changes.generate_file_jobs(|context| {
         // Parse queue item details.
         let target_path = context.action.target_path();
         let file_name = target_path

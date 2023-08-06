@@ -59,11 +59,7 @@ pub struct LibraryState {
     pub tracked_artists: HashMap<String, TrackedArtistAlbums>,
 }
 
-// TODO Integrate this into the real code, then make sure we delete albums that suddenly
-//      disappear from the library between transcodes.
 impl LibraryState {
-    // TODO Generation methods (give list of artists and their albums, but ALL of them,
-    //      not just the ones we transcoded this session).
     pub fn new(
         tracked_artists_and_albums: HashMap<String, TrackedArtistAlbums>,
     ) -> Self {
