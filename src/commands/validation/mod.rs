@@ -5,10 +5,13 @@ use std::path::{Path, PathBuf};
 use crossterm::style::Stylize;
 use miette::{miette, Context, Result};
 
+use crate::commands::transcode::album_configuration::ALBUM_OVERRIDE_FILE_NAME;
+use crate::commands::transcode::album_state::source::SOURCE_ALBUM_STATE_FILE_NAME;
+use crate::commands::transcode::library_state::LIBRARY_STATE_FILE_NAME;
+use crate::commands::transcode::views::LibraryView;
 use crate::configuration::{Config, LibraryConfig};
 use crate::console::frontends::ValidationTerminal;
 use crate::console::{LogBackend, ValidationBackend, ValidationErrorInfo};
-use crate::filesystem::DirectoryScan;
 
 /// Implemented by concrete validation errors to allow a standardised way of displaying the error.
 pub trait ValidationErrorDisplay {
@@ -28,7 +31,7 @@ impl<'a> ValidationError<'a> {
     pub fn new_unexpected_file<P: Into<PathBuf>>(
         file_path: P,
         library: &'a LibraryConfig,
-        reason: UnexpectedFileType,
+        reason: UnexpectedFileLocation,
     ) -> Self {
         Self::UnexpectedFile(UnexpectedFile::new(file_path, library, reason))
     }
@@ -57,7 +60,7 @@ impl<'a> ValidationError<'a> {
 }
 
 /// Describes the type of the "unexpected file type" validation error.
-pub enum UnexpectedFileType {
+pub enum UnexpectedFileLocation {
     LibraryRoot,
     ArtistDirectory,
     AlbumDirectoryAudio,
@@ -74,19 +77,19 @@ pub struct UnexpectedFile<'a> {
     library: &'a LibraryConfig,
 
     /// Specific reason for why this is unexpected.
-    reason: UnexpectedFileType,
+    location: UnexpectedFileLocation,
 }
 
 impl<'a> UnexpectedFile<'a> {
     pub fn new<P: Into<PathBuf>>(
         file_path: P,
         library: &'a LibraryConfig,
-        reason: UnexpectedFileType,
+        reason: UnexpectedFileLocation,
     ) -> Self {
         Self {
             file_path: file_path.into(),
             library,
-            reason,
+            location: reason,
         }
     }
 }
@@ -121,17 +124,17 @@ impl<'a> ValidationErrorDisplay for UnexpectedFile<'a> {
         ];
 
         Ok(ValidationErrorInfo::new(
-            match self.reason {
-                UnexpectedFileType::LibraryRoot => {
+            match self.location {
+                UnexpectedFileLocation::LibraryRoot => {
                     "Unexpected file in library root."
                 }
-                UnexpectedFileType::ArtistDirectory => {
+                UnexpectedFileLocation::ArtistDirectory => {
                     "Unexpected file in artist directory."
                 }
-                UnexpectedFileType::AlbumDirectoryAudio => {
+                UnexpectedFileLocation::AlbumDirectoryAudio => {
                     "Unexpected audio file in album directory."
                 }
-                UnexpectedFileType::AlbumDirectoryOther => {
+                UnexpectedFileLocation::AlbumDirectoryOther => {
                     "Unexpected data file in album directory."
                 }
             },
@@ -145,7 +148,9 @@ impl<'a> ValidationErrorDisplay for UnexpectedFile<'a> {
 /// Used by `LibraryValidator` to keep track of all available albums.
 pub struct ValidationAlbumEntry<'a> {
     pub artist_name: String,
+
     pub album_title: String,
+
     pub library: &'a LibraryConfig,
 }
 
@@ -347,9 +352,9 @@ fn validate_entire_collection(
     config: &Config,
     terminal: &mut ValidationTerminal,
 ) -> Result<()> {
-    // TODO Rewrite validation to use the `views.rs` abstractions instead.
-
-    // As explained in the README and configuration template, library structure is expected to be the following:
+    // As explained in the README and configuration template, library structure
+    // is expected to be the following:
+    //
     // <base library directory>
     // |
     // |-- <artist directory>
@@ -420,16 +425,15 @@ fn validate_entire_collection(
     let mut validation_errors: Vec<ValidationError> = Vec::new();
     let mut collision_validator = CollectionCollisionValidator::new();
 
-    // Combined steps 1 - 4; for each library:
-    //  1. Check for unexpected files in the root directory of each library.
-    //  2. Check for unexpected files in each artist directory.
-    //  3. Check for unexpected files in each album directory.
-    //  4. Check for any album collisions between libraries.
+    // For each library, check the following:
+    //  1. Unexpected files in the root library directory,
+    //  2. Unexpected files in any artist directory,
+    //  3. Unexpected files in any album directory.
 
-    // This is a general check that uses `validation.extensions_considered_audio_files` to check
-    // whether the file in question is considered an audio file
-    // (but this says nothing about the validity of the extension for a given library).
-    let is_audio_file = |file_path: &PathBuf| {
+    // As we're validating albums we're also performing an artist-album collision check
+    // between all registered libraries.
+
+    let is_any_audio_file = |file_path: &Path| {
         let file_extension = file_path
             .extension()
             .unwrap_or_default()
@@ -442,21 +446,26 @@ fn validate_entire_collection(
             .contains(&file_extension)
     };
 
-    // TODO Refactor this code to avoid such deep nesting.
-    for library in config.libraries.values() {
-        let library_root_path = Path::new(&library.path);
+    for library_config in config.libraries.values() {
+        let library_view =
+            LibraryView::from_library_configuration(config, library_config)?;
+        let library_view_locked = library_view.read();
 
-        let ignored_directories_in_base_directory =
-            &library.ignored_directories_in_base_directory;
+        let ignored_directories_in_base_directory: HashSet<&String> =
+            match &library_config.ignored_directories_in_base_directory {
+                Some(ignored_dirs) => HashSet::from_iter(ignored_dirs.iter()),
+                None => HashSet::new(),
+            };
+
         let allowed_audio_file_extensions =
-            &library.validation.allowed_audio_file_extensions;
+            &library_config.validation.allowed_audio_file_extensions;
         let allowed_other_file_extensions =
-            &library.validation.allowed_other_file_extensions;
+            &library_config.validation.allowed_other_file_extensions;
         let allowed_other_files_by_name =
-            &library.validation.allowed_other_files_by_name;
+            &library_config.validation.allowed_other_files_by_name;
 
         // Handy closures for repeated file validity checks.
-        let is_valid_audio_file = |file_path: &PathBuf| {
+        let is_valid_library_audio_file = |file_path: &Path| {
             let file_extension = file_path
                 .extension()
                 .unwrap_or_default()
@@ -466,7 +475,7 @@ fn validate_entire_collection(
             allowed_audio_file_extensions.contains(&file_extension)
         };
 
-        let is_valid_other_file = |file_path: &PathBuf| {
+        let is_valid_library_non_audio_file = |file_path: &Path| {
             let file_name = file_path
                 .file_name()
                 .unwrap_or_default()
@@ -483,127 +492,108 @@ fn validate_entire_collection(
                 || allowed_other_files_by_name.contains(&file_name)
         };
 
-        ////
-        // Check for unexpected files in the root directory of each library.
-        ////
-        let library_scan =
-            DirectoryScan::from_directory_path(library_root_path, 0)
-                .wrap_err_with(|| {
-                    miette!(
-                        "Could not scan library's root directory: {:?}",
-                        library_root_path
-                    )
-                })?;
+        // Check for unexpected files in the root library directory.
+        let root_library_files_to_check =
+            library_view_locked.library_root_validation_files()?;
+        for root_file in root_library_files_to_check {
+            let root_file_name = root_file
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
 
-        // All files in the root directory must match `allowed_other_file_extensions` or `allowed_other_files_by_name`.
-        for root_file in &library_scan.files {
-            let file_path = root_file.path();
-            if !is_valid_other_file(&file_path) {
-                // File did not match neither by extension nor by full name - it is invalid.
+            // Allow `.library.state.euphony`.
+            if root_file_name.eq(LIBRARY_STATE_FILE_NAME) {
+                continue;
+            }
+
+            if !is_valid_library_non_audio_file(root_file.as_path()) {
                 validation_errors.push(ValidationError::new_unexpected_file(
-                    file_path,
-                    library,
-                    UnexpectedFileType::LibraryRoot,
+                    root_file,
+                    library_config,
+                    UnexpectedFileLocation::LibraryRoot,
                 ))
             }
         }
 
-        ////
         // Check for unexpected files in each artist directory.
-        ////
-        for artist_directory in &library_scan.directories {
-            let artist_directory_name =
-                artist_directory.file_name().to_string_lossy().to_string();
-
-            // If the directory has been explicitly excluded with `ignored_directories_in_base_directory`, we skip it.
-            if let Some(ignored_directories) =
-                ignored_directories_in_base_directory
-            {
-                if ignored_directories.contains(&artist_directory_name) {
-                    continue;
-                }
+        for (artist_name, artist_view) in library_view_locked.artists()? {
+            if ignored_directories_in_base_directory.contains(&artist_name) {
+                continue;
             }
 
-            let artist_directory_scan =
-                DirectoryScan::from_directory_entry(artist_directory, 0)
-                    .wrap_err_with(|| {
-                        miette!(
-                            "Could not scan artist directory: {:?}",
-                            artist_directory.path()
-                        )
-                    })?;
+            let artist_view_locked = artist_view.read();
 
-            // Check files directly in the artist directory.
-            for artist_dir_file in &artist_directory_scan.files {
-                let file_path = artist_dir_file.path();
-                if !is_valid_other_file(&file_path) {
-                    // File did not match neither by extension nor by full name - it is invalid.
+            let artist_files =
+                artist_view_locked.artist_directory_validation_files()?;
+            for artist_dir_file_path in artist_files {
+                if !is_valid_library_non_audio_file(
+                    artist_dir_file_path.as_path(),
+                ) {
                     validation_errors.push(ValidationError::new_unexpected_file(
-                        file_path,
-                        library,
-                        UnexpectedFileType::ArtistDirectory,
+                        artist_dir_file_path,
+                        library_config,
+                        UnexpectedFileLocation::ArtistDirectory,
                     ))
                 }
             }
 
-            for album_directory in &artist_directory_scan.directories {
-                let album_directory_name =
-                    album_directory.file_name().to_string_lossy().to_string();
+            // Iterate over each of their albums and validate those as well.
+            for (album_title, album_view) in artist_view_locked.albums()? {
+                collision_validator
+                    .add_album_entry(&artist_name, &album_title, library_config)
+                    .wrap_err_with(|| miette!("BUG: Duplicate album entry."))?;
 
-                // Add this artist-album combination into the collision validator. We'll check for colliding albums at the end.
-                collision_validator.add_album_entry(
-                    &artist_directory_name,
-                    &album_directory_name,
-                    library,
-                )
-                    .wrap_err_with(|| miette!("Bug: this exact library-album combination already exists!"))?;
+                let album_view_locked = album_view.read();
 
-                // FIXME Implement depth config that is available per-album.
-                //       At this moment it only matters in transcoding and is ignored during validation.
-                //       This can (and will) make validation miss nested files.
+                let album_files = album_view_locked.album_validation_files()?;
+                for album_dir_file_path in album_files {
+                    let album_dir_file_name = album_dir_file_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
 
-                // Iterate over files in each album, checking them for validity.
-                let album_scan =
-                    DirectoryScan::from_directory_entry(album_directory, 0)
-                        .wrap_err_with(|| {
-                            miette!(
-                                "Could not scan album directory: {:?}",
-                                album_directory.path()
-                            )
-                        })?;
+                    if album_dir_file_name.eq(SOURCE_ALBUM_STATE_FILE_NAME)
+                        || album_dir_file_name.eq(ALBUM_OVERRIDE_FILE_NAME)
+                    {
+                        continue;
+                    }
 
-                for album_dir_file in album_scan.files {
-                    let file_path = album_dir_file.path();
+                    let is_any_audio =
+                        is_any_audio_file(album_dir_file_path.as_path());
+                    let is_valid_audio = is_valid_library_audio_file(
+                        album_dir_file_path.as_path(),
+                    );
+                    let is_valid_non_audio = is_valid_library_non_audio_file(
+                        album_dir_file_path.as_path(),
+                    );
 
-                    let is_audio = is_audio_file(&file_path);
-                    let is_valid_audio = is_valid_audio_file(&file_path);
-                    let is_valid_other = is_valid_other_file(&file_path);
-
-                    if is_audio && !is_valid_audio {
-                        // File was an audio file, but not the kind that is allowed in this library.
+                    if is_any_audio && !is_valid_audio {
+                        // File was an audio file, but not the kind that we allow in this library.
                         validation_errors.push(
                             ValidationError::new_unexpected_file(
-                                file_path,
-                                library,
-                                UnexpectedFileType::AlbumDirectoryAudio,
+                                &album_dir_file_path,
+                                library_config,
+                                UnexpectedFileLocation::AlbumDirectoryAudio,
                             ),
-                        )
-                    } else if !is_audio && !is_valid_other {
-                        // File was not an audio file, and is not a data file the user allows in this library.
+                        );
+                    } else if !is_any_audio && !is_valid_non_audio {
+                        // File was not an audio file nor a valid non-audio (data) file in this library.
                         validation_errors.push(
                             ValidationError::new_unexpected_file(
-                                file_path,
-                                library,
-                                UnexpectedFileType::AlbumDirectoryOther,
+                                &album_dir_file_path,
+                                library_config,
+                                UnexpectedFileLocation::AlbumDirectoryOther,
                             ),
-                        )
+                        );
                     }
                 }
             }
         }
     }
 
-    // Get the collision results from the collision validator.
+    // Get the artist-album collision results.
     validation_errors.extend(
         collision_validator
             .find_collisions()?
@@ -611,27 +601,25 @@ fn validate_entire_collection(
             .map(ValidationError::AlbumCollision),
     );
 
-    // Validation process complete, display the results.
-    let validation_error_info_array: Vec<ValidationErrorInfo> =
-        validation_errors
-            .into_iter()
-            .map(|error| error.into_validation_error_info())
-            .collect::<Result<Vec<ValidationErrorInfo>>>()?;
 
-    if validation_error_info_array.is_empty() {
-        terminal.log_println(
-            "Entire collection validated, no validation errors.".green(),
-        );
+    // We've completed the validation process, we'll now display the results.
+    let validation_errors_vec: Vec<ValidationErrorInfo> = validation_errors
+        .into_iter()
+        .map(|error| error.into_validation_error_info())
+        .collect::<Result<Vec<ValidationErrorInfo>>>()?;
+
+    if validation_errors_vec.is_empty() {
+        terminal.log_println("All libraries validated, no errors.".green());
     } else {
         terminal.log_println(
             format!(
-                "Found {} validation errors!",
-                validation_error_info_array.len()
+                "{} validation errors!",
+                validation_errors_vec.len()
             )
             .red(),
         );
 
-        for error in validation_error_info_array {
+        for error in validation_errors_vec {
             terminal.validation_add_error(error);
         }
     }

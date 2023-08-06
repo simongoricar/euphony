@@ -52,7 +52,7 @@ use crate::globals::is_verbose_enabled;
 pub mod album_configuration;
 pub mod album_state;
 pub mod jobs;
-mod library_state;
+pub mod library_state;
 mod utilities;
 pub mod views;
 
@@ -551,7 +551,7 @@ pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
     let mut terminal_user_input = terminal.get_user_control_receiver()?;
 
 
-    let libraries = collect_sorted_libraries(configuration, terminal)?;
+    let libraries = collect_libraries_sorted(configuration, terminal)?;
 
     let fresh_library_states = collect_full_library_states(&libraries)?;
     let libraries_with_changes =
@@ -657,7 +657,7 @@ pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
  * Utility functions
  */
 
-fn collect_sorted_libraries<'config>(
+fn collect_libraries_sorted<'config>(
     configuration: &'config Config,
     terminal: &TranscodeTerminal<'config, '_>,
 ) -> Result<Vec<SharedLibraryView<'config>>> {

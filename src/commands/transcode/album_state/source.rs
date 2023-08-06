@@ -11,7 +11,7 @@ use crate::commands::transcode::album_state::common::AlbumFileState;
 use crate::commands::transcode::views::AlbumSourceFileList;
 use crate::configuration::{Config, LibraryConfig};
 
-const SOURCE_ALBUM_STATE_FILE_NAME: &str = ".album.source-state.euphony";
+pub const SOURCE_ALBUM_STATE_FILE_NAME: &str = ".album.source-state.euphony";
 const SOURCE_ALBUM_STATE_SCHEMA_VERSION: u32 = 2;
 
 

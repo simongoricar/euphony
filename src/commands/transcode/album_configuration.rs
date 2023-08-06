@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 // This file is not required to exist in each album directory, but the user may create it
 // to influence various configuration values per-album.
-const ALBUM_OVERRIDE_FILE_NAME: &str = ".album.override.euphony";
+pub const ALBUM_OVERRIDE_FILE_NAME: &str = ".album.override.euphony";
 
 /// Per-album options for euphony.
 #[derive(Deserialize, Clone, Debug, Default)]
