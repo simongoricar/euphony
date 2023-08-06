@@ -75,44 +75,6 @@ impl DirectoryScan {
             directories: directory_list,
         })
     }
-
-    /// Equal to `Self::from_directory_path`, but accepts a reference to `DirEntry` instead of the path.
-    pub fn from_directory_entry(
-        directory_entry: &DirEntry,
-        scan_depth: u16,
-    ) -> Result<Self> {
-        let directory_path = directory_entry.path();
-
-        if directory_path.is_dir() {
-            Self::from_directory_path(directory_path, scan_depth)
-        } else {
-            Err(miette!(
-                "Provided directory_entry is not a directory."
-            ))
-        }
-    }
-
-    /// Retrieve the list of scanned files, additionally filtered to specific extensions.
-    /// The extension list should contain lowercase names without dots (e.g. "txt").
-    #[allow(dead_code)]
-    pub fn files_with_extensions(
-        &self,
-        extensions: &[String],
-    ) -> Vec<&DirEntry> {
-        self.files
-            .iter()
-            .filter(|item| {
-                let extension = item
-                    .path()
-                    .extension()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-
-                extensions.contains(&extension)
-            })
-            .collect::<Vec<&DirEntry>>()
-    }
 }
 
 /// Get a file's extension (or an empty string if none).
