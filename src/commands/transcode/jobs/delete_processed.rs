@@ -11,6 +11,7 @@ use crate::commands::transcode::jobs::common::{
     FileJobMessage,
     FileJobResult,
 };
+use crate::configuration::Config;
 use crate::console::frontends::shared::queue::QueueItemID;
 use crate::globals::is_verbose_enabled;
 
@@ -35,6 +36,7 @@ impl DeleteProcessedFileJob {
     /// Initialize a new `DeleteProcessedFileJob` from the given target path to remove.
     /// If the file is missing
     pub fn new(
+        configuration: &Config,
         target_file_path: PathBuf,
         file_type: FileType,
         ignore_if_missing: bool,
@@ -43,6 +45,14 @@ impl DeleteProcessedFileJob {
         /*
          * 1. Sanity checks
          */
+        if !target_file_path.starts_with(&configuration.aggregated_library.path)
+        {
+            return Err(miette!(
+                "Suspicious path (not in transcoded directory): {:?}",
+                target_file_path
+            ));
+        }
+
         if target_file_path.exists() && !target_file_path.is_file() {
             return Err(miette!("Given path exists, but is not a file!"));
         }

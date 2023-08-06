@@ -231,8 +231,6 @@ fn render_logs_tab(
                 .break_words(false),
             );
 
-            assert!(wrapped_text.len() >= 2);
-
             if wrapped_text.len() + log_lines.len() > max_lines {
                 break;
             }

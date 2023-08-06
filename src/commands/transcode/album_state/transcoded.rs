@@ -1,11 +1,12 @@
 use std::collections::HashMap;
-use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
-use miette::{miette, Context, IntoDiagnostic, Result};
+use miette::{miette, Context, Diagnostic, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::commands::transcode::album_state::common::AlbumFileState;
 use crate::commands::transcode::views::common::SortedFileMap;
@@ -13,6 +14,24 @@ use crate::commands::transcode::views::AlbumSourceFileList;
 
 const TRANSCODED_ALBUM_STATE_FILE_NAME: &str = ".album.transcode-state.euphony";
 const TRANSCODED_ALBUM_STATE_SCHEMA_VERSION: u32 = 2;
+
+#[derive(Error, Debug, Diagnostic)]
+pub enum TranscodedAlbumStateLoadError {
+    #[error("no state found on disk")]
+    NotFound,
+
+    #[error(
+        "schema version mismatch: {0} (current is {})",
+        TRANSCODED_ALBUM_STATE_SCHEMA_VERSION
+    )]
+    SchemaVersionMismatch(u32),
+
+    #[error("io::Error encountered while loading state")]
+    IoError(#[from] io::Error),
+
+    #[error("serde_json::Error encountered while loading state")]
+    JSONError(#[from] serde_json::Error),
+}
 
 /// Represents the entire state of the *transcoded* side of the album.
 ///
@@ -36,22 +55,27 @@ impl TranscodedAlbumState {
     ///
     /// *NOTE: If at all possible, use `TranscodedAlbumState::from_directory_path` instead. This
     /// ensures we respect the `.*.euphony` file naming from `TRANSCODED_ALBUM_STATE_FILE_NAME`.*
-    pub fn load_from_file<P: AsRef<Path>>(file_path: P) -> Result<Self> {
+    pub fn load_from_file<P: AsRef<Path>>(
+        file_path: P,
+    ) -> Result<Self, TranscodedAlbumStateLoadError> {
         let file_path = file_path.as_ref();
 
         if !file_path.is_file() {
-            return Err(miette!("Couldn't load transcoded album state from file: file does not exist."));
+            return Err(TranscodedAlbumStateLoadError::NotFound);
         }
 
-        let file_contents = fs::read_to_string(file_path)
-            .into_diagnostic()
-            .wrap_err_with(|| miette!("Could not read file."))?;
+        let file_contents = fs::read_to_string(file_path)?;
+        let transcoded_state: Self = serde_json::from_str(&file_contents)?;
 
-        let transcoded_state: Self = serde_json::from_str(&file_contents)
-            .into_diagnostic()
-            .wrap_err_with(|| {
-                miette!("Could not deserialize file contents as JSON.")
-            })?;
+        if transcoded_state.schema_version
+            != TRANSCODED_ALBUM_STATE_SCHEMA_VERSION
+        {
+            return Err(
+                TranscodedAlbumStateLoadError::SchemaVersionMismatch(
+                    transcoded_state.schema_version,
+                ),
+            );
+        }
 
         Ok(transcoded_state)
     }
@@ -63,18 +87,35 @@ impl TranscodedAlbumState {
     /// (see `TRANSCODED_ALBUM_STATE_FILE_NAME`) directly inside the transcoded library directory.
     pub fn load_from_directory<P: AsRef<Path>>(
         directory_path: P,
-    ) -> Result<Option<Self>> {
-        let transcoded_album_state_path = directory_path
-            .as_ref()
-            .join(TRANSCODED_ALBUM_STATE_FILE_NAME);
+    ) -> Result<Self, TranscodedAlbumStateLoadError> {
+        let transcoded_album_state_path =
+            Self::get_state_file_path_for_directory(directory_path);
 
         if !transcoded_album_state_path.is_file() {
-            return Ok(None);
+            return Err(TranscodedAlbumStateLoadError::NotFound);
         }
 
-        Ok(Some(Self::load_from_file(
-            transcoded_album_state_path,
-        )?))
+        Self::load_from_file(transcoded_album_state_path)
+    }
+
+    /// Get default path for saving `TranscodedAlbumState`s inside a directory.
+    /// This is set by `TRANSCODED_ALBUM_STATE_FILE_NAME`, which is currently `.album.transcode-state.euphony`.
+    ///
+    /// # Example
+    /// ```
+    /// let directory_path = Path::from("D:/MusicLibrary/Ed Harrison/Neotokyo");
+    ///
+    /// assert_eq!(
+    ///     Self::get_state_file_path_for_directory(directory_path),
+    ///     Path::from("D:/MusicLibrary/Ed Harrison/Neotokyo/.album.transcode-state.euphony`)
+    /// );
+    /// ```
+    pub fn get_state_file_path_for_directory<P: AsRef<Path>>(
+        directory_path: P,
+    ) -> PathBuf {
+        directory_path
+            .as_ref()
+            .join(TRANSCODED_ALBUM_STATE_FILE_NAME)
     }
 
     /// Save the transcoded album state into the given file as JSON. If the file exists and

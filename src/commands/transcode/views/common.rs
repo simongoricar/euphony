@@ -15,15 +15,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::transcode::album_state::changes::AlbumFileChangesV2;
 use crate::commands::transcode::views::album::SharedAlbumView;
-use crate::commands::transcode::views::artist::SharedArtistView;
 
 pub type ArcRwLock<T> = Arc<RwLock<T>>;
 pub type WeakRwLock<T> = Weak<RwLock<T>>;
 
 pub type ChangedAlbumsMap<'a> =
     HashMap<String, (SharedAlbumView<'a>, AlbumFileChangesV2<'a>)>;
-pub type ArtistsWithChangedAlbumsMap<'a> =
-    HashMap<String, (SharedArtistView<'a>, ChangedAlbumsMap<'a>)>;
 
 /// Represents a double `HashMap`: one for audio files, the other for data files.
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]

@@ -1,24 +1,27 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use miette::{miette, Context, Result};
+use miette::{miette, Context, Diagnostic, Result};
 use parking_lot::RwLock;
+use thiserror::Error;
 
 use crate::commands::transcode::views::artist::{ArtistView, SharedArtistView};
-use crate::commands::transcode::views::common::{
-    ArcRwLock,
-    ArtistsWithChangedAlbumsMap,
-    ChangedAlbumsMap,
-    WeakRwLock,
-};
+use crate::commands::transcode::views::common::{ArcRwLock, WeakRwLock};
 use crate::configuration::{Config, LibraryConfig};
 use crate::filesystem::DirectoryScan;
 
-pub type SharedLibraryView<'a> = ArcRwLock<LibraryView<'a>>;
+pub type SharedLibraryView<'config> = ArcRwLock<LibraryView<'config>>;
 #[allow(dead_code)]
-pub type WeakLibraryView<'a> = WeakRwLock<LibraryView<'a>>;
+pub type WeakLibraryView<'config> = WeakRwLock<LibraryView<'config>>;
+
+
+#[derive(Error, Debug, Diagnostic)]
+pub enum LibraryViewError {
+    #[error("specified library path doesn't exist: {0}")]
+    NoSuchDirectory(String),
+}
 
 
 pub struct LibraryView<'config> {
@@ -35,14 +38,21 @@ impl<'config> LibraryView<'config> {
     pub fn from_library_configuration(
         config: &'config Config,
         library_config: &'config LibraryConfig,
-    ) -> SharedLibraryView<'config> {
-        Arc::new_cyclic(|weak| {
+    ) -> Result<SharedLibraryView<'config>, LibraryViewError> {
+        let library_path = Path::new(&library_config.path);
+        if !library_path.exists() || !library_path.is_dir() {
+            return Err(LibraryViewError::NoSuchDirectory(
+                library_config.path.clone(),
+            ));
+        }
+
+        Ok(Arc::new_cyclic(|weak| {
             RwLock::new(Self {
                 weak_self: weak.clone(),
                 euphony_configuration: config,
                 library_configuration: library_config,
             })
-        })
+        }))
     }
 
     /// Get the library's name.
@@ -76,7 +86,7 @@ impl<'config> LibraryView<'config> {
             .upgrade()
             .expect("Could not upgrade weak reference.");
 
-        let instance = ArtistView::new(self_arc, artist_name)?;
+        let instance = ArtistView::new(self_arc, artist_name, false)?;
 
         {
             let instance_lock = instance.read();
@@ -125,49 +135,11 @@ impl<'config> LibraryView<'config> {
 
             artist_map.insert(
                 artist_directory_name.clone(),
-                ArtistView::new(self_arc.clone(), artist_directory_name)?,
+                ArtistView::new(self_arc.clone(), artist_directory_name, false)?,
             );
         }
 
         Ok(artist_map)
-    }
-
-    /// Get all artist in this library whose albums have changes (or haven't been transcoded yet).
-    ///
-    /// Returns a HashMap that maps from the artist name to a tuple
-    /// containing the artist view and another HashMap from the album title to
-    /// a tuple containing its view and its changes.
-    ///
-    /// The above is very verbose, you might better off reading the following two types:
-    /// `AlbumsWithChangesMap` and `ArtistWithChangesMap`.
-    ///
-    /// For more information, see the `artists` method.
-    pub fn scan_for_artists_with_changed_albums(
-        &self,
-    ) -> Result<ArtistsWithChangedAlbumsMap<'config>> {
-        let all_artists: HashMap<String, SharedArtistView<'config>> =
-            self.artists()?;
-
-        all_artists
-            .into_iter()
-            .filter_map(|(name, artist)| {
-                let locked_artist = artist.read();
-
-                let albums: ChangedAlbumsMap<'config> =
-                    match locked_artist.scan_for_albums_with_changes() {
-                        Ok(albums) => albums,
-                        Err(error) => return Some(Err(error)),
-                    };
-
-                drop(locked_artist);
-
-                if albums.is_empty() {
-                    None
-                } else {
-                    Some(Ok((name, (artist, albums))))
-                }
-            })
-            .collect()
     }
 
     /// Scan the root directory of the library and return a list of files at the root

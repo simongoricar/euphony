@@ -53,21 +53,6 @@ impl<T> ExtendedSortedFileList<T> {
     }
 }
 
-#[derive(Debug)]
-pub struct SourceAndTargetPair<T: Debug> {
-    pub source_path: T,
-    pub target_path: T,
-}
-
-impl<T: Debug> SourceAndTargetPair<T> {
-    pub fn new(source_path: T, target_path: T) -> Self {
-        Self {
-            source_path,
-            target_path,
-        }
-    }
-}
-
 /// We store file creation and modification in 64-bit floats, but we usually compare two times
 /// that should match using some tolerance (usually to avoid rounding errors).
 ///

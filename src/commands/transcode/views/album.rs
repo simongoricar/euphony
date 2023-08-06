@@ -7,8 +7,14 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::commands::transcode::album_configuration::AlbumConfiguration;
 use crate::commands::transcode::album_state::changes::AlbumFileChangesV2;
-use crate::commands::transcode::album_state::source::SourceAlbumState;
-use crate::commands::transcode::album_state::transcoded::TranscodedAlbumState;
+use crate::commands::transcode::album_state::source::{
+    SourceAlbumState,
+    SourceAlbumStateLoadError,
+};
+use crate::commands::transcode::album_state::transcoded::{
+    TranscodedAlbumState,
+    TranscodedAlbumStateLoadError,
+};
 use crate::commands::transcode::views::artist::{ArtistView, SharedArtistView};
 use crate::commands::transcode::views::common::{
     ArcRwLock,
@@ -39,6 +45,7 @@ impl<'config> AlbumView<'config> {
     pub fn new(
         artist: SharedArtistView<'config>,
         album_title: String,
+        allow_missing_directory: bool,
     ) -> Result<SharedAlbumView<'config>> {
         let album_directory = {
             let artist_lock = artist.read();
@@ -48,7 +55,7 @@ impl<'config> AlbumView<'config> {
                 .join(album_title.clone())
         };
 
-        if !album_directory.is_dir() {
+        if !allow_missing_directory && !album_directory.is_dir() {
             return Err(miette!(
                 "Provided album directory does not exist: {:?}",
                 album_directory
@@ -92,6 +99,12 @@ impl<'config> AlbumView<'config> {
         self.read_lock_artist()
             .read_lock_library()
             .library_configuration
+    }
+
+    pub fn directory_path_relative_to_library_root(&self) -> PathBuf {
+        self.read_lock_artist()
+            .directory_path_relative_to_library_root()
+            .join(&self.title)
     }
 
     /// Get the album directory in the original (untranscoded) library.
@@ -169,7 +182,18 @@ impl<'config> AlbumView<'config> {
 
         // Load states from disk (if they exist) and generate fresh filesystem states as well.
         let saved_source_album_state =
-            SourceAlbumState::load_from_directory(&source_album_directory_path)?;
+            match SourceAlbumState::load_from_directory(
+                &source_album_directory_path,
+            ) {
+                Ok(state) => Some(state),
+                Err(error) => match error {
+                    SourceAlbumStateLoadError::NotFound
+                    | SourceAlbumStateLoadError::SchemaVersionMismatch(_) => {
+                        None
+                    }
+                    _ => return Err(error.into()),
+                },
+            };
         let fresh_source_album_state =
             SourceAlbumState::generate_from_tracked_files(
                 &tracked_source_files,
@@ -177,12 +201,22 @@ impl<'config> AlbumView<'config> {
             )?;
 
         let saved_transcoded_album_state =
-            TranscodedAlbumState::load_from_directory(
+            match TranscodedAlbumState::load_from_directory(
                 &transcoded_album_directory_path,
-            )?;
+            ) {
+                Ok(state) => Some(state),
+                Err(error) => match error {
+                    TranscodedAlbumStateLoadError::NotFound
+                    | TranscodedAlbumStateLoadError::SchemaVersionMismatch(_) => {
+                        None
+                    }
+                    _ => return Err(error.into()),
+                },
+            };
 
         // FIXME This is returning a list of files that should exist after transcoding instead of the current filesystem state.
-        //       Document this and add an obvious way to generate both, then use the current filesystem state here.
+        //       Document this and add an obvious way to generate both, then use the current filesystem state here
+        //       (2023-08-05: ?? what did I mean here, the current way works).
         let fresh_transcoded_album_state =
             TranscodedAlbumState::generate_from_tracked_files(
                 &tracked_source_files,

@@ -39,6 +39,7 @@ impl<'config> ArtistView<'config> {
     pub fn new(
         library: SharedLibraryView<'config>,
         artist_name: String,
+        allow_missing_directory: bool,
     ) -> Result<SharedArtistView<'config>> {
         let self_arc = Arc::new_cyclic(|weak| {
             RwLock::new(Self {
@@ -48,7 +49,7 @@ impl<'config> ArtistView<'config> {
             })
         });
 
-        {
+        if !allow_missing_directory {
             let self_locked = self_arc.write();
 
             if !self_locked.artist_directory_in_source_library().is_dir() {
@@ -60,6 +61,10 @@ impl<'config> ArtistView<'config> {
         }
 
         Ok(self_arc)
+    }
+
+    pub fn directory_path_relative_to_library_root(&self) -> PathBuf {
+        PathBuf::from(self.name.clone())
     }
 
     /// Get the artist directory in the original (untranscoded) library.
@@ -90,7 +95,7 @@ impl<'config> ArtistView<'config> {
             miette!("Could not upgrade ArtistView weak reference.")
         })?;
 
-        let instance = AlbumView::new(self_arc, album_title)?;
+        let instance = AlbumView::new(self_arc, album_title, false)?;
 
         {
             let instance_locked = instance.read();
@@ -127,7 +132,7 @@ impl<'config> ArtistView<'config> {
 
             album_map.insert(
                 album_directory_name.clone(),
-                AlbumView::new(self_arc.clone(), album_directory_name)?,
+                AlbumView::new(self_arc.clone(), album_directory_name, false)?,
             );
         }
 

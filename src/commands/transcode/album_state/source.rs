@@ -1,10 +1,11 @@
-use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
-use miette::{miette, Context, IntoDiagnostic, Result};
+use miette::{miette, Context, Diagnostic, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::commands::transcode::album_state::common::AlbumFileState;
 use crate::commands::transcode::views::AlbumSourceFileList;
@@ -12,6 +13,25 @@ use crate::configuration::{Config, LibraryConfig};
 
 const SOURCE_ALBUM_STATE_FILE_NAME: &str = ".album.source-state.euphony";
 const SOURCE_ALBUM_STATE_SCHEMA_VERSION: u32 = 2;
+
+
+#[derive(Error, Debug, Diagnostic)]
+pub enum SourceAlbumStateLoadError {
+    #[error("no state found on disk")]
+    NotFound,
+
+    #[error(
+        "schema version mismatch: {0} (current is {})",
+        SOURCE_ALBUM_STATE_SCHEMA_VERSION
+    )]
+    SchemaVersionMismatch(u32),
+
+    #[error("io::Error encountered while loading state")]
+    IoError(#[from] io::Error),
+
+    #[error("serde_json::Error encountered while loading state")]
+    JSONError(#[from] serde_json::Error),
+}
 
 
 /// Represents the entire state of the *source* album directory at either transcode time
@@ -41,22 +61,23 @@ impl SourceAlbumState {
     ///
     /// *NOTE: If at all possible, use `SourceAlbumState::from_directory_path` instead.
     /// This ensures we respect the `.*.euphony` file naming from `SOURCE_ALBUM_STATE_FILE_NAME`.*
-    pub fn load_from_file<P: AsRef<Path>>(file_path: P) -> Result<Self> {
+    pub fn load_from_file<P: AsRef<Path>>(
+        file_path: P,
+    ) -> Result<Self, SourceAlbumStateLoadError> {
         let file_path = file_path.as_ref();
 
         if !file_path.is_file() {
-            return Err(miette!("Couldn't load source album state from file: file doesn't exist."));
+            return Err(SourceAlbumStateLoadError::NotFound);
         }
 
-        let file_contents = fs::read_to_string(file_path)
-            .into_diagnostic()
-            .wrap_err_with(|| miette!("Could not read file."))?;
+        let file_contents = fs::read_to_string(file_path)?;
+        let state: Self = serde_json::from_str(&file_contents)?;
 
-        let state: Self = serde_json::from_str(&file_contents)
-            .into_diagnostic()
-            .wrap_err_with(|| {
-                miette!("Could not deserialize file contents as JSON.")
-            })?;
+        if state.schema_version != SOURCE_ALBUM_STATE_SCHEMA_VERSION {
+            return Err(SourceAlbumStateLoadError::SchemaVersionMismatch(
+                state.schema_version,
+            ));
+        }
 
         Ok(state)
     }
@@ -68,15 +89,33 @@ impl SourceAlbumState {
     /// directly inside the directory.
     pub fn load_from_directory<P: AsRef<Path>>(
         directory_path: P,
-    ) -> Result<Option<Self>> {
+    ) -> Result<Self, SourceAlbumStateLoadError> {
         let album_state_file_path =
-            directory_path.as_ref().join(SOURCE_ALBUM_STATE_FILE_NAME);
+            Self::get_state_file_path_for_directory(directory_path);
 
         if !album_state_file_path.is_file() {
-            return Ok(None);
+            return Err(SourceAlbumStateLoadError::NotFound);
         }
 
-        Ok(Some(Self::load_from_file(album_state_file_path)?))
+        Self::load_from_file(album_state_file_path)
+    }
+
+    /// Get default path for saving `SourceAlbumState`s inside a directory.
+    /// This is set by `SOURCE_ALBUM_STATE_FILE_NAME`, which is currently `.album.source-state.euphony`.
+    ///
+    /// # Example
+    /// ```
+    /// let directory_path = Path::from("D:/MusicLibrary/Ed Harrison/Neotokyo");
+    ///
+    /// assert_eq!(
+    ///     Self::get_state_file_path_for_directory(directory_path),
+    ///     Path::from("D:/MusicLibrary/Ed Harrison/Neotokyo/.album.source-state.euphony`)
+    /// );
+    /// ```
+    pub fn get_state_file_path_for_directory<P: AsRef<Path>>(
+        directory_path: P,
+    ) -> PathBuf {
+        directory_path.as_ref().join(SOURCE_ALBUM_STATE_FILE_NAME)
     }
 
     /// Save the source album state into the given file as JSON. If the file exists without

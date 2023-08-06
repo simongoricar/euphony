@@ -34,7 +34,7 @@ impl Progress {
 
     #[inline]
     pub fn total_pending(&self) -> usize {
-        self.total_files - self.total_not_pending()
+        self.total_files.saturating_sub(self.total_not_pending())
     }
 
     /// Get progress percentage.
