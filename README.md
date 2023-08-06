@@ -1,6 +1,6 @@
 <div align="center">
   <h1 align="center">euphony</h1>
-  <h6 align="center">a personal music library transcode manager</h6>
+  <h6 align="center">a ♯ personal music library transcode manager</h6>
 </div>
 
 ---
@@ -8,7 +8,6 @@
 
 **Important: `euphony` *does not organise* your original audio files** - it transcodes your already-organised library/libraries into an aggregated (usually lossy) library, leaving your source libraries alone. If music library organisation is what you're after, you might want to look into tools like [MusicBrainz Picard](https://picard.musicbrainz.org/) or the more advanced [Beets](https://beets.readthedocs.io/en/stable/) CLI.
 
----
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/DefaultSimon/euphony/master/assets/euphony-v2.0.0-demo.gif" width="100%" height="auto">
@@ -17,10 +16,21 @@
 
 ---
 
+## Table of contents
+* [1. Why and how](#1-why-and-how)
+* [2. Library structure](#2-library-structure)
+* [3. Installation](#3-installation)
+* [4. Setup](#4-setup)
+* [5. Usage](#5-usage)
+* [5. Advanced topics](#5-advanced-topics)
+* [6. Implementation details](#6-implementation-details)
+
+---
+
 # 1. Why and how
 <details>
 
-<summary>Why I made euphony</summary>
+<summary>📇 Why I made euphony</summary>
 
 > Over the years I've been collecting an offline music library that has been growing in size, but simultaneously getting harder to maintain.
 > Considering you're here you might have encountered the same :). Here's a quick outline of why and how.
@@ -80,7 +90,7 @@ good tradeoff between space on disk and quality (V0 is pretty much transparent a
 Having the library structure be configurable would get very complex very quickly, so `euphony` expects the user to have the following structure for each library:
 
 ```markdown
-<base library directory>
+<library's base directory>
 |
 |-- <artist directory>
 |   |
@@ -113,8 +123,11 @@ Having the library structure be configurable would get very complex very quickly
 |      also apply to artist and album directories above)
 ```  
 
-### 2.1 Example
-Look at the following directory structure: 
+<details>
+
+<summary>✍️ <b>Example of a library</b> and its corresponding configuration</summary>
+
+Look at the following directory structure:
 ```markdown
   LosslessLibrary
   |
@@ -150,7 +163,7 @@ Look at the following directory structure:
 
 In this example there exists a lossless library in a directory named `LosslessLibrary`. We'll call it `Lossless`. We want to transcode both `mp3` and `flac` files and include any `jpg` and `log` files in our transcoded library. We also don't want euphony to touch the `_other` directory.
 
-We get the following: 
+We get the following:
 
 ```toml
 [libraries.lossless]
@@ -168,15 +181,17 @@ audio_file_extensions = ["mp3", "flac"]
 other_file_extensions = ["jpg", "log"]
 ```
 
+</details>
+
 
 ---
 
 ## 3. Installation
 Prerequisites for installation:
-- [Rust](https://www.rust-lang.org/) (minimal supported version as of `euphony 2.0.0` is `1.70.0`!),
-- a [copy of ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
+- [Rust](https://www.rust-lang.org/) (minimal supported Rust version as of `euphony v2.0.0` is `1.70.0`!),
+- a [ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
 
-Clone (or download) the repository to your local machine, then move into the directory of the project and do the following:
+Clone or download this repository to your local machine, then move into the directory of the project and do the following:
 - Windows: run the convenient `./install-euphony.ps1` PowerShell script to compile the project and copy the required files into the `bin` directory and add that to your `PATH` afterwards,
 - Linux/other: run `cargo build --release` to compile the project. You'll find the binary in `./target/release/euphony.exe` - copy it to a place of your choosing along with the configuration file template.
 
