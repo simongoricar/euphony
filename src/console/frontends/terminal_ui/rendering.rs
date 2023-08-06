@@ -28,13 +28,13 @@ use crate::configuration::TranscodingUIConfig;
 use crate::console::colours::{
     X061_SLATE_BLUE3,
     X064_CHARTREUSE4,
-    X104_MEDIUM_PURPLE,
+    X066_PALE_TURQUOISE4,
+    X100_YELLOW4,
+    X109_LIGHT_SKY_BLUE3,
     X136_DARK_GOLDENROD,
+    X143_DARK_KHAKI,
     X160_RED3,
     X172_ORANGE3,
-    X173_LIGHT_SALMON3,
-    X189_LIGHT_STEEL_BLUE1,
-    X216_LIGHT_SALMON1,
     X242_GREY42,
     X244_GREY50,
     X245_GREY54,
@@ -48,11 +48,11 @@ const EUPHONY_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MUTED_BORDER_STYLE: Style = X242_GREY42;
 const MUTED_TEXT_STYLE: Style = MUTED_BORDER_STYLE;
 
-const TRANSCODING_TAB_BORDER_STYLE: Style = X173_LIGHT_SALMON3;
-const TRANSCODING_TAB_TITLE_STYLE: Style = X216_LIGHT_SALMON1;
+const TRANSCODING_TAB_BORDER_STYLE: Style = X066_PALE_TURQUOISE4;
+const TRANSCODING_TAB_TITLE_STYLE: Style = X109_LIGHT_SKY_BLUE3;
 
-const LOGS_TAB_BORDER_STYLE: Style = X104_MEDIUM_PURPLE;
-const LOGS_TAB_TITLE_STYLE: Style = X189_LIGHT_STEEL_BLUE1;
+const LOGS_TAB_BORDER_STYLE: Style = X100_YELLOW4;
+const LOGS_TAB_TITLE_STYLE: Style = X143_DARK_KHAKI;
 
 const LOGS_TAB_LOG_TIME_STYLE: Style = X244_GREY50;
 
@@ -93,7 +93,7 @@ fn render_header(
         .title_alignment(Alignment::Left)
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL)
-        .border_type(BorderType::Plain)
+        .border_type(BorderType::Rounded)
         .border_style(MUTED_BORDER_STYLE);
 
     let mut line_contents: Vec<Span> = Vec::new();
@@ -154,7 +154,7 @@ fn render_header(
         .title_alignment(Alignment::Left)
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL)
-        .border_type(BorderType::Plain)
+        .border_type(BorderType::Rounded)
         .border_style(MUTED_BORDER_STYLE);
 
     let help_paragraph = Paragraph::new(Line::from(vec![
@@ -381,7 +381,7 @@ fn render_progress_footer(
             PROGRESS_BAR_BLOCK_TITLE_STYLE,
         ))
         .borders(Borders::ALL)
-        .border_type(BorderType::Thick)
+        .border_type(BorderType::Plain)
         .border_style(PROGRESS_BAR_BLOCK_BORDER_STYLE);
     let footer_inner_rect = footer_block.inner(footer_rect);
 

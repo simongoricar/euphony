@@ -333,13 +333,13 @@ impl<'config, 'text> RenderableQueueItem<Text<'text>>
             ),
         ];
 
-        if let FileQueueItemState::Finished {
-            result: FileQueueItemFinishedResult::Failed(error),
-        } = &self.item.state
-        {
-            let result_str: &'static str = match error {
-                FileQueueItemErrorType::Cancelled => "(result: cancelled)",
-                FileQueueItemErrorType::Errored { .. } => "(result: errored)",
+        if let FileQueueItemState::Finished { result } = &self.item.state {
+            let result_str: &'static str = match result {
+                FileQueueItemFinishedResult::Ok => "(ok)",
+                FileQueueItemFinishedResult::Failed(error) => match error {
+                    FileQueueItemErrorType::Cancelled => "(cancelled)",
+                    FileQueueItemErrorType::Errored { .. } => "(errored)",
+                },
             };
 
             primary_line.push(Span::raw(" "));
