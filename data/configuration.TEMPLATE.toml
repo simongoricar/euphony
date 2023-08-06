@@ -101,14 +101,13 @@ allowed_audio_file_extensions = ["flac"]
 allowed_other_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
 # This array should contain full file names of all non-audio files you allow in this library.
 # Different from `allowed_other_file_extensions` in that these values should be full file names, not just extensions.
-# (IMPORTANT: `.album.euphony` and `.album.override.euphony` are mandatory entires if you use the transcode commands)
-allowed_other_files_by_name = [".album.euphony", ".album.override.euphony", "desktop.ini"]
+allowed_other_files_by_name = ["desktop.ini"]
 
 ## TRANSCODING
 # Note: in order to optimize the speed and skip existing transcodes, `euphony` actually tracks your album files
-#       via a special dotfile called ".album.euphony", placed in each album directory. Implementation
-#       details are available in the README, but the general idea and purpose is to understand when any file
-#       has changed and has to be encoded (if it's an audio file) or copied (if it's a data file) again.
+#       via a special dotfile called ".album.source-state.euphony", placed in each album directory of each registered library.
+#       Implementation details are available in the README, but the general idea and purpose is to understand when any file
+#       has changed and has to be re-encoded (if it's an audio file) or copied (if it's a data file) again.
 #       Any file that is not specified below is *untracked* and not processed by `euphony`.
 [libraries.lossless.transcoding]
 # This array should contain audio file extensions (e.g. "mp3", "flac" - don't include ".")
@@ -128,7 +127,7 @@ ignored_directories_in_base_directory = ["_other"]
 [libraries.standard.validation]
 allowed_audio_file_extensions = ["mp3"]
 allowed_other_file_extensions = ["png", "jpg", "jpeg", "txt", "md", "log", "cue", "m3u8"]
-allowed_other_files_by_name = [".album.euphony", ".album.override.euphony", "desktop.ini"]
+allowed_other_files_by_name = ["desktop.ini"]
 
 [libraries.standard.transcoding]
 audio_file_extensions = ["mp3"]
