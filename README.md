@@ -32,15 +32,16 @@
 
 <summary>📇 Why I made euphony</summary>
 
-> Over the years I've been collecting an offline music library that has been growing in size, but simultaneously getting harder to maintain.
-> Considering you're here you might have encountered the same :). Here's a quick outline of why and how.
+> Over the years, I've been collecting an offline music library that has been growing in size, but simultaneously getting harder to maintain.
+> Considering you're here, you might have encountered the same :). Here's a quick outline of why and how.
 >
 > Let's say most of your music library is lossless, but a significant chunk of it is lossy.
 > In this case, you could:
 > - have both lossless and lossy files in the same folder (e.g., organized by artist, then by album, mixing the qualities), or,
 > - separate lossless and lossy folders (each one again organized by artist, then by album, etc.).
 >
-> If you only listen on one device, such as your computer, neither of those approaches are likely to pose a problem. However, for multi-device users, large libraries quickly become both a storage and a deduplication nightmare.
+> If you only listen on one device, such as your computer, neither of those approaches is likely to pose a problem. 
+> However, for multi-device users, large libraries quickly become both a storage and a deduplication nightmare.
 > Ideally, you'd want to maintain the original library (or libraries) as they were,
 > but still have a separate - *transcoded* or *aggregated*, if you will - version of your entire collection containing files from all the
 > libraries transcoded down to a more manageable size, ready for on-the-go listening.
@@ -50,11 +51,14 @@
 </details>
 
 
-Euphony's workflow acknowledges that you might have multiple libraries: one for lossless, one for lossy audio, one for a specific collection, etc. It *does not force you to have multiple libraries*, it works just as well with a single one, or even a mixed library of lossless and lossy audio files.
+Euphony's workflow acknowledges that you might have multiple libraries: one for lossless, one for lossy audio, one for a specific collection, etc. 
+It *does not force you to have multiple libraries*, it works just as well with a single one, or even a mixed library of lossless and lossy audio files.
 
-Euphony becomes useful when you want to take the music library with you on the go (e.g. having a copy of your music library on a phone). In those cases you might not want (or be able to) copy the large lossless files due to storage limitations.
+Euphony becomes useful when you want to take the music library with you on the go (e.g. having a copy of your music library on a phone). 
+In those cases, you might not want (or be able) to copy the large lossless files due to storage limitations.
 
-The obvious solution is to **transcode your library** down to something like MP3 V0 and copy those transcoded files to your other devices. Still, doing this manually or even with a simple script is a tedious process, prone to forgetfulness and occasional human errors.
+The obvious solution is to **transcode your library** down to something like MP3 V0 and copy those transcoded files to your other devices. 
+Still, doing this manually or even with a simple script is a tedious process, prone to forgetfulness and occasional human errors.
 
 ---
 
@@ -69,10 +73,12 @@ Here's how `euphony` solves this with an automated transcoding process:
   That directory will contain all the transcoded versions of albums from all the artists of all the registered libraries together in one place. Euphony will also copy album art and any other data files (as configured).
 
 ### 1.1 Diffing
-If you run the `transcode` command two times without modifying any of your source libraries, you'll notice that euphony won't re-transcode anything. This is because euphony tracks your source files' size and modification date in order to avoid processing albums that haven't changed.
+If you run the `transcode` command two times without modifying any of your source libraries, you'll notice that euphony won't re-transcode anything. 
+This is because euphony tracks your source files' size and modification date in order to avoid processing albums that haven't changed.
 
 This is done by storing three types of files:
-- Minimal metadata about each album's tracked files are stored in a file called `.album.source-state.euphony` (in the source album directory) and `.album.transcode-state.euphony` (in the transcoded album directory).
+- Minimal metadata about each album's tracked files is stored in a file called `.album.source-state.euphony` (in the source album directory) 
+  and `.album.transcode-state.euphony` (in the transcoded album directory).
 - To detect album and artist removal, euphony also stores the `.library.state.euphony` file at the root of each registered source library.
 
 Implementation details of this change detection algorithm are available below.
@@ -87,7 +93,8 @@ good tradeoff between space on disk and quality (V0 is pretty much transparent a
 
 
 ## 2. Library structure
-Having the library structure be configurable would get very complex very quickly, so `euphony` expects the user to have the following structure for each library:
+Having the library structure be configurable would quickly become very complex, 
+so at the moment `euphony` expects the user to have the following structure for each library:
 
 ```markdown
 <library's base directory>
