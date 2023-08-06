@@ -824,22 +824,33 @@ fn collect_artist_changes<'config>(
 
         fully_removed_album_set
             .into_iter()
-            .map(|album| {
-                let album_view = AlbumView::new(
+            .filter_map(|album| {
+                let album_view = match AlbumView::new(
                     artist.clone(),
                     album.album_title.clone(),
                     true,
-                )?;
+                ) {
+                    Ok(view) => view,
+                    Err(error) => return Some(Err(error))
+                };
 
-                let changes = AlbumFileChangesV2::generate_entire_transcoded_album_deletion(
+                let transcoded_album_directory = album_view.read().album_directory_in_transcoded_library();
+                if !transcoded_album_directory.exists() {
+                    return None;
+                }
+
+                let changes = match AlbumFileChangesV2::generate_entire_transcoded_album_deletion(
                     album_view,
                     &album.album_source_relative_path
-                )?;
+                ) {
+                    Ok(changes) => changes,
+                    Err(error) => return Some(Err(error))
+                };
 
-                Ok(FullyRemovedAlbum {
+                Some(Ok(FullyRemovedAlbum {
                     album_title: album.album_title.clone(),
                     changes,
-                })
+                }))
             })
             .collect::<Result<Vec<FullyRemovedAlbum>>>()?
     } else {
@@ -973,6 +984,12 @@ fn collect_changes<'config>(
                 fully_removed_artist.clone(),
                 true,
             )?;
+
+            let artist_transcoded_directory_path =
+                artist_view.read().artist_directory_in_transcoded_library();
+            if !artist_transcoded_directory_path.exists() {
+                continue;
+            }
 
             let saved_tracked_artist_album_list = saved_tracked_artist_album_list.as_ref().expect("BUG: remaining_saved_tracked_artists was non-empty even though saved_tracked_artist_album_list was None.");
 

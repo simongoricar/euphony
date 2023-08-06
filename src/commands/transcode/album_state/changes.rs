@@ -790,11 +790,26 @@ impl<'view> AlbumFileChangesV2<'view> {
             .transcoded_files
             .audio_files
             .keys()
+            .filter(|path| {
+                let absolute_transcoded_file_path =
+                    transcoded_album_directory.join(path);
+
+                absolute_transcoded_file_path.exists()
+                    && absolute_transcoded_file_path.is_file()
+            })
             .collect();
+
         let data_file_list: Vec<&String> = saved_transcoded_state
             .transcoded_files
             .data_files
             .keys()
+            .filter(|path| {
+                let absolute_transcoded_file_path =
+                    transcoded_album_directory.join(path);
+
+                absolute_transcoded_file_path.exists()
+                    && absolute_transcoded_file_path.is_file()
+            })
             .collect();
 
 
