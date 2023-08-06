@@ -1027,14 +1027,17 @@ fn collect_changes<'config>(
             first.artist_name.cmp(&second.artist_name)
         });
 
-        libraries_with_changes.push(LibraryWithChanges {
-            library: library_view.clone(),
-            library_name: library.name(),
-            fresh_artist_album_list_state: fresh_tracked_artist_album_list
-                .clone(),
-            sorted_changed_artists: artists_with_changes,
-            fully_removed_artists,
-        })
+        if !artists_with_changes.is_empty() || !fully_removed_artists.is_empty()
+        {
+            libraries_with_changes.push(LibraryWithChanges {
+                library: library_view.clone(),
+                library_name: library.name(),
+                fresh_artist_album_list_state: fresh_tracked_artist_album_list
+                    .clone(),
+                sorted_changed_artists: artists_with_changes,
+                fully_removed_artists,
+            })
+        }
     }
 
     libraries_with_changes.sort_unstable_by(|first, second| {
