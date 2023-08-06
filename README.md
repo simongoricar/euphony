@@ -287,9 +287,9 @@ The files will be MP3 V0 by default (changing this should be reasonably easy - s
 > What follows are advanced features - I'd recommend getting acquainted with the rest of the functionality first.
 
 ### 5.1. `.album.override.euphony` (per-album overrides)
-You can create an `.album.override.euphony` file in the root of each source album directory (same directory as the `.album.euphony` file). This file is optional. Its purpose is to influence the scanning and transcoding process for the relevant album.
+You can create an `.album.override.euphony` file in the root of each source album directory (same directory as the `.album.source-state.euphony` file). This file is optional. Its purpose is to influence the scanning and transcoding process for the relevant album.
 
-Available configuration values will likely expand in the future, but for now, the settings available are:
+At the moment, this file can contain the following options:
 ```toml
 # This file serves as a sample of what can be done using album overrides.
 
@@ -300,11 +300,9 @@ Available configuration values will likely expand in the future, but for now, th
 depth = 0
 ```
 
-In case this description falls behind, an up-to-date documented version of the `.album.override.euphony` file is always available in the `data` directory.
+> In case this description falls behind, an up-to-date documented version of the `.album.override.euphony` file is always available in the `data` directory.
 
-Why is this useful? Well, let's say you have an album that has multiple discs and so many tracks you'd like to keep each
-disc in a separate directory, like so:
-
+Why is this useful? Well, let's say you have an album that has multiple discs, each of which is in a separate directory, like so:
 ```markdown
 <album directory>
 |- cover.jpg
