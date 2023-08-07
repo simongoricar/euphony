@@ -4,9 +4,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
-use std::thread;
 use std::thread::Scope;
 use std::time::Duration;
+use std::{fs, thread};
 
 use chrono::Local;
 use crossterm::ExecutableCommand;
@@ -313,6 +313,22 @@ impl<'scope, 'scope_env: 'scope, 'config: 'scope>
         scope: &'scope Scope<'scope, 'scope_env>,
     ) -> Result<()> {
         let log_output_file_path = log_output_file_path.as_ref();
+        let log_output_directory_path = log_output_file_path
+            .parent()
+            .ok_or_else(|| miette!("No log file parent directory?!"))?;
+
+        if log_output_directory_path.exists()
+            && !log_output_directory_path.is_dir()
+        {
+            return Err(miette!("Invalid log file path: parent directory path is actually not a directory."));
+        }
+        if !log_output_directory_path.exists() {
+            fs::create_dir_all(log_output_directory_path)
+                .into_diagnostic()
+                .wrap_err_with(|| {
+                    miette!("Failed to create log file parent directory.")
+                })?;
+        }
 
         let output_file = match log_output_file_path.exists()
             && log_output_file_path.is_file()
