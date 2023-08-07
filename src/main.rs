@@ -103,8 +103,8 @@ struct CLIArgs {
         long = "config",
         global = true,
         help = "Optionally a path to your configuration file. Without this option, \
-                euphony tries to load ./data/configuration.toml, but understandably this \
-                might not always be the most convenient location."
+                euphony tries to load ./data/configuration.toml (relative to the binary), \
+                but understandably this might not always be the most convenient location."
     )]
     config: Option<String>,
 
@@ -133,14 +133,14 @@ fn get_configuration(args: &CLIArgs) -> Result<Config> {
 /// Initializes and returns a terminal backend for transcoding.
 /// If `use_bare` is true, this will return `BareConsoleBackend`, otherwise `TUITerminalBackend`.
 ///
-/// `TUITerminalBackend` has a better and dynamic terminal UI, but is harder to debug non-UI bugs.
+/// `FancyTerminalBackend` has a better and dynamic terminal UI, but is harder to debug non-UI bugs.
 ///
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console,
 /// making it much easier to track down bugs or parse output in some other program.
-fn get_transcode_terminal<'config, 'scope>(
-    config: &'config Config,
+fn get_transcode_terminal<'scope>(
+    config: &Config,
     use_bare_terminal: bool,
-) -> TranscodeTerminal<'config, 'scope> {
+) -> TranscodeTerminal<'_, 'scope> {
     if use_bare_terminal {
         BareTerminalBackend::new().into()
     } else {
@@ -155,7 +155,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
     args: CLIArgs,
     config: &'config Config,
     scope: &'scope Scope<'scope, 'scope_env>,
-) -> std::result::Result<(), i32> {
+) -> Result<()> {
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
         // `transcode`/`transcode-all` has two available terminal frontends:
         // - the fancy one uses `ratatui` for a full-fledged terminal UI with progress bars and multiple "windows",
@@ -167,9 +167,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
             .log_to_file
             .or_else(|| config.logging.default_log_output_path.clone())
         {
-            terminal
-                .enable_saving_logs_to_file(log_file_path, scope)
-                .map_err(|_| 1)?;
+            terminal.enable_saving_logs_to_file(log_file_path, scope)?;
         }
 
         terminal
@@ -181,7 +179,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
             terminal.log_println(format!("{error}").dark_red());
         }
 
-        terminal.destroy().map_err(|_| 1)?;
+        terminal.destroy()?;
 
         Ok(())
     } else if let CLICommand::ValidateAll(args) = args.command {
@@ -191,9 +189,7 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
             .log_to_file
             .or_else(|| config.logging.default_log_output_path.clone())
         {
-            terminal
-                .enable_saving_logs_to_file(log_file_path, scope)
-                .map_err(|_| 1)?;
+            terminal.enable_saving_logs_to_file(log_file_path, scope)?;
         }
 
         terminal
@@ -261,7 +257,10 @@ fn main() -> Result<()> {
 
         match command_result {
             Ok(_) => exit(0),
-            Err(exit_code) => exit(exit_code),
+            Err(error) => {
+                eprintln!("{:?}", error);
+                exit(1);
+            }
         };
     });
 
