@@ -312,12 +312,17 @@ impl<'scope, 'scope_env: 'scope, 'config: 'scope>
         log_output_file_path: P,
         scope: &'scope Scope<'scope, 'scope_env>,
     ) -> Result<()> {
+        let log_output_file_path = log_output_file_path.as_ref();
+
         let output_file = OpenOptions::new()
             .append(true)
             .open(log_output_file_path)
             .into_diagnostic()
             .wrap_err_with(|| {
-                miette!("Failed to open log output file for appending.")
+                miette!(
+                    "Failed to open log output file for appending: {:?}",
+                    log_output_file_path
+                )
             })?;
 
         let ansi_escaping_writer = strip_ansi_escapes::Writer::new(output_file);

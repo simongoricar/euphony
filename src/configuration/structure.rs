@@ -9,7 +9,7 @@ use crate::configuration::{
     get_default_configuration_file_path,
     get_running_executable_directory,
     AfterLoadInitable,
-    AfterLoadWithEssentialsInitable,
+    AfterLoadWithPathsInitable,
 };
 use crate::filesystem::get_path_extension_or_empty;
 
@@ -160,8 +160,8 @@ pub struct LoggingConfig {
     pub default_log_output_path: Option<PathBuf>,
 }
 
-impl AfterLoadWithEssentialsInitable for LoggingConfig {
-    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
+impl AfterLoadWithPathsInitable for LoggingConfig {
+    fn after_load_init(&mut self, paths: &ConfigPaths) -> Result<()> {
         let executable_directory = get_running_executable_directory()?
             .to_string_lossy()
             .to_string();
@@ -171,7 +171,7 @@ impl AfterLoadWithEssentialsInitable for LoggingConfig {
                 let path_as_string = output_path
                     .to_string_lossy()
                     .to_string()
-                    .replace("{LIBRARY_BASE}", &essentials.base_library_path)
+                    .replace("{LIBRARY_BASE}", &paths.base_library_path)
                     .replace("{SELF}", &executable_directory);
 
                 PathBuf::from(path_as_string)
@@ -215,9 +215,9 @@ pub struct ToolsConfig {
     pub ffmpeg: FFMPEGToolsConfig,
 }
 
-impl AfterLoadWithEssentialsInitable for ToolsConfig {
-    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
-        self.ffmpeg.after_load_init(essentials)?;
+impl AfterLoadWithPathsInitable for ToolsConfig {
+    fn after_load_init(&mut self, paths: &ConfigPaths) -> Result<()> {
+        self.ffmpeg.after_load_init(paths)?;
 
         Ok(())
     }
@@ -252,11 +252,9 @@ impl FFMPEGToolsConfig {
     }
 }
 
-impl AfterLoadWithEssentialsInitable for FFMPEGToolsConfig {
-    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
-        let ffmpeg = self
-            .binary
-            .replace("{TOOLS_BASE}", &essentials.base_tools_path);
+impl AfterLoadWithPathsInitable for FFMPEGToolsConfig {
+    fn after_load_init(&mut self, paths: &ConfigPaths) -> Result<()> {
+        let ffmpeg = self.binary.replace("{TOOLS_BASE}", &paths.base_tools_path);
 
         let canonicalized_ffmpeg = dunce::canonicalize(ffmpeg.clone())
             .unwrap_or_else(|_| panic!(
@@ -295,11 +293,11 @@ pub struct LibraryConfig {
     pub transcoding: LibraryTranscodingConfig,
 }
 
-impl AfterLoadWithEssentialsInitable for LibraryConfig {
-    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
+impl AfterLoadWithPathsInitable for LibraryConfig {
+    fn after_load_init(&mut self, paths: &ConfigPaths) -> Result<()> {
         let parsed_path = self
             .path
-            .replace("{LIBRARY_BASE}", &essentials.base_library_path);
+            .replace("{LIBRARY_BASE}", &paths.base_library_path);
 
         let canonicalized_path = dunce::canonicalize(parsed_path)
             .unwrap_or_else(|_| {
@@ -422,11 +420,11 @@ pub struct AggregatedLibraryConfig {
     pub failure_delay_seconds: u16,
 }
 
-impl AfterLoadWithEssentialsInitable for AggregatedLibraryConfig {
-    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
+impl AfterLoadWithPathsInitable for AggregatedLibraryConfig {
+    fn after_load_init(&mut self, paths: &ConfigPaths) -> Result<()> {
         self.path = self
             .path
-            .replace("{LIBRARY_BASE}", &essentials.base_library_path);
+            .replace("{LIBRARY_BASE}", &paths.base_library_path);
 
         if self.transcode_threads == 0 {
             panic!("transcode_threads is set to 0! The minimum value is 1.");
