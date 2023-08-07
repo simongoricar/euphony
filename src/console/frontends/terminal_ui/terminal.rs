@@ -329,6 +329,7 @@ impl<'scope, 'scope_env: 'scope, 'config: 'scope>
                 })?,
             false => OpenOptions::new()
                 .create_new(true)
+                .write(true)
                 .open(log_output_file_path)
                 .into_diagnostic()
                 .wrap_err_with(|| {
