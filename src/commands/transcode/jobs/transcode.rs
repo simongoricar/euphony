@@ -20,6 +20,8 @@ use crate::globals::is_verbose_enabled;
 
 const FFMPEG_TASK_CANCELLATION_CHECK_INTERVAL: Duration =
     Duration::from_millis(50);
+const PARTIAL_TRANSCODED_FILE_DELETE_ATTEMPT_INTERVAL: Duration =
+    Duration::from_millis(200);
 
 /*
  * Specific job implementations
@@ -195,29 +197,42 @@ impl FileJob for TranscodeAudioFileJob {
                         miette!("Could not kill ffmpeg process.")
                     })?;
 
-                // Delete the partial file.
-                if self.target_file_path.exists()
-                    && self.target_file_path.is_file()
-                {
-                    fs::remove_file(&self.target_file_path)
-                        .into_diagnostic()
-                        .wrap_err_with(|| {
-                            miette!(
-                                "Failed to delete partially transcoded file."
-                            )
-                        })?;
-                }
-
                 break;
             }
 
             thread::sleep(FFMPEG_TASK_CANCELLATION_CHECK_INTERVAL);
         }
 
+        ffmpeg_child_process.wait().into_diagnostic()?;
+
         // ffmpeg process is finished at this point, we should just check what the reason was.
         let final_cancellation_flag = cancellation_flag.load(Ordering::SeqCst);
         if final_cancellation_flag {
             // Process was killed because of cancellation.
+
+            // Delete the partial file.
+            if self.target_file_path.exists() && self.target_file_path.is_file()
+            {
+                let mut retries: usize = 0;
+                while retries <= 4 {
+                    match fs::remove_file(&self.target_file_path) {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(error) => {
+                            if retries == 4 {
+                                return Err(error).into_diagnostic();
+                            }
+
+                            retries += 1;
+                            thread::sleep(
+                                PARTIAL_TRANSCODED_FILE_DELETE_ATTEMPT_INTERVAL,
+                            );
+                        }
+                    };
+                }
+            }
+
             message_sender
                 .send(FileJobMessage::new_cancelled(
                     self.queue_item,
