@@ -25,6 +25,9 @@
 * [5. Advanced topics](#5-advanced-topics)
 * [6. Implementation details](#6-implementation-details)
 
+## Other resources
+* [Changelog (master)](https://github.com/DefaultSimon/euphony/blob/master/CHANGELOG.md)
+
 ---
 
 # 1. Why and how
@@ -72,7 +75,7 @@ Here's how `euphony` solves this with an automated transcoding process:
   This takes all of your registered source libraries and transcodes everything in them into MP3 V0 (by default), putting the resulting files from all your source libraries into a single *transcoded library* - this is the directory that you take with you on the go.  
   That directory will contain all the transcoded versions of albums from all the artists of all the registered libraries together in one place. Euphony will also copy album art and any other data files (as configured).
 
-### 1.1 Diffing
+## 1.1 Diffing
 If you run the `transcode` command two times without modifying any of your source libraries, you'll notice that euphony won't re-transcode anything. 
 This is because euphony tracks your source files' size and modification date in order to avoid processing albums that haven't changed.
 
@@ -83,7 +86,7 @@ This is done by storing three types of files:
 
 Implementation details of this change detection algorithm are available below.
 
-### 1.2 MP3 V0
+## 1.2 MP3 V0
 Audio files are transcoded into MP3 V0 in the process by default. I've chosen MP3 V0 for now due to a 
 good tradeoff between space on disk and quality (V0 is pretty much transparent anyway and should be more than enough for on-the-go listening, and you *still* have the original files).
 
@@ -92,7 +95,7 @@ good tradeoff between space on disk and quality (V0 is pretty much transparent a
 ---
 
 
-## 2. Library structure
+# 2. Library structure
 Having the library structure be configurable would quickly become very complex, 
 so at the moment `euphony` expects the user to have the following structure for each library:
 
@@ -193,7 +196,7 @@ other_file_extensions = ["jpg", "log"]
 
 ---
 
-## 3. Installation
+# 3. Installation
 Prerequisites for installation:
 - [Rust](https://www.rust-lang.org/) (minimal supported Rust version as of `euphony v2.0.0` is `1.70.0`!),
 - a [ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
@@ -203,7 +206,7 @@ Clone or download this repository to your local machine, then move into the dire
 - Linux/other: run `cargo build --release` to compile the project. You'll find the binary in `./target/release/euphony.exe` - copy it to a place of your choosing along with the configuration file template.
 
 
-## 4. Setup
+# 4. Setup
 Before running the binary you've built in the previous step, make sure you have the `configuration.TEMPLATE.toml` handy.
 If you used the `install-euphony.ps1` script, it will already be prepared in the `bin` directory. 
 If you're on a different platform, copy one from the `data` directory.
@@ -229,7 +232,7 @@ Change any other configuration values you haven't yet, then save. **You're ready
 ---
 
 
-## 5. Usage
+# 5. Usage
 Run `euphony` with the `--help` option to get all available commands and their short explanations:
 ```
 Euphony is a music library transcode manager that allows the user to retain 
@@ -283,10 +286,10 @@ The files will be MP3 V0 by default (changing this should be reasonably easy - s
 
 ---
 
-## 5. Advanced topics
+# 6. Advanced topics
 > What follows are advanced features - I'd recommend getting acquainted with the rest of the functionality first.
 
-### 5.1. `.album.override.euphony` (per-album overrides)
+## 6.1. `.album.override.euphony` (per-album overrides)
 You can create an `.album.override.euphony` file in the root of each source album directory (same directory as the `.album.source-state.euphony` file). This file is optional. Its purpose is to influence the scanning and transcoding process for the relevant album.
 
 At the moment, this file can contain the following options:
@@ -327,9 +330,9 @@ This will make euphony scan one directory deeper, catching and transcoding your 
 
 ---
 
-## 6. Implementation details
+# 7. Implementation details
 
-#### 6.1 `.album.source-state.euphony` / `.album.transcode-state.euphony`
+#### 7.1 `.album.source-state.euphony` / `.album.transcode-state.euphony`
 To make sure we don't have to transcode or copy all the files again when changing a single one,
 euphony stores a special file in the root directory of each **album** called `.album.source-state.euphony`.
 
