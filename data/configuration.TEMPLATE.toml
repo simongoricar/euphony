@@ -19,6 +19,10 @@ base_tools_path = "{SELF}/tools/"
 # This controls how logging is performed.
 # Can be unset, in which case no logs are saved by default.
 # Even if set, it can be overriden with `--log-to-file`.
+# Available placeholders:
+# - "{LIBRARY_BASE}" is replaced with the value of `paths.base_library_path`.
+# - "{SELF}" is replaced with the directory the euphony binary resides in.
+# - "{DATETIME}" corresponds to the startup datetime of the following format: %Y-%m-%d_%H-%M-%S.
 default_log_output_path = "{LIBRARY_BASE}/euphony.log"
 
 
@@ -60,10 +64,13 @@ extensions_considered_audio_files = [
 # euphony uses ffmpeg as its workhorse for audio conversion. Its configuration is available below.
 [tools.ffmpeg]
 # Configures the ffmpeg binary location.
-# The {TOOLS_BASE} placeholder is available (see `base_tools_path` in the `essentials` table)
+# Available placeholders:
+# - "{TOOLS_BASE}" is replaced with the value of `paths.base_tools_path`.
 binary = "{TOOLS_BASE}/ffmpeg/bin/ffmpeg.exe"
 # These are the arguments passed to ffmpeg when converting an audio file into MP3 V0.
-# The placeholders {INPUT_FILE} and {OUTPUT_FILE} will be replaced with the absolute path to those files.
+# Available placeholders:
+# - "{INPUT_FILE}" is replaced with absolute path to the source audio file.
+# - "{OUTPUT_FILE}" is replaced with absolute path to the transcoded audio file.
 audio_transcoding_args = ["-i", "{INPUT_FILE}", "-vn", "-codec:a", "libmp3lame", "-q:a", "0", "-y", "{OUTPUT_FILE}"]
 # This setting should be the extension of the audio files after transcoding.
 # The default conversion is to MP3, but the user may set any ffmpeg conversion above, which is why this exists.
@@ -82,8 +89,9 @@ audio_transcoding_output_extension = "mp3"
 [libraries.lossless]
 # The full display name of the library.
 name = "Lossless"
-# This is the full path to your library. You may use the "{LIBRARY_BASE}" placeholder
-# (set above in `essentials`) in the essentials table to avoid typing the absolute path each time.
+# This is the full path to your library.
+# Available placeholders:
+# - "{LIBRARY_BASE}" is replaced with the value of `paths.base_library_path`.
 path = "{LIBRARY_BASE}/LosslessLibrary"
 # This array should contain names of directories (if any) in the base of the library that should be ignored by `euphony`.
 ignored_directories_in_base_directory = []
@@ -147,7 +155,8 @@ other_file_extensions = ["png", "jpg", "jpeg"]
 # inside the single aggregated library. This smaller copy of the library can then be copied to portable devices for listening.
 [aggregated_library]
 # This path should point to the destination directory of your transcoded (aggregated) library.
-# You may use the `{LIBRARY_BASE}` placeholder here.
+# Available placeholders:
+# - "{LIBRARY_BASE}" is replaced with the value of `paths.base_library_path`.
 path = "{LIBRARY_BASE}/PortableMusicLibrary"
 # In order to speed up the transcoding you can increase the amount of threads that are transcoding (or copying) at once.
 # Anywhere between a half and all of your CPU cores are usually a good choice and result in an incredible speedup.
