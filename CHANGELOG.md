@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.1.0] - 2023-08-07
+
+### Added
+- Ability to create distinct (timestamped) log files by using the `{DATETIME}` placeholder in the `logging.default_log_output_path` configuration option.
+- When the user cancels a transcoding operation, partially transcoded files will be deleted and the user will be warned that the album didn't complete.
+- Display validity of library paths in the `show-config` command.
+
+### Changed
+- Improved placeholder (`{LIBRARY_BASE}`, `{DATETIME}`, etc.) documentation in the configuration file template (`data/configuration.TEMPLATE.toml`).
+
+### Fixed
+- Album and file queue now properly collapse leading finished items when there is not enough space to display all queue items.
+- Create any missing log file path parent directories (`default_log_output_path` / `--log-to-file`).
+
+
+
 ## [2.0.0] - 2023-08-06
 **This version includes breaking changes.**
 
@@ -91,7 +107,9 @@ Contains features for validation and transcoding of the libraries
 
 
 
-[Unreleased]: https://github.com/DefaultSimon/euphony/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/DefaultSimon/euphony/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/DefaultSimon/euphony/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/DefaultSimon/euphony/compare/v1.3.1...v2.0.0
 [1.3.1]: https://github.com/DefaultSimon/euphony/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/DefaultSimon/euphony/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/DefaultSimon/euphony/compare/v1.1.0...v1.2.0
