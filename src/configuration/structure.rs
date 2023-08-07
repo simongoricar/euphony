@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use chrono::Local;
 use miette::{miette, Context, Result};
 use serde::Deserialize;
 
@@ -166,13 +167,17 @@ impl AfterLoadWithPathsInitable for LoggingConfig {
             .to_string_lossy()
             .to_string();
 
+        let time_now = Local::now();
+        let formatted_time_now = time_now.format("%Y-%m-%d_%H-%M-%S");
+
         self.default_log_output_path =
             self.default_log_output_path.as_ref().map(|output_path| {
                 let path_as_string = output_path
                     .to_string_lossy()
                     .to_string()
                     .replace("{LIBRARY_BASE}", &paths.base_library_path)
-                    .replace("{SELF}", &executable_directory);
+                    .replace("{SELF}", &executable_directory)
+                    .replace("{DATETIME}", &formatted_time_now.to_string());
 
                 PathBuf::from(path_as_string)
             });

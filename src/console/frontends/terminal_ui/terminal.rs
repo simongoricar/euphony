@@ -281,7 +281,7 @@ impl<'thread_scope, 'config> LogBackend
             LogOutputMode::ToFile { buf_writer, .. } => {
                 let time_now = Local::now();
                 let formatted_time_now =
-                    time_now.format("%d-%m-%Y@%H:%M:%S%.3f ");
+                    time_now.format("%Y-%m-%d %H:%M:%S%.3f ");
 
                 let mut locked_buf_writer = buf_writer.lock();
 
@@ -346,7 +346,7 @@ impl<'scope, 'scope_env: 'scope, 'config: 'scope>
 
         // Write an "invocation header", marking the start of euphony.
         let time_now = Local::now();
-        let formatted_time_now = time_now.format("%d-%m-%Y@%H:%M:%S%.3f");
+        let formatted_time_now = time_now.format("%Y-%m-%d %H:%M:%S%.3f");
 
         buf_writer
             .write_all(
