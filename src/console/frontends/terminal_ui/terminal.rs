@@ -314,16 +314,30 @@ impl<'scope, 'scope_env: 'scope, 'config: 'scope>
     ) -> Result<()> {
         let log_output_file_path = log_output_file_path.as_ref();
 
-        let output_file = OpenOptions::new()
-            .append(true)
-            .open(log_output_file_path)
-            .into_diagnostic()
-            .wrap_err_with(|| {
-                miette!(
-                    "Failed to open log output file for appending: {:?}",
-                    log_output_file_path
-                )
-            })?;
+        let output_file = match log_output_file_path.exists()
+            && log_output_file_path.is_file()
+        {
+            true => OpenOptions::new()
+                .append(true)
+                .open(log_output_file_path)
+                .into_diagnostic()
+                .wrap_err_with(|| {
+                    miette!(
+                        "Failed to open log output file for appending: {:?}",
+                        log_output_file_path
+                    )
+                })?,
+            false => OpenOptions::new()
+                .create_new(true)
+                .open(log_output_file_path)
+                .into_diagnostic()
+                .wrap_err_with(|| {
+                    miette!(
+                        "Failed to create log output file: {:?}",
+                        log_output_file_path
+                    )
+                })?,
+        };
 
         let ansi_escaping_writer = strip_ansi_escapes::Writer::new(output_file);
         let mut buf_writer =
