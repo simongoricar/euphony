@@ -16,6 +16,12 @@ const LEADING_HIDDEN_ITEMS_EXPLAINER_STYLE: Style = X242_GREY42;
 const TRAILING_HIDDEN_ITEMS_EXPLAINER_STYLE: Style = X242_GREY42;
 
 
+struct IncludedItem<'text> {
+    pub list_item: ListItem<'text>,
+    pub item_height: usize,
+    pub is_a_finished_item: bool,
+}
+
 
 pub fn generate_smart_collapsible_queue<
     'text,
@@ -27,14 +33,13 @@ pub fn generate_smart_collapsible_queue<
     available_height: usize,
     available_width: usize,
 ) -> List<'text> {
-    let mut included_items: Vec<(ListItem, usize, bool)> =
+    let mut included_items: Vec<IncludedItem<'text>> =
         Vec::with_capacity(available_height);
+    let mut is_first_item_in_finished_state: bool = false;
 
-    let mut used_up_height = 0;
+    let mut used_height = 0;
 
     let mut leading_explainer: Option<usize> = None;
-    let mut is_first_element_finished: bool = false;
-    let mut has_already_stripped_leading_finished_items: bool = false;
     let mut trailing_explainer: Option<usize> = None;
 
     let queue_iterator = queue.items().enumerate();
@@ -44,69 +49,70 @@ pub fn generate_smart_collapsible_queue<
         let rendered_item = item.render().into();
         let rendered_item_lines = rendered_item.lines.len();
 
-        let mut fixed_line_cost_offset = 0;
+        let mut current_available_height_offset: usize = 0;
         if leading_explainer.is_some() {
-            fixed_line_cost_offset += 1;
+            current_available_height_offset += 1;
         }
         if trailing_explainer.is_some() {
-            fixed_line_cost_offset += 1;
+            current_available_height_offset += 1;
         }
 
-        let mut dynamic_line_cost_offset = 2;
-        if !is_first_element_finished && leading_explainer.is_none() {
-            // If the first element isn't finished and we don't have a leading explainer,
-            // meaning there can only be a trailing explainer, which could take up only one additional line.
-            dynamic_line_cost_offset -= 1;
+        let mut max_potential_available_height_offset = 2;
+        if !is_first_item_in_finished_state && leading_explainer.is_none() {
+            // The first element isn't finished and we don't have a leading explainer,
+            // meaning there can never be a leading explainer.
+            max_potential_available_height_offset -= 1;
         }
 
         if (item_index + 1) == queue_size
-            && (used_up_height + rendered_item_lines)
-                <= (available_height - fixed_line_cost_offset)
+            && ((used_height
+                + current_available_height_offset
+                + rendered_item_lines)
+                <= available_height)
         {
-            // This is the last element and we can fill up the available height without having
-            // to pre-/append explainers about remaining items above and below.
-
-            // This also respects having less space if e.g. the leading explainer has already been confirmed.
-
-            // No need to track `is_first_element_finished` anymore.
-            // if included_items.is_empty() {
-            //     is_first_element_finished = item.is_finished();
-            // }
-
-            included_items.push((
-                ListItem::new(rendered_item),
-                rendered_item_lines,
-                item.is_finished(),
-            ));
-
-            // No need to track `used_up_height` anymore.
-            // used_up_height += rendered_item_lines;
-
-            break;
-        } else if (used_up_height + rendered_item_lines)
-            <= (available_height - dynamic_line_cost_offset)
-        {
-            // This is *not* the last element, and there is enough space to fit this queue element
-            // on the screen, even if we'll have to add an explainer at the top and on the bottom
-            // in the future.
+            // This is the last queue element.
+            // We can fill up the available height. This also respects having less space
+            // if e.g. the leading explainer has already been added.
 
             if included_items.is_empty() {
-                is_first_element_finished = item.is_finished();
+                is_first_item_in_finished_state = item.is_finished();
             }
 
-            included_items.push((
-                ListItem::new(rendered_item),
-                rendered_item_lines,
-                item.is_finished(),
-            ));
+            included_items.push(IncludedItem {
+                list_item: ListItem::new(rendered_item),
+                item_height: rendered_item_lines,
+                is_a_finished_item: item.is_finished(),
+            });
 
-            used_up_height += rendered_item_lines;
+            used_height += rendered_item_lines;
+        } else if (item_index + 1) != queue_size
+            && (used_height
+                + max_potential_available_height_offset
+                + rendered_item_lines)
+                <= available_height
+        {
+            // This is *not* the last queue element and there is enough space to fit this queue
+            // element on the screen, even if we'll have to potentially add some explainers later.
+
+            let is_finished = item.is_finished();
+
+            if included_items.is_empty() {
+                is_first_item_in_finished_state = is_finished;
+            }
+
+            included_items.push(IncludedItem {
+                list_item: ListItem::new(rendered_item),
+                item_height: rendered_item_lines,
+                is_a_finished_item: is_finished,
+            });
+
+            used_height += rendered_item_lines;
         } else {
-            // Displaying this element would put us over the available height limit.
+            // Displaying this element would put us over the available height limit
+            // (can be any element, even the last one).
 
-            // Don't attempt to strip leading finished items multiple times.
-            if has_already_stripped_leading_finished_items {
-                // Calculate the trailing explainer, then stop rendering.
+            // We can no longer shorten the list, meaning we need to add a trailing explainer and stop.
+            if !is_first_item_in_finished_state {
                 let remaining_items = queue_size - item_index;
                 trailing_explainer = Some(remaining_items);
 
@@ -116,47 +122,46 @@ pub fn generate_smart_collapsible_queue<
             // We first remove all leading finished items to potentially clear up some space.
             // This means we'll have to display a leading explainer, but we could very well
             // save a lot of space when the queue has finished a lot of the first items.
+            let mut first_non_finished_item_index: Option<usize> = None;
+            let mut sum_of_about_to_be_freed_lines: usize = 0;
 
-            let mut index_to_cut_at: Option<usize> =
-                Some(included_items.len() - 1);
-            let mut sum_of_freed_lines: usize = 0;
-            for (
-                incl_item_index,
-                (_, incl_rendered_lines_count, incl_has_finished),
-            ) in included_items.iter().enumerate()
-            {
-                if !incl_has_finished {
-                    if incl_item_index == 0 {
-                        index_to_cut_at = None;
-                    } else {
-                        index_to_cut_at = Some(incl_item_index);
-                    }
+            for (item_index, item) in included_items.iter().enumerate() {
+                // Stop at first unfinished item.
+                if !item.is_a_finished_item {
+                    first_non_finished_item_index = Some(item_index);
                     break;
                 }
 
-                sum_of_freed_lines += incl_rendered_lines_count;
+                sum_of_about_to_be_freed_lines += item.item_height;
             }
 
-            if let Some(cut_index) = index_to_cut_at {
-                included_items.drain(0..cut_index);
-                used_up_height -= sum_of_freed_lines;
+            let first_non_finished_item_index =
+                if let Some(first_non_finished_item_index) =
+                    first_non_finished_item_index
+                {
+                    first_non_finished_item_index
+                } else {
+                    included_items.len()
+                };
 
-                if let Some((_, _, is_finished)) = included_items.first() {
-                    is_first_element_finished = *is_finished;
-                }
+            if first_non_finished_item_index > 0 {
+                included_items.drain(0..first_non_finished_item_index);
+                used_height -= sum_of_about_to_be_freed_lines;
 
-                leading_explainer = Some(cut_index);
+                is_first_item_in_finished_state = match included_items.first() {
+                    Some(item) => item.is_a_finished_item,
+                    None => false,
+                };
+            }
+
+            if let Some(number_of_hidden_finished_items) = leading_explainer {
+                leading_explainer = Some(
+                    number_of_hidden_finished_items
+                        + first_non_finished_item_index,
+                );
             } else {
-                // There are no leading finished items to remove. This also means we
-                // can't render anything anymore and that we'll need a trailing explainer
-                // (which is taken care of above, since we set the `has_stripped_leading_finished` flag).
-                leading_explainer = None;
+                leading_explainer = Some(first_non_finished_item_index);
             }
-
-            // If the stripped items are ALL of the current items, we want to be able to
-            // run this bit of code again (e.g. in a queue with 100 finished items and a few in-progress items at the end).
-            has_already_stripped_leading_finished_items =
-                !included_items.is_empty();
         }
     }
 
@@ -179,10 +184,13 @@ pub fn generate_smart_collapsible_queue<
                 leading_spaces_for_centering, leading_explainer_contents
             ),
             LEADING_HIDDEN_ITEMS_EXPLAINER_STYLE.add_modifier(Modifier::ITALIC),
-        )])))
+        )])));
+
+        used_height += 1;
     }
 
-    final_list_items.extend(included_items.into_iter().map(|(item, _, _)| item));
+    final_list_items
+        .extend(included_items.into_iter().map(|item| item.list_item));
 
     if let Some(trailing_hidden_items_count) = trailing_explainer {
         let trailing_explainer_contents = format!(
@@ -193,6 +201,15 @@ pub fn generate_smart_collapsible_queue<
         let leading_spaces_for_centering = " "
             .repeat((available_width - trailing_explainer_contents.len()) / 2);
 
+        // Make sure we position this (vertically) at the bottom.
+        let num_empty_lines_for_bottom_vertical_positioning =
+            available_height - used_height - 1;
+        final_list_items.extend(
+            std::iter::repeat(ListItem::new(Line::default()))
+                .take(num_empty_lines_for_bottom_vertical_positioning),
+        );
+
+        // Finally, add the last line - the trailing explainer.
         final_list_items.push(ListItem::new(Line::from(vec![Span::styled(
             format!(
                 "{}{}",
