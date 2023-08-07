@@ -57,6 +57,7 @@ impl Config {
         // Run init methods for all configuration sub-tables.
 
         config.paths.after_load_init()?;
+        config.logging.after_load_init(&config.paths)?;
         config.validation.after_load_init()?;
 
         for library in config.libraries.values_mut() {
