@@ -260,8 +260,8 @@ fn process_album<'config>(
                             }
                         };
 
-                        // TODO How should I handle errored files? Previous implementation
-                        //      returned an `Err`, but that's a bit extreme, no?
+                        // TODO File that fail once should retry (see the configuration).
+                        // TODO Errored files should stop the transcode.
                         terminal
                             .queue_file_item_finish(queue_item, item_result)?;
                     }
@@ -324,14 +324,11 @@ fn process_album<'config>(
 
 
     if user_requested_cancellation {
-        // TODO Implement deletion of partial transcodes and similar rollback mechanisms.
-
         let album_view = queued_album.album.read();
 
         terminal.log_println(format!(
             "{} A partially-transcoded album ({} - {}) has been potentially left behind \
-            in the transcoded library - clean up any remains before running again \
-            (reason: deletion of partial transcodes is not yet implemented).",
+            in the transcoded library.",
             "WARNING:".red(),
             album_view.read_lock_artist().name,
             album_view.title,

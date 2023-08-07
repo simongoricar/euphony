@@ -194,6 +194,20 @@ impl FileJob for TranscodeAudioFileJob {
                     .wrap_err_with(|| {
                         miette!("Could not kill ffmpeg process.")
                     })?;
+
+                // Delete the partial file.
+                if self.target_file_path.exists()
+                    && self.target_file_path.is_file()
+                {
+                    fs::remove_file(&self.target_file_path)
+                        .into_diagnostic()
+                        .wrap_err_with(|| {
+                            miette!(
+                                "Failed to delete partially transcoded file."
+                            )
+                        })?;
+                }
+
                 break;
             }
 
