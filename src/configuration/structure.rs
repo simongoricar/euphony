@@ -159,6 +159,27 @@ pub struct LoggingConfig {
     pub default_log_output_path: Option<PathBuf>,
 }
 
+impl AfterLoadWithEssentialsInitable for LoggingConfig {
+    fn after_load_init(&mut self, essentials: &ConfigPaths) -> Result<()> {
+        let executable_directory = get_running_executable_directory()?
+            .to_string_lossy()
+            .to_string();
+
+        self.default_log_output_path =
+            self.default_log_output_path.as_ref().map(|output_path| {
+                let path_as_string = output_path
+                    .to_string_lossy()
+                    .to_string()
+                    .replace("{LIBRARY_BASE}", &essentials.base_library_path)
+                    .replace("{SELF}", &executable_directory);
+
+                PathBuf::from(path_as_string)
+            });
+
+        Ok(())
+    }
+}
+
 
 #[derive(Deserialize, Clone)]
 pub struct UIConfig {
