@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crossterm::style::Stylize;
 
 use crate::configuration::Config;
@@ -91,7 +93,21 @@ pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
             library_key,
         ));
 
-        terminal.log_println(format!("    path = \"{}\"", library.path,));
+        let library_path = Path::new(&library.path);
+        let library_path_exists = library_path.exists() && library_path.is_dir();
+
+        terminal.log_println(format!(
+            "    path = \"{}\"{}",
+            library.path,
+            match library_path_exists {
+                true => {
+                    " (exists)".green()
+                }
+                false => {
+                    " (not found)".red()
+                }
+            }
+        ));
         terminal.log_println(format!(
             "    ignored_directories_in_base_directory = {:?}",
             library
