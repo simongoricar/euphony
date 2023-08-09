@@ -17,16 +17,22 @@
 ---
 
 ## Table of contents
-* [1. Why and how](#1-why-and-how)
-* [2. Library structure](#2-library-structure)
-* [3. Installation](#3-installation)
-* [4. Setup](#4-setup)
-* [5. Usage](#5-usage)
-* [5. Advanced topics](#5-advanced-topics)
-* [6. Implementation details](#6-implementation-details)
+- [1. Why and how](#1-why-and-how)
+  * [1.1 Diffing](#11-diffing)
+  * [1.2 MP3 V0](#12-mp3-v0)
+- [2. Library structure](#2-library-structure)
+- [3. Installation](#3-installation)
+- [4. Setup](#4-setup)
+- [5. Usage](#5-usage)
+  + [5.1 `transcode`](#51-transcode)
+  + [5.2 `validate`](#52-validate)
+- [6. Advanced topics](#6-advanced-topics)
+  * [6.1. `.album.override.euphony` (per-album overrides)](#61-albumoverrideeuphony-per-album-overrides)
+- [7. Implementation details](#7-implementation-details)
+  - [7.1 `.album.source-state.euphony` / `.album.transcode-state.euphony`](#71-albumsource-stateeuphony--albumtranscode-stateeuphony)
 
 ## Other resources
-* [Changelog (master)](https://github.com/DefaultSimon/euphony/blob/master/CHANGELOG.md)
+* [Changelog](https://github.com/DefaultSimon/euphony/blob/master/CHANGELOG.md)
 
 ---
 
@@ -278,11 +284,24 @@ Options:
 For more info about each command, run `euphony <command-name> --help`.
 
 ### 5.1 `transcode`
-Using the `transcode` command will scan your source libraries for changes and transcode the entire music collection into a single folder called the transcoded or aggregated library (see `aggregated_library.path` in the configuration file).
+> Usage: `euphony transcode`
+> Help: `euphony transcode --help`
 
-This is the directory that will contain all transcoded files (and cover art).
-The files will be MP3 V0 by default (changing this should be reasonably easy - see `tools.ffmpeg.to_mp3_v0_args` in the configuration file).
+Using the `transcode` command will scan your source libraries for changes and transcode the entire music collection into a single folder called the transcoded or aggregated library (see `aggregated_library.path` in the configuration file). This is the directory that will contain all transcoded files (and cover art).
 
+The transcoded audio files will be MP3 V0 by default (changing this should be reasonably easy - see `tools.ffmpeg.to_mp3_v0_args` in the configuration file).
+
+### 5.2 `validate`
+> Usage: `euphony validate`
+> Help: `euphony validate --help`
+
+Using the `validate` command will scan your source libraries and notify you of any unexpected files and any inter-library collisions.
+
+This catches things like:
+- accidentally putting an album in an artist directory,
+- unwanted audio file formats,
+- unwanted cover image formats,
+- other unwanted files in the library root, artist and album directories.
 
 ---
 
@@ -367,9 +386,9 @@ The contents of the file are in JSON, similar to the example below:
 ```
 
 Fields:
-- `size_bytes` is the size of the entire file in bytes,
-- `time_modified` is the file modification time (as reported by OS, compared to one decimal of precision),
-- `time_created` is the file creation time (as reported by OS, compared to one decimal of precision).
+- `size_bytes` is the file size in bytes,
+- `time_modified` is the file modification time (as reported by filesystem; compared with one decimal point of precision),
+- `time_created` is the file creation time (as reported by filesystem; compared with one decimal point of precision).
 
 If any of these attributes don't match for a given file, we can be pretty much certain the file has changed.
 The opposite is not entirely true, but enough for most purposes.
