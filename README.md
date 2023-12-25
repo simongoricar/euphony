@@ -52,7 +52,7 @@
 > If you only listen on one device, such as your computer, neither of those approaches is likely to pose a problem. 
 > However, for multi-device users, large libraries quickly become both a storage and a deduplication nightmare.
 > Ideally, you'd want to maintain the original library (or libraries) as they were,
-> but still have a separate - *transcoded* or *aggregated*, if you will - version of your entire collection containing files from all the
+> but still have a standalone *transcoded* (or *aggregated*, if you will) version of your entire collection containing files from all the
 > libraries transcoded down to a more manageable size, ready for on-the-go listening.
 >
 > This is the problem `euphony` was written to solve.
