@@ -120,7 +120,7 @@ Contains features for validation and transcoding of the libraries
 
 
 [Unreleased]: https://github.com/DefaultSimon/euphony/compare/v2.1.0...HEAD
-[2.1.0]: https://github.com/DefaultSimon/euphony/compare/v2.1.0...v2.1.1
+[2.1.1]: https://github.com/DefaultSimon/euphony/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/DefaultSimon/euphony/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/DefaultSimon/euphony/compare/v1.3.1...v2.0.0
 [1.3.1]: https://github.com/DefaultSimon/euphony/compare/v1.3.0...v1.3.1
