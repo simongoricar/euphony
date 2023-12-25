@@ -1,0 +1,16 @@
+[package]
+name = "euphony_library"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+euphony_configuration = { path = "../euphony_configuration" }
+
+miette = "5.10.0"
+thiserror = "1.0.51"
+parking_lot = "0.12.1"
+pathdiff = "0.2.1"
+serde = { version = "1.0.136", features = ["derive"] }
+serde_json = "1.0.81"

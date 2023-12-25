@@ -34,10 +34,8 @@ impl DirectoryScan {
         let mut search_queue: Vec<(PathBuf, u16)> = Vec::new();
         search_queue.push((directory_path.to_path_buf(), 0));
 
-        while !search_queue.is_empty() {
-            let (directory_to_scan, directory_depth) = search_queue.pop()
-                .expect("BUG: Could not pop directory off search queue, even though is had elements.");
-
+        while let Some((directory_to_scan, directory_depth)) = search_queue.pop()
+        {
             let directory_iterator = fs::read_dir(directory_to_scan)
                 .into_diagnostic()
                 .wrap_err_with(|| miette!("Could not read directory."))?;

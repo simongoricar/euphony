@@ -1,15 +1,15 @@
-use std::env::args;
 use std::fmt::Display;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{stdout, BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
+use std::thread;
 use std::thread::Scope;
 use std::time::Duration;
-use std::{fs, thread};
 
 use chrono::Local;
 use crossterm::ExecutableCommand;
+use euphony_configuration::Configuration;
 use miette::{miette, Context, IntoDiagnostic, Result};
 use parking_lot::{Mutex, RwLock};
 use ratatui::backend::{Backend, CrosstermBackend};
@@ -17,7 +17,7 @@ use ratatui::Terminal;
 use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
-use crate::configuration::Config;
+use crate::console::frontends::shared::logging::initialize_log_file_for_log_output;
 use crate::console::frontends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
@@ -48,7 +48,6 @@ use crate::console::{
     UserControlMessage,
     UserControllableBackend,
 };
-use crate::EUPHONY_VERSION;
 
 const LOG_FILE_OUTPUT_FLUSHING_INTERVAL: Duration = Duration::from_secs(8);
 const FLUSHING_THREAD_CANCELLATION_CHECK_INTERVAL: Duration =
@@ -103,11 +102,11 @@ pub struct FancyTerminalBackend<'thread_scope, 'config> {
 
     ui_state: Arc<RwLock<UIState<'config>>>,
 
-    config: &'config Config,
+    config: &'config Configuration,
 }
 
 impl<'thread_scope, 'config> FancyTerminalBackend<'thread_scope, 'config> {
-    pub fn new(config: &'config Config) -> Result<Self> {
+    pub fn new(config: &'config Configuration) -> Result<Self> {
         let terminal_state = Arc::new(Mutex::new(None));
         let log_state = Arc::new(Mutex::new(LogState::new()));
         let ui_state = Arc::new(RwLock::new(UIState::new()));
@@ -312,69 +311,11 @@ impl<'scope, 'scope_env: 'scope, 'config: 'scope>
         log_output_file_path: P,
         scope: &'scope Scope<'scope, 'scope_env>,
     ) -> Result<()> {
-        let log_output_file_path = log_output_file_path.as_ref();
-        let log_output_directory_path = log_output_file_path
-            .parent()
-            .ok_or_else(|| miette!("No log file parent directory?!"))?;
-
-        if log_output_directory_path.exists()
-            && !log_output_directory_path.is_dir()
-        {
-            return Err(miette!("Invalid log file path: parent directory path is actually not a directory."));
-        }
-        if !log_output_directory_path.exists() {
-            fs::create_dir_all(log_output_directory_path)
-                .into_diagnostic()
+        let buf_writer =
+            initialize_log_file_for_log_output(log_output_file_path.as_ref())
                 .wrap_err_with(|| {
-                    miette!("Failed to create log file parent directory.")
+                    miette!("Failed to initialize log file for log output.")
                 })?;
-        }
-
-        let output_file = match log_output_file_path.exists()
-            && log_output_file_path.is_file()
-        {
-            true => OpenOptions::new()
-                .append(true)
-                .open(log_output_file_path)
-                .into_diagnostic()
-                .wrap_err_with(|| {
-                    miette!(
-                        "Failed to open log output file for appending: {:?}",
-                        log_output_file_path
-                    )
-                })?,
-            false => OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(log_output_file_path)
-                .into_diagnostic()
-                .wrap_err_with(|| {
-                    miette!(
-                        "Failed to create log output file: {:?}",
-                        log_output_file_path
-                    )
-                })?,
-        };
-
-        let ansi_escaping_writer = strip_ansi_escapes::Writer::new(output_file);
-        let mut buf_writer =
-            BufWriter::with_capacity(1024, ansi_escaping_writer);
-
-        // Write an "invocation header", marking the start of euphony.
-        let time_now = Local::now();
-        let formatted_time_now = time_now.format("%Y-%m-%d %H:%M:%S%.3f");
-
-        buf_writer
-            .write_all(
-                format!(
-                    "{} Hello from euphony {}. Started with arguments: {:?}",
-                    formatted_time_now,
-                    EUPHONY_VERSION,
-                    args()
-                )
-                .as_bytes(),
-            )
-            .expect("Could not write invocation header to file.");
 
 
         let buf_writer_arc_mutex = Arc::new(Mutex::new(buf_writer));

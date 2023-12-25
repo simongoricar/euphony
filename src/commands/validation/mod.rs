@@ -3,13 +3,13 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use crossterm::style::Stylize;
+use euphony_configuration::library::LibraryConfiguration;
+use euphony_configuration::{Configuration, ALBUM_OVERRIDE_FILE_NAME};
+use euphony_library::state::source::SOURCE_ALBUM_STATE_FILE_NAME;
+use euphony_library::view::LibraryView;
 use miette::{miette, Context, Result};
 
-use crate::commands::transcode::album_configuration::ALBUM_OVERRIDE_FILE_NAME;
-use crate::commands::transcode::album_state::source::SOURCE_ALBUM_STATE_FILE_NAME;
 use crate::commands::transcode::library_state::LIBRARY_STATE_FILE_NAME;
-use crate::commands::transcode::views::LibraryView;
-use crate::configuration::{Config, LibraryConfig};
 use crate::console::frontends::ValidationTerminal;
 use crate::console::{LogBackend, ValidationBackend, ValidationErrorInfo};
 
@@ -30,7 +30,7 @@ impl<'a> ValidationError<'a> {
     /// Initialize a new validation error: an unexpected file.
     pub fn new_unexpected_file<P: Into<PathBuf>>(
         file_path: P,
-        library: &'a LibraryConfig,
+        library: &'a LibraryConfiguration,
         reason: UnexpectedFileLocation,
     ) -> Self {
         Self::UnexpectedFile(UnexpectedFile::new(file_path, library, reason))
@@ -74,7 +74,7 @@ pub struct UnexpectedFile<'a> {
     file_path: PathBuf,
 
     /// What library the unexpected file is part of.
-    library: &'a LibraryConfig,
+    library: &'a LibraryConfiguration,
 
     /// Specific reason for why this is unexpected.
     location: UnexpectedFileLocation,
@@ -83,7 +83,7 @@ pub struct UnexpectedFile<'a> {
 impl<'a> UnexpectedFile<'a> {
     pub fn new<P: Into<PathBuf>>(
         file_path: P,
-        library: &'a LibraryConfig,
+        library: &'a LibraryConfiguration,
         reason: UnexpectedFileLocation,
     ) -> Self {
         Self {
@@ -151,7 +151,7 @@ pub struct ValidationAlbumEntry<'a> {
 
     pub album_title: String,
 
-    pub library: &'a LibraryConfig,
+    pub library: &'a LibraryConfiguration,
 }
 
 impl<'a> ValidationAlbumEntry<'a> {
@@ -160,7 +160,7 @@ impl<'a> ValidationAlbumEntry<'a> {
     pub fn new<S: Into<String>>(
         artist_name: S,
         album_title: S,
-        library: &'a LibraryConfig,
+        library: &'a LibraryConfiguration,
     ) -> Self {
         Self {
             artist_name: artist_name.into(),
@@ -297,7 +297,7 @@ impl<'a> CollectionCollisionValidator<'a> {
         &mut self,
         artist_name: S,
         album_title: S,
-        library: &'a LibraryConfig,
+        library: &'a LibraryConfiguration,
     ) -> Result<()> {
         let artist_name = artist_name.into();
         let album_title = album_title.into();
@@ -349,7 +349,7 @@ impl<'a> CollectionCollisionValidator<'a> {
 
 /// Runs the validation process over the entire collection (all registered libraries).
 fn validate_entire_collection(
-    config: &Config,
+    config: &Configuration,
     terminal: &mut ValidationTerminal,
 ) -> Result<()> {
     // As explained in the README and configuration template, library structure
@@ -631,7 +631,7 @@ fn validate_entire_collection(
 ///
 /// Validates the entire collection for unexpected files and album collisions.
 pub fn cmd_validate(
-    config: &Config,
+    config: &Configuration,
     terminal: &mut ValidationTerminal,
 ) -> Result<()> {
     terminal.log_println("Command: validate entire collection.".cyan().bold());

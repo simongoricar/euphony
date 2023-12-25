@@ -9,6 +9,7 @@ use miette::{miette, Context, IntoDiagnostic, Result};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::broadcast;
 
+use super::shared::logging::initialize_log_file_for_log_output;
 use crate::console::frontends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
@@ -32,6 +33,7 @@ use crate::console::{
     TranscodeBackend,
     UserControlMessage,
 };
+
 
 pub struct QueueAndProgressState<'config> {
     /// The album queue, when enabled.
@@ -526,15 +528,17 @@ impl<'config, 'scope, 'scope_env: 'scope> LogToFileBackend<'scope, 'scope_env>
 {
     fn enable_saving_logs_to_file<P: AsRef<Path>>(
         &self,
-        log_file_path: P,
+        log_output_file_path: P,
         _scope: &'scope Scope<'scope, 'scope_env>,
     ) -> Result<()> {
-        let file = File::create(log_file_path).into_diagnostic()?;
-        let ansi_escaped_writer = strip_ansi_escapes::Writer::new(file);
-        let buf_writer = BufWriter::with_capacity(1024, ansi_escaped_writer);
+        let buf_writer =
+            initialize_log_file_for_log_output(log_output_file_path.as_ref())
+                .wrap_err_with(|| {
+                    miette!("Failed to initialize log file for log output.")
+                })?;
 
-        let mut locked_log_output = self.log_file_output.lock();
-        *locked_log_output = Some(buf_writer);
+        let mut locked_self_log_output = self.log_file_output.lock();
+        *locked_self_log_output = Some(buf_writer);
 
         Ok(())
     }

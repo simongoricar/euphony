@@ -2,20 +2,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use euphony_configuration::DirectoryScan;
 use miette::{miette, Context, Result};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::commands::transcode::views::album::{AlbumView, SharedAlbumView};
-use crate::commands::transcode::views::common::{
-    ArcRwLock,
-    ChangedAlbumsMap,
-    WeakRwLock,
-};
-use crate::commands::transcode::views::library::{
+use super::{
+    common::{ArcRwLock, ChangedAlbumsMap, WeakRwLock},
+    AlbumView,
     LibraryView,
+    SharedAlbumView,
     SharedLibraryView,
 };
-use crate::filesystem::DirectoryScan;
+
 
 pub type SharedArtistView<'a> = ArcRwLock<ArtistView<'a>>;
 #[allow(dead_code)]

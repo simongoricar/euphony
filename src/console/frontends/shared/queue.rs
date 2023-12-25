@@ -2,14 +2,12 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
+use euphony_library::view::SharedAlbumView;
 use linked_hash_map::{Iter, LinkedHashMap};
 use miette::{miette, Result};
 
-use crate::commands::transcode::album_state::changes::{
-    FileJobContext,
-    FileType,
-};
-use crate::commands::transcode::views::SharedAlbumView;
+use crate::commands::transcode::state::changes::{FileJobContext, FileType};
+
 
 /// Unique queue item ID.
 ///

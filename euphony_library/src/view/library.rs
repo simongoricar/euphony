@@ -3,14 +3,14 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use euphony_configuration::library::LibraryConfiguration;
+use euphony_configuration::{Configuration, DirectoryScan};
 use miette::{miette, Context, Diagnostic, Result};
 use parking_lot::RwLock;
 use thiserror::Error;
 
-use crate::commands::transcode::views::artist::{ArtistView, SharedArtistView};
-use crate::commands::transcode::views::common::{ArcRwLock, WeakRwLock};
-use crate::configuration::{Config, LibraryConfig};
-use crate::filesystem::DirectoryScan;
+use super::common::{ArcRwLock, WeakRwLock};
+use super::{ArtistView, SharedArtistView};
 
 pub type SharedLibraryView<'config> = ArcRwLock<LibraryView<'config>>;
 #[allow(dead_code)]
@@ -27,17 +27,17 @@ pub enum LibraryViewError {
 pub struct LibraryView<'config> {
     weak_self: WeakRwLock<Self>,
 
-    pub euphony_configuration: &'config Config,
+    pub euphony_configuration: &'config Configuration,
 
     /// The associated `ConfigLibrary` instance.
-    pub library_configuration: &'config LibraryConfig,
+    pub library_configuration: &'config LibraryConfiguration,
 }
 
 impl<'config> LibraryView<'config> {
     /// Instantiate a new `LibraryView` from the library's configuration struct.
     pub fn from_library_configuration(
-        config: &'config Config,
-        library_config: &'config LibraryConfig,
+        config: &'config Configuration,
+        library_config: &'config LibraryConfiguration,
     ) -> Result<SharedLibraryView<'config>, LibraryViewError> {
         let library_path = Path::new(&library_config.path);
         if !library_path.exists() || !library_path.is_dir() {

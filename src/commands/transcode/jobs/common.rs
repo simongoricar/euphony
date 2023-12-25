@@ -5,7 +5,7 @@ use miette::Result;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
-use crate::commands::transcode::album_state::changes::FileType;
+use crate::commands::transcode::state::changes::FileType;
 use crate::console::frontends::shared::queue::QueueItemID;
 
 pub struct CancellableTask<C: Send> {

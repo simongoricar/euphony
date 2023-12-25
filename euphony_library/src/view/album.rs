@@ -2,27 +2,19 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use euphony_configuration::library::LibraryConfiguration;
+use euphony_configuration::{AlbumConfiguration, Configuration, DirectoryScan};
 use miette::{miette, Context, Result};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::commands::transcode::album_configuration::AlbumConfiguration;
-use crate::commands::transcode::album_state::changes::AlbumFileChangesV2;
-use crate::commands::transcode::album_state::source::{
-    SourceAlbumState,
-    SourceAlbumStateLoadError,
-};
-use crate::commands::transcode::album_state::transcoded::{
+use super::common::{ArcRwLock, SortedFileMap, WeakRwLock};
+use super::{ArtistView, SharedArtistView};
+use crate::state::source::{SourceAlbumState, SourceAlbumStateLoadError};
+use crate::state::transcoded::{
     TranscodedAlbumState,
     TranscodedAlbumStateLoadError,
 };
-use crate::commands::transcode::views::artist::{ArtistView, SharedArtistView};
-use crate::commands::transcode::views::common::{
-    ArcRwLock,
-    SortedFileMap,
-    WeakRwLock,
-};
-use crate::configuration::{Config, LibraryConfig};
-use crate::filesystem::DirectoryScan;
+use crate::state::AlbumFileChangesV2;
 
 pub type SharedAlbumView<'a> = ArcRwLock<AlbumView<'a>>;
 #[allow(dead_code)]
@@ -88,14 +80,14 @@ impl<'config> AlbumView<'config> {
     }
 
     /// Return the relevant `Config` (euphony's global configuration).
-    pub fn euphony_configuration(&self) -> &'config Config {
+    pub fn euphony_configuration(&self) -> &'config Configuration {
         self.read_lock_artist()
             .read_lock_library()
             .euphony_configuration
     }
 
     /// Return the relevant `ConfigLibrary` (configuration for the specific library).
-    pub fn library_configuration(&self) -> &'config LibraryConfig {
+    pub fn library_configuration(&self) -> &'config LibraryConfiguration {
         self.read_lock_artist()
             .read_lock_library()
             .library_configuration

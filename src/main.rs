@@ -5,9 +5,9 @@ use std::thread::Scope;
 
 use clap::{Args, Parser, Subcommand};
 use crossterm::style::Stylize;
+use euphony_configuration::Configuration;
 use miette::{miette, Context, Result};
 
-use crate::configuration::Config;
 use crate::console::frontends::terminal_ui::terminal::FancyTerminalBackend;
 use crate::console::frontends::{
     BareTerminalBackend,
@@ -20,9 +20,7 @@ use crate::globals::VERBOSE;
 
 mod cancellation;
 mod commands;
-mod configuration;
 mod console;
-mod filesystem;
 mod globals;
 
 pub const EUPHONY_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -122,11 +120,11 @@ struct CLIArgs {
 
 /// Load and return the configuration, given the command line arguments
 /// (`-c`/`--config` can override the load path).
-fn get_configuration(args: &CLIArgs) -> Result<Config> {
+fn get_configuration(args: &CLIArgs) -> Result<Configuration> {
     if args.config.is_some() {
-        Config::load_from_path(args.config.clone().unwrap())
+        Configuration::load_from_path(args.config.clone().unwrap())
     } else {
-        Config::load_default_path()
+        Configuration::load_default_path()
     }
 }
 
@@ -138,7 +136,7 @@ fn get_configuration(args: &CLIArgs) -> Result<Config> {
 /// `BareConsoleBackend` is a bare-bones backend that simply linearly logs all activity to the console,
 /// making it much easier to track down bugs or parse output in some other program.
 fn get_transcode_terminal<'scope>(
-    config: &Config,
+    config: &Configuration,
     use_bare_terminal: bool,
 ) -> TranscodeTerminal<'_, 'scope> {
     if use_bare_terminal {
@@ -153,7 +151,7 @@ fn get_transcode_terminal<'scope>(
 /// Initializes the required terminal backend and executes the given CLI command.
 fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
     args: CLIArgs,
-    config: &'config Config,
+    config: &'config Configuration,
     scope: &'scope Scope<'scope, 'scope_env>,
 ) -> Result<()> {
     if let CLICommand::TranscodeAll(transcode_args) = args.command {
@@ -167,19 +165,30 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
             .log_to_file
             .or_else(|| config.logging.default_log_output_path.clone())
         {
-            terminal.enable_saving_logs_to_file(log_file_path, scope)?;
+            terminal
+                .enable_saving_logs_to_file(log_file_path, scope)
+                .wrap_err_with(|| {
+                    miette!("Failed to enable logging to disk.")
+                })?;
         }
 
-        terminal
-            .setup(scope)
-            .expect("Could not set up terminal UI backend.");
+        terminal.setup(scope).wrap_err_with(|| {
+            miette!("Failed to set up terminal UI backend.")
+        })?;
 
-        let result = commands::cmd_transcode_all(config, &terminal);
+
+        let result = commands::cmd_transcode_all(config, &terminal)
+            .wrap_err_with(|| {
+                miette!("Failed to execute transcode command to completion.")
+            });
         if let Err(error) = result {
             terminal.log_println(format!("{error}").dark_red());
         }
 
-        terminal.destroy()?;
+
+        terminal.destroy().wrap_err_with(|| {
+            miette!("Failed to destroy terminal UI backend.")
+        })?;
 
         Ok(())
     } else if let CLICommand::ValidateAll(args) = args.command {
@@ -189,15 +198,25 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
             .log_to_file
             .or_else(|| config.logging.default_log_output_path.clone())
         {
-            terminal.enable_saving_logs_to_file(log_file_path, scope)?;
+            terminal
+                .enable_saving_logs_to_file(log_file_path, scope)
+                .wrap_err_with(|| {
+                    miette!("Failed to enable logging to disk.")
+                })?;
         }
 
-        terminal
-            .setup(scope)
-            .expect("Could not set up bare console backend.");
+        terminal.setup(scope).wrap_err_with(|| {
+            miette!("Failed to set up terminal UI backend.")
+        })?;
 
 
-        match commands::cmd_validate(config, &mut terminal) {
+
+        let result = commands::cmd_validate(config, &mut terminal)
+            .wrap_err_with(|| {
+                miette!("Failed to execute transcode command to completion.")
+            });
+
+        match result {
             Ok(_) => {}
             Err(error) => {
                 terminal.log_println(format!(
@@ -207,33 +226,43 @@ fn run_requested_cli_command<'config: 'scope, 'scope, 'scope_env: 'scope>(
                 ));
             }
         };
-        terminal
-            .destroy()
-            .expect("Could not destroy bare console backend.");
+
+
+        terminal.destroy().wrap_err_with(|| {
+            miette!("Failed to destroy terminal UI backend.")
+        })?;
 
         Ok(())
     } else if args.command == CLICommand::ShowConfig {
         let mut terminal: SimpleTerminal = BareTerminalBackend::new().into();
 
-        terminal
-            .setup(scope)
-            .expect("Could not set up bare console backend.");
+        terminal.setup(scope).wrap_err_with(|| {
+            miette!("Failed to set up terminal UI backend.")
+        })?;
+
+
         commands::cmd_show_config(config, &mut terminal);
-        terminal
-            .destroy()
-            .expect("Could not destroy bare console backend.");
+
+
+        terminal.destroy().wrap_err_with(|| {
+            miette!("Failed to destroy terminal UI backend.")
+        })?;
 
         Ok(())
     } else if args.command == CLICommand::ListLibraries {
         let mut terminal: SimpleTerminal = BareTerminalBackend::new().into();
 
-        terminal
-            .setup(scope)
-            .expect("Could not set up bare console backend.");
+        terminal.setup(scope).wrap_err_with(|| {
+            miette!("Failed to set up terminal UI backend.")
+        })?;
+
+
         commands::cmd_list_libraries(config, &mut terminal);
-        terminal
-            .destroy()
-            .expect("Could not destroy bare console backend.");
+
+
+        terminal.destroy().wrap_err_with(|| {
+            miette!("Failed to destroy terminal UI backend.")
+        })?;
 
         Ok(())
     } else {

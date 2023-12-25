@@ -3,13 +3,15 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+use euphony_configuration::library::LibraryConfiguration;
+use euphony_configuration::Configuration;
 use miette::{miette, Context, Diagnostic, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::commands::transcode::album_state::common::AlbumFileState;
-use crate::commands::transcode::views::AlbumSourceFileList;
-use crate::configuration::{Config, LibraryConfig};
+use super::common::AlbumFileState;
+use crate::view::AlbumSourceFileList;
+
 
 pub const SOURCE_ALBUM_STATE_FILE_NAME: &str = ".album.source-state.euphony";
 const SOURCE_ALBUM_STATE_SCHEMA_VERSION: u32 = 2;
@@ -201,8 +203,8 @@ impl SourceAlbumState {
     ///
     /// This method will do the necessary file extension swapping (e.g. FLAC -> MP3).
     pub fn get_transcoded_file_path<P: AsRef<Path>>(
-        configuration: &Config,
-        library_configuration: &LibraryConfig,
+        configuration: &Configuration,
+        library_configuration: &LibraryConfiguration,
         source_file_path: P,
     ) -> Result<PathBuf> {
         let source_file_path = source_file_path.as_ref();

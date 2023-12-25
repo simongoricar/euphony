@@ -3,17 +3,17 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use crossbeam::channel::Sender;
+use euphony_configuration::get_path_extension_or_empty;
+use euphony_library::view::SharedAlbumView;
 use miette::{miette, Context, IntoDiagnostic, Result};
 
-use crate::commands::transcode::album_state::changes::FileType;
 use crate::commands::transcode::jobs::common::{
     FileJob,
     FileJobMessage,
     FileJobResult,
 };
-use crate::commands::transcode::views::SharedAlbumView;
+use crate::commands::transcode::state::changes::FileType;
 use crate::console::frontends::shared::queue::QueueItemID;
-use crate::filesystem::get_path_extension_or_empty;
 use crate::globals::is_verbose_enabled;
 
 /// One of multiple file jobs.

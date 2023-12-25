@@ -6,24 +6,11 @@ use std::{fs, thread};
 use crossbeam::channel;
 use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
 use crossterm::style::Stylize;
-use miette::{miette, Context, IntoDiagnostic, Result};
-
-use crate::commands::transcode::album_state::changes::{
-    AlbumFileChangesV2,
-    FileType,
-};
-use crate::commands::transcode::album_state::transcoded::TranscodedAlbumState;
-use crate::commands::transcode::jobs::common::FileJobMessage;
-use crate::commands::transcode::jobs::{CancellableThreadPool, FileJobResult};
-use crate::commands::transcode::library_state::{
-    LibraryState,
-    LibraryStateLoadError,
-    TrackedAlbum,
-    TrackedArtistAlbums,
-    LIBRARY_STATE_FILE_NAME,
-};
-use crate::commands::transcode::views::library::LibraryViewError;
-use crate::commands::transcode::views::{
+use euphony_configuration::Configuration;
+use euphony_library::state::transcoded::TranscodedAlbumState;
+use euphony_library::state::AlbumFileChangesV2;
+use euphony_library::view::library::LibraryViewError;
+use euphony_library::view::{
     AlbumView,
     ArtistView,
     LibraryView,
@@ -31,7 +18,19 @@ use crate::commands::transcode::views::{
     SharedArtistView,
     SharedLibraryView,
 };
-use crate::configuration::Config;
+use miette::{miette, Context, IntoDiagnostic, Result};
+
+use self::library_state::{
+    LibraryState,
+    LibraryStateLoadError,
+    TrackedAlbum,
+    TrackedArtistAlbums,
+    LIBRARY_STATE_FILE_NAME,
+};
+use self::state::changes::FileType;
+use self::state::generate_jobs::GenerateChanges;
+use crate::commands::transcode::jobs::common::FileJobMessage;
+use crate::commands::transcode::jobs::{CancellableThreadPool, FileJobResult};
 use crate::console::frontends::shared::queue::{
     AlbumQueueItem,
     AlbumQueueItemFinishedResult,
@@ -49,12 +48,9 @@ use crate::console::{
 };
 use crate::globals::is_verbose_enabled;
 
-pub mod album_configuration;
-pub mod album_state;
 pub mod jobs;
 pub mod library_state;
-mod utilities;
-pub mod views;
+pub mod state;
 
 
 pub struct GlobalProgress {
@@ -530,7 +526,7 @@ fn process_library<'config>(
 }
 
 pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
-    configuration: &'config Config,
+    configuration: &'config Configuration,
     terminal: &TranscodeTerminal<'config, 'scope>,
 ) -> Result<()> {
     let time_full_processing_start = Instant::now();
@@ -548,7 +544,8 @@ pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
     let mut terminal_user_input = terminal.get_user_control_receiver()?;
 
 
-    let libraries = collect_libraries_sorted(configuration, terminal)?;
+    let libraries: Vec<SharedLibraryView<'config>> =
+        collect_libraries_sorted(configuration, terminal)?;
 
     let fresh_library_states = collect_full_library_states(&libraries)?;
     let libraries_with_changes =
@@ -655,7 +652,7 @@ pub fn cmd_transcode_all<'config: 'scope, 'scope, 'scope_env: 'scope_env>(
  */
 
 fn collect_libraries_sorted<'config>(
-    configuration: &'config Config,
+    configuration: &'config Configuration,
     terminal: &TranscodeTerminal<'config, '_>,
 ) -> Result<Vec<SharedLibraryView<'config>>> {
     // `LibraryView` is the root abstraction here - we use it to discover artists and their albums.

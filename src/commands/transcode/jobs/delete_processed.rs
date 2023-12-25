@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use crossbeam::channel::Sender;
+use euphony_configuration::Configuration;
 use miette::{miette, Context, IntoDiagnostic, Result};
 
-use crate::commands::transcode::album_state::changes::FileType;
 use crate::commands::transcode::jobs::common::{
     FileJob,
     FileJobMessage,
     FileJobResult,
 };
-use crate::configuration::Config;
+use crate::commands::transcode::state::changes::FileType;
 use crate::console::frontends::shared::queue::QueueItemID;
 use crate::globals::is_verbose_enabled;
 
@@ -36,7 +36,7 @@ impl DeleteProcessedFileJob {
     /// Initialize a new `DeleteProcessedFileJob` from the given target path to remove.
     /// If the file is missing
     pub fn new(
-        configuration: &Config,
+        configuration: &Configuration,
         target_file_path: PathBuf,
         file_type: FileType,
         ignore_if_missing: bool,

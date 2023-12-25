@@ -5,8 +5,8 @@ use std::time::UNIX_EPOCH;
 use miette::{miette, Context, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::transcode::utilities::f64_approximate_eq;
-use crate::commands::transcode::views::AlbumSourceFileList;
+use crate::utilities::f64_approximate_eq;
+use crate::view::AlbumSourceFileList;
 
 /// Represents the filesystem state for the given album.
 /// **This struct is album location-agnostic (meaning you can use it for generating

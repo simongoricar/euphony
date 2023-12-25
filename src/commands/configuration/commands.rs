@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use crossterm::style::Stylize;
+use euphony_configuration::Configuration;
 
-use crate::configuration::Config;
 use crate::console::frontends::SimpleTerminal;
 use crate::console::LogBackend;
 
@@ -28,7 +28,7 @@ fn terminal_print_group_header<S: AsRef<str>>(
 /// Associated with the `show-config` command.
 ///
 /// Prints the entire configuration.
-pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
+pub fn cmd_show_config(config: &Configuration, terminal: &mut SimpleTerminal) {
     terminal.log_println(format!(
         "Configuration file: {}",
         config.configuration_file_path.to_string_lossy(),
@@ -169,7 +169,10 @@ pub fn cmd_show_config(config: &Config, terminal: &mut SimpleTerminal) {
 /// Associated with the `list-libraries` command.
 ///
 /// Prints the registered music libraries from the current configuration.
-pub fn cmd_list_libraries(config: &Config, terminal: &mut SimpleTerminal) {
+pub fn cmd_list_libraries(
+    config: &Configuration,
+    terminal: &mut SimpleTerminal,
+) {
     terminal.log_println(format!(
         "Configuration file: {}",
         config.configuration_file_path.to_string_lossy(),

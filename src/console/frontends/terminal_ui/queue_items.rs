@@ -3,7 +3,7 @@ use std::time::Duration;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
-use crate::commands::transcode::album_state::changes::{
+use crate::commands::transcode::state::changes::{
     CopyProcessingReason,
     DeleteInTranscodedProcessingReason,
     FileProcessingAction,

@@ -10,24 +10,36 @@ rust-version = "1.70.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = ["euphony_library", "euphony_configuration"]
+
 [dependencies]
-clap = { version = "4.0.9", features = ["derive"] }
+# Workspace dependencies
+euphony_library = { path = "./euphony_library" }
+euphony_configuration = { path = "./euphony_configuration" }
+
+# Error handling
+miette = { version = "5.10.0", features = ["fancy"]}
+thiserror = "1.0.51"
+
+# Serialization and deserialization
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = "1.0.81"
-toml = "0.7.0"
+toml = "0.8.8"
+
+# Other dependencies
+clap = { version = "4.0.9", features = ["derive"] }
 pathdiff = "0.2.1"
-dunce = "1.0.3"
+dunce = "1.0.4"
 state = "0.6.0"
-miette = { version = "5.5.0", features = ["fancy"]}
-ratatui = "0.21.0"
-thiserror = "1.0.44"
-crossterm = "0.26.0"
+ratatui = "0.25.0"
+crossterm = "0.27.0"
 tokio = { version = "1.28.2", features = ["sync"] }
 rand = "0.8.5"
 ansi-to-tui = "3.1.0"
 ctrlc = "3.2.4"
 crossbeam = "0.8.2"
-strip-ansi-escapes = "0.1.1"
+strip-ansi-escapes = "0.2.0"
 oneshot = { version = "0.1.5", default-features = false, features = ["std"] }
 closure = "0.3.0"
 linked-hash-map = "0.5.6"

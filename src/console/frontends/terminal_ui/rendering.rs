@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use ansi_to_tui::IntoText;
 use crossterm::event::{Event, KeyCode};
+use euphony_configuration::ui::TranscodingUiConfiguration;
 use miette::Result;
 use miette::{miette, IntoDiagnostic, WrapErr};
 use parking_lot::{Mutex, RwLock};
@@ -24,7 +25,6 @@ use ratatui::{Frame, Terminal};
 use tokio::sync::broadcast;
 
 use crate::cancellation::CancellationToken;
-use crate::configuration::TranscodingUIConfig;
 use crate::console::colours::{
     X061_SLATE_BLUE3,
     X064_CHARTREUSE4,
@@ -74,7 +74,7 @@ const PROGRESS_DESCRIPTION_ERRORED_FILES_VALUES_STYLE: Style = X160_RED3;
 
 
 fn render_header(
-    terminal_frame: &mut Frame<CrosstermBackend<Stdout>>,
+    terminal_frame: &mut Frame,
     header_rect: Rect,
     ui_state: &UIState,
 ) {
@@ -176,7 +176,7 @@ fn render_header(
 
 
 fn render_logs_tab(
-    terminal_frame: &mut Frame<CrosstermBackend<Stdout>>,
+    terminal_frame: &mut Frame,
     body_rect: Rect,
     log_state: &LogState,
 ) -> Result<()> {
@@ -280,7 +280,7 @@ fn render_logs_tab(
 
 
 fn render_transcoding_tab(
-    terminal_frame: &mut Frame<CrosstermBackend<Stdout>>,
+    terminal_frame: &mut Frame,
     body_rect: Rect,
     ui_state: &UIState,
 ) {
@@ -359,7 +359,7 @@ fn render_transcoding_tab(
 
 
 fn render_progress_footer(
-    terminal_frame: &mut Frame<CrosstermBackend<Stdout>>,
+    terminal_frame: &mut Frame,
     footer_rect: Rect,
     ui_state: &UIState,
 ) {
@@ -463,7 +463,7 @@ fn render_progress_footer(
 fn render_ui(
     log_state: &LogState,
     ui_state: &UIState,
-    terminal_frame: &mut Frame<CrosstermBackend<Stdout>>,
+    terminal_frame: &mut Frame,
     is_final_render: bool,
 ) -> Result<()> {
     // # Interface layout (approximately)
@@ -570,7 +570,7 @@ const TERMINAL_REFRESH_INTERVAL_IN_SECONDS: f64 = 1f64 / 30f64;
 
 pub fn run_render_loop(
     terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
-    transcoding_ui_config: TranscodingUIConfig,
+    transcoding_ui_config: TranscodingUiConfiguration,
     log_state: Arc<Mutex<LogState>>,
     ui_state: Arc<RwLock<UIState>>,
     user_control_sender: &broadcast::Sender<UserControlMessage>,

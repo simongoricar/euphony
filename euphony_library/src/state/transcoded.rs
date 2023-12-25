@@ -8,9 +8,10 @@ use miette::{miette, Context, Diagnostic, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::commands::transcode::album_state::common::AlbumFileState;
-use crate::commands::transcode::views::common::SortedFileMap;
-use crate::commands::transcode::views::AlbumSourceFileList;
+use super::common::AlbumFileState;
+use crate::view::common::SortedFileMap;
+use crate::view::AlbumSourceFileList;
+
 
 const TRANSCODED_ALBUM_STATE_FILE_NAME: &str = ".album.transcode-state.euphony";
 const TRANSCODED_ALBUM_STATE_SCHEMA_VERSION: u32 = 2;

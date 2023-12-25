@@ -1,10 +1,8 @@
-/*
-In order to allow the code to share the library, artist and album views, we wrap them
-in an `Arc` (and its `Weak` reference variant, when stored).
-
-`Shared*` types are essentially `RwLock`ed library/artist/album views under an `Arc`.
-`Weak*` types are `Weak` references to the same views - call `upgrade` to obtain the corresponding `Shared*` type.
-*/
+//! In order to allow the code to share the library, artist and album views, we wrap them
+//! in an `Arc` (and its `Weak` reference variant, when stored).
+//!
+//! `Shared*` types are essentially `RwLock`ed library/artist/album views under an `Arc`.
+//! `Weak*` types are `Weak` references to the same views - call `upgrade` to obtain the corresponding `Shared*` type.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -13,8 +11,8 @@ use std::sync::{Arc, Weak};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
-use crate::commands::transcode::album_state::changes::AlbumFileChangesV2;
-use crate::commands::transcode::views::album::SharedAlbumView;
+use super::SharedAlbumView;
+use crate::state::AlbumFileChangesV2;
 
 pub type ArcRwLock<T> = Arc<RwLock<T>>;
 pub type WeakRwLock<T> = Weak<RwLock<T>>;
@@ -55,8 +53,8 @@ impl<K: Eq + Hash, V> SortedFileMap<K, V> {
         let mut flat_hashmap: HashMap<K, V> =
             HashMap::with_capacity(self.audio.len() + self.data.len());
 
-        flat_hashmap.extend(self.audio.into_iter());
-        flat_hashmap.extend(self.data.into_iter());
+        flat_hashmap.extend(self.audio);
+        flat_hashmap.extend(self.data);
 
         flat_hashmap
     }
