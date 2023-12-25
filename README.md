@@ -60,26 +60,32 @@
 </details>
 
 
-Euphony's workflow acknowledges that you might have multiple libraries: one for lossless, one for lossy audio, one for a specific collection, etc. 
-It *does not force you to have multiple libraries*, it works just as well with a single one, or even a mixed library of lossless and lossy audio files.
+Euphony becomes a useful tool when your goal is taking your music library with you on the go 
+(e.g. having a copy of your music library on a phone). 
+If your music library is large and of high audio quality, copying the entire library file for file
+will likely not be a good option.
 
-Euphony becomes useful when you want to take the music library with you on the go (e.g. having a copy of your music library on a phone). 
-In those cases, you might not want (or be able) to copy the large lossless files due to storage limitations.
-
-The obvious solution is to **transcode your library** down to something like MP3 V0 and copy those transcoded files to your other devices. 
-Still, doing this manually or even with a simple script is a tedious process, prone to forgetfulness and occasional human errors.
+The obvious solution is to **transcode your library** down to something like MP3 V0 
+and copy those transcoded files to your other devices. 
+Doing this manually or even with a simple script is a tedious process, prone to forgetfulness, 
+occasional human errors and eventual drift from the source music library.
 
 ---
 
 Here's how `euphony` solves this with an automated transcoding process:
-- *You register a list of libraries* in the configuration file.  
-  Note that euphony currently supports only the following library structure: artist directory containing albums (see example below).
-- Then you may opt to *validate the library for any unusual files and collisions* - see the `validate` command.  
-  This way, if you have "multiple libraries" (e.g. one for lossy and one for lossless), euphony will inform you of any potential collisions (e.g. same album in both libraries) so you don't accidentally store two copies of the same album in two places 
-  (it would also be unclear as to which version of the album euphony should transcode).
-- When you wish to transcode your entire music library into a smaller single-folder transcoded copy, you run the `transcode` command.   
-  This takes all of your registered source libraries and transcodes everything in them into MP3 V0 (by default), putting the resulting files from all your source libraries into a single *transcoded library* - this is the directory that you take with you on the go.  
-  That directory will contain all the transcoded versions of albums from all the artists of all the registered libraries together in one place. Euphony will also copy album art and any other data files (as configured).
+- *You specify the locations of your music library (or libraries)* in the configuration file.  
+  Note that euphony currently supports only the following library structure: `Artist Name/Album Title` (see example below).
+- You may then opt to *validate the library for any unusual files and collisions* (see the `validate` command for more information).  
+  This way, if you have multiple source libraries (e.g. one for lossy and one for lossless music), euphony will inform you of any potential collisions (e.g. same album by the same artist in both libraries). 
+  This will prevent you from accidentally storing two copies of the same album in two places 
+  (it would also be unclear as to which of those euphony should transcode).
+- **When you wish to transcode your entire music library into a smaller single-folder ("aggregated") transcoded copy, you run the `transcode` command.**   
+  This takes all of your source music libraries and transcodes everything into MP3 V0 by default (you may reconfigure this into any ffmpeg-supported format). It then puts the resulting files from all of your source libraries into a single (i.e. merged) *transcoded library* — this is the directory that you take with you on the go.  
+  Euphony will also copy album art and any other data files as configured (contains sensible defaults).
+
+
+As mentioned, euphony supports multiple source music libraries: e.g. one for lossless and one for lossy audio, another one for a specific collection, etc.
+
 
 ## 1.1 Diffing
 If you run the `transcode` command two times without modifying any of your source libraries, you'll notice that euphony won't re-transcode anything. 
@@ -88,22 +94,27 @@ This is because euphony tracks your source files' size and modification date in 
 This is done by storing three types of files:
 - Minimal metadata about each album's tracked files is stored in a file called `.album.source-state.euphony` (in the source album directory) 
   and `.album.transcode-state.euphony` (in the transcoded album directory).
-- To detect album and artist removal, euphony also stores the `.library.state.euphony` file at the root of each registered source library.
+- To detect album and artist removal, euphony also stores the `.library.state.euphony` file at the root of each registered source music library.
 
-Implementation details of this change detection algorithm are available below.
+Implementation details of this change detection algorithm are available at the end.
+
 
 ## 1.2 MP3 V0
-Audio files are transcoded into MP3 V0 in the process by default. I've chosen MP3 V0 for now due to a 
-good tradeoff between space on disk and quality (V0 is pretty much transparent anyway and should be more than enough for on-the-go listening, and you *still* have the original files).
+Audio files are transcoded to MP3 V0 by default, but you may 
+reconfigure this to essentially any audio format ffmpeg supports. 
 
-> Don't like MP3 V0? No problem, modify your configuration file to have ffmpeg transcode your audio into something else.
+I've chosen MP3 V0 for now due to a good tradeoff between space on disk and audio quality.
+As V0 is practically transparent that is, at least to me, more than enough for on-the-go listening.
+Obviously, regardless of your transcoded audio format, your source libraries are untouched if you 
+change your mind later and decide to change the transcoding format and retranscode the entire collection.
+
 
 ---
 
 
 # 2. Library structure
-Having the library structure be configurable would quickly become very complex, 
-so at the moment `euphony` expects the user to have the following structure for each library:
+Having the library structure be configurable would quickly become very complicated.
+Consequently `euphony` currently expects the user to have the commonly-used `Artist Name/Album Title` library structure:
 
 ```markdown
 <library's base directory>
@@ -111,7 +122,7 @@ so at the moment `euphony` expects the user to have the following structure for 
 |-- <artist directory>
 |   |
 |   |- [possibly some album-related text files, logs, etc.]
-|   |  (settings for other files apply here (see "other files" section below))
+|   |  (settings for "other files" apply here (see "other files" section below))
 |   |
 |   |-- <album directory>
 |   |   |
@@ -122,7 +133,7 @@ so at the moment `euphony` expects the user to have the following structure for 
 |   |   | ... [cover art]
 |   |   |
 |   |   | ... [some album-related text files, logs, etc.]
-|   |   |     (settings for other files apply here (see "other files" section below))
+|   |   |     (settings for "other files" apply here (see "other files" section below))
 |   |   |
 |   |   | ... <potentially other directories that you don't want transcoded or copied>
 |   |   |     (album subdirectories are ignored by default, see `depth` in per-album configuration)
@@ -205,11 +216,11 @@ other_file_extensions = ["jpg", "log"]
 # 3. Installation
 Prerequisites for installation:
 - [Rust](https://www.rust-lang.org/) (minimal supported Rust version as of `euphony v2.0.0` is `1.70.0`!),
-- a [ffmpeg](https://ffmpeg.org/) binaries ([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
+- a [ffmpeg](https://ffmpeg.org/) binaries (Windows builds are available [here](https://www.gyan.dev/ffmpeg/builds/)).
 
-Clone or download this repository to your local machine, then move into the directory of the project and do the following:
-- Windows: run the convenient `./install-euphony.ps1` PowerShell script to compile the project and copy the required files into the `bin` directory and add that to your `PATH` afterwards,
-- Linux/other: run `cargo build --release` to compile the project. You'll find the binary in `./target/release/euphony.exe` - copy it to a place of your choosing along with the configuration file template.
+Clone or download this repository, then move into the root directory of the project and:
+- On Windows: run the convenient `./install-euphony.ps1` PowerShell script to compile the project and copy the required files into the `bin` directory. You should add that `bin` directory to your `PATH` afterwards so you can use `euphony` from the command line.
+- On Linux/other: run `cargo build --release` to compile the project. You'll find the `euphony` binary in the `./target/release/` directory - copy it to a place of your choosing along with the configuration file template.
 
 
 # 4. Setup
@@ -218,22 +229,24 @@ If you used the `install-euphony.ps1` script, it will already be prepared in the
 If you're on a different platform, copy one from the `data` directory.
 
 The `configuration.toml` file must be in `./data/configuration.toml` (relative to the binary) or wherever else you prefer with the `--config` option.
-The PowerShell install script places this automatically (you just need to rename and fill out the file), other platforms will require a manual copy.
+The Windows PowerShell install script places this automatically, you just need to rename and fill out the file, but other platforms will require manually copying the file.
 
-Make sure the file name is named `configuration.toml`, *carefully read* the explanations inside and fill out the contents.
-If you're unfamiliar with the format, it's [TOML](https://toml.io/en/).
-It is mostly about specifying where ffmpeg is, which files to track, where your libraries reside and what files you want to allow or forbid inside them.
+Make sure the file name is named `configuration.toml`. *Carefully read* the explanations inside and fill out the contents.
+The contents of the configuration file are mostly about specifying where ffmpeg is, which files to track, where your libraries reside and what files you want to allow or forbid inside them.
+
+If you are unfamiliar with the format, see the [TOML](https://toml.io/en/) specification.
+
 
 > As an example, let's say I have two separate libraries: a lossy and a lossless one. The lossless one has its 
 > `allowed_audio_file_extensions` value set to `["flac"]`, as I don't want any other file types inside. The lossy one instead
 > has the value `["mp3"]`, because MP3 is my format of choice for lossy audio for now. If I were to place a non-FLAC file inside the
 > lossless library, euphony would flag it for me as an error when I ran `euphony validate`.
 
-Next, **extract the portable copy of ffmpeg** that was mentioned above. Again, unless you know how this works,
-it should be just next to the binary in a folder called `tools`. Adapt the `tools.ffmpeg.binary` configuration value in the 
-configuration file to a path to the ffmpeg binary.
 
-Change any other configuration values you haven't yet, then save. **You're ready!**
+Next, **extract the portable copy of ffmpeg** that was mentioned above. Again, unless you're sure what you're doing,
+place it just next to the binary in a subfolder called `tools`. Adapt the `tools.ffmpeg.binary` configuration field in the configuration file to point to the ffmpeg binary.
+
+Change any other configuration values you haven't yet, then save. **You're ready to go!**
 
 ---
 
@@ -289,7 +302,7 @@ For more info about each command, run `euphony <command-name> --help`.
 
 Using the `transcode` command will scan your source libraries for changes and transcode the entire music collection into a single folder called the transcoded or aggregated library (see `aggregated_library.path` in the configuration file). This is the directory that will contain all transcoded files (and cover art).
 
-The transcoded audio files will be MP3 V0 by default (changing this should be reasonably easy - see `tools.ffmpeg.to_mp3_v0_args` in the configuration file).
+The transcoded audio files will be MP3 V0 by default. Changing this should be reasonably easy - see `tools.ffmpeg.audio_transcoding_args` in the configuration file.
 
 ### 5.2 `validate`
 > Usage: `euphony validate`
@@ -299,8 +312,8 @@ Using the `validate` command will scan your source libraries and notify you of a
 
 This catches things like:
 - accidentally putting an album in an artist directory,
-- unwanted audio file formats,
-- unwanted cover image formats,
+- unwanted audio file formats (based on the configuration),
+- unwanted cover image formats (based on the configuration),
 - other unwanted files in the library root, artist and album directories.
 
 ---
@@ -309,7 +322,8 @@ This catches things like:
 > What follows are advanced features - I'd recommend getting acquainted with the rest of the functionality first.
 
 ## 6.1. `.album.override.euphony` (per-album overrides)
-You can create an `.album.override.euphony` file in the root of each source album directory (same directory as the `.album.source-state.euphony` file). This file is optional. Its purpose is to influence the scanning and transcoding process for the relevant album.
+You can optionally create an `.album.override.euphony` file in the root of each source album directory (in the same directory as the `.album.source-state.euphony` file).
+Its purpose is to influence the scanning and transcoding process for the relevant album.
 
 At the moment, this file can contain the following options:
 ```toml
@@ -317,12 +331,13 @@ At the moment, this file can contain the following options:
 
 [scan]
 # How deep the transcoding scan should look.
-# 0 means only the album directory and no subdirectories (most common, this is also the default without this file).
+# 0 means only the album directory and no subdirectories 
+#   (most common, and is also the default).
 # 1 means only one directory level deeper, and so on.
 depth = 0
 ```
 
-> In case this description falls behind, an up-to-date documented version of the `.album.override.euphony` file is always available in the `data` directory.
+> In case this description falls behind, an up-to-date documented version of the `.album.override.euphony` file and its options is always available in the `data` directory.
 
 Why is this useful? Well, let's say you have an album that has multiple discs, each of which is in a separate directory, like so:
 ```markdown
@@ -395,4 +410,4 @@ The opposite is not entirely true, but enough for most purposes.
 
 A similar file named `.album.transcode-state.euphony` with almost the same structure is saved in the transcoded album directory.
 
-> For more details about these files, see the `src/commands/transcode/album_state` module.
+> For more details about these files, see the `euphony_libary::state` module.
