@@ -6,7 +6,7 @@
 ---
 
 
-**Important: `euphony` *does not organise* your original audio files** - it transcodes your already-organised library/libraries into an aggregated (usually lossy) library, leaving your source libraries alone. If music library organisation is what you're after, you might want to look into tools like [MusicBrainz Picard](https://picard.musicbrainz.org/) or the more advanced [Beets](https://beets.readthedocs.io/en/stable/) CLI.
+**Important: `euphony` *does not organise* your original audio files** - it transcodes your already-organised library/libraries into an aggregated (usually lossy) library, leaving your source libraries alone. If music library organisation is what you're after, you might want to look into tools like [MusicBrainz Picard](https://picard.musicbrainz.org/) or [Beets](https://beets.readthedocs.io/en/stable/).
 
 
 <div align="center">
@@ -18,18 +18,18 @@
 
 ## Table of contents
 - [1. Why and how](#1-why-and-how)
-  * [1.1 Diffing](#11-diffing)
-  * [1.2 MP3 V0](#12-mp3-v0)
+  - [1.1 Diffing](#11-diffing)
+  - [1.2 MP3 V0](#12-mp3-v0)
 - [2. Library structure](#2-library-structure)
 - [3. Installation](#3-installation)
 - [4. Setup](#4-setup)
 - [5. Usage](#5-usage)
-  + [5.1 `transcode`](#51-transcode)
-  + [5.2 `validate`](#52-validate)
+    - [5.1 `transcode`](#51-transcode)
+    - [5.2 `validate`](#52-validate)
 - [6. Advanced topics](#6-advanced-topics)
-  * [6.1. `.album.override.euphony` (per-album overrides)](#61-albumoverrideeuphony-per-album-overrides)
+  - [6.1. `.album.override.euphony` (per-album overrides)](#61-albumoverrideeuphony-per-album-overrides)
 - [7. Implementation details](#7-implementation-details)
-  - [7.1 `.album.source-state.euphony` / `.album.transcode-state.euphony`](#71-albumsource-stateeuphony--albumtranscode-stateeuphony)
+      - [7.1 `.album.source-state.euphony` / `.album.transcode-state.euphony`](#71-albumsource-stateeuphony--albumtranscode-stateeuphony)
 
 ## Other resources
 * [Changelog](https://github.com/DefaultSimon/euphony/blob/master/CHANGELOG.md)
