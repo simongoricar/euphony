@@ -67,16 +67,16 @@ pub fn cmd_show_config(config: &Configuration, terminal: &mut SimpleTerminal) {
 
     // Tools
     terminal_print_group_header(terminal, "tools");
-    terminal.log_println(&format!(" => {}", "ffmpeg".bold()));
-    terminal.log_println(&format!(
+    terminal.log_println(format!(" => {}", "ffmpeg".bold()));
+    terminal.log_println(format!(
         "    binary = {}",
         config.tools.ffmpeg.binary,
     ));
-    terminal.log_println(&format!(
+    terminal.log_println(format!(
         "    audio_transcoding_args = {:?}",
         config.tools.ffmpeg.audio_transcoding_args,
     ));
-    terminal.log_println(&format!(
+    terminal.log_println(format!(
         "    audio_transcoding_output_extension = {:?}",
         config.tools.ffmpeg.audio_transcoding_output_extension,
     ));

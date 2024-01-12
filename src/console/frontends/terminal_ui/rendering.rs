@@ -213,7 +213,7 @@ fn render_logs_tab(
                 log_content.as_bytes().into_text().into_diagnostic()?;
             let log_entry_as_first_line = log_entry_as_text
                 .lines
-                .get(0)
+                .first()
                 .ok_or_else(|| miette!("BUG: No text generated."))?
                 .clone();
 
