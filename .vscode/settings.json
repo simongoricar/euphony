@@ -1,0 +1,55 @@
+{
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true
+    },
+    "rust-analyzer.check.overrideCommand": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--message-format=json",
+        "--all-targets",
+    ],
+    "rust-analyzer.rustfmt.extraArgs": [
+        "+nightly"
+    ],
+    "better-comments.tags": [
+        {
+            "tag": "todo",
+            "color": "#77BAF5",
+            "strikethrough": false,
+            "underline": false,
+            "backgroundColor": "transparent",
+            "bold": false,
+            "italic": false
+        },
+        {
+            "tag": "debugonly",
+            "color": "#c4b1e5",
+            "strikethrough": false,
+            "underline": false,
+            "backgroundColor": "transparent",
+            "bold": false,
+            "italic": false
+        },
+        {
+            "tag": "deprecated",
+            "color": "#F5A867",
+            "strikethrough": false,
+            "underline": false,
+            "backgroundColor": "transparent",
+            "bold": false,
+            "italic": false
+        },
+        {
+            "tag": "fixme",
+            "color": "#f26344",
+            "strikethrough": false,
+            "underline": false,
+            "backgroundColor": "transparent",
+            "bold": false,
+            "italic": false
+        },
+    ],
+    "rust-analyzer.showUnlinkedFileNotification": false
+}

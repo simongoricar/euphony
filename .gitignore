@@ -13,12 +13,19 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
+
 ## IDE
 .idea
+
+.vscode/**/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
 
 ## Sensitive files
 data/configuration.toml
 !data/configuration.TEMPLATE.toml
+
 
 ## Other
 bin

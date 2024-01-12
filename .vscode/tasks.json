@@ -1,0 +1,33 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "fs-more: build and open documentation",
+            "type": "cargo",
+            "group": "build",
+            "command": "doc",
+            "args": ["--workspace", "--open"],
+            "hide": true
+        },
+        {
+            "label": "fs-more: build and watch documentation",
+            "type": "cargo",
+            "group": "build",
+            "command": "watch",
+            "args": ["-x", "doc --workspace --no-deps"],
+            "hide": true
+        },
+        {
+            "label": "fs-more: documentation (build, open, then watch)",
+            "group": "build",
+            "dependsOn": [
+                "fs-more: build and open documentation",
+                "fs-more: build and watch documentation"
+            ],
+            "dependsOrder": "sequence",
+            "isBackground": true,            
+        }
+    ]
+}
