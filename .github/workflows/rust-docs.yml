@@ -1,0 +1,56 @@
+name: Publish documentation on release
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-documentation:
+    runs-on: self-hosted    
+    steps:
+    - name: Set up required tools
+      run: sudo apt-get update && sudo apt-get install curl build-essential -y
+    - name: Checkout repository
+      uses: actions/checkout@v4.1.1
+    - name: Install stable Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+    - name: Cache
+      uses: Swatinem/rust-cache@v2
+    - name: Build documentation
+      run: cargo doc --workspace --no-deps --verbose
+    - name: Add index.html file
+      run: echo "<meta http-equiv=\"refresh\" content=\"0; url=inversion_list\">" > ./target/doc/index.html
+    - name: Fix missing read permissions on index.html
+      run: chmod --changes -R +rX "./target/doc"
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3.0.0
+      with:
+        name: github-pages
+        path: ./target/doc
+        retention-days: 1
+        
+  deploy-documentation:
+    runs-on: self-hosted
+    needs: build-documentation
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+      
+    steps:
+      - name: Deploy documentation on GitHub Pages
+        uses: actions/deploy-pages@v4
+    
