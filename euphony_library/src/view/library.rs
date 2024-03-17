@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use euphony_configuration::library::LibraryConfiguration;
-use euphony_configuration::{Configuration, DirectoryScan};
+use euphony_configuration::Configuration;
+use fs_more::directory::DirectoryScan;
 use miette::{miette, Context, Diagnostic, Result};
 use parking_lot::RwLock;
 use thiserror::Error;
@@ -118,8 +119,8 @@ impl<'config> LibraryView<'config> {
         for directory in library_directory_scan.directories {
             let artist_directory_name = directory
                 .file_name()
-                .to_str()
                 .ok_or_else(|| miette!("Could not parse directory file name."))?
+                .to_string_lossy()
                 .to_string();
 
             // If the current directory matches one that should be ignored in the library root,
@@ -148,22 +149,22 @@ impl<'config> LibraryView<'config> {
     pub fn library_root_validation_files(&self) -> Result<Vec<PathBuf>> {
         let library_directory_scan = self.scan_root_directory()?;
 
-        Ok(library_directory_scan
-            .files
-            .into_iter()
-            .map(|item| item.path())
-            .collect())
+        Ok(library_directory_scan.files.into_iter().collect())
     }
 
     /// Perform a zero-depth directory scan of the root library directory.
     fn scan_root_directory(&self) -> Result<DirectoryScan> {
-        DirectoryScan::from_directory_path(&self.library_configuration.path, 0)
-            .wrap_err_with(|| {
-                miette!(
-                    "Errored while scanning library directory: {:?}",
-                    self.library_configuration.path
-                )
-            })
+        DirectoryScan::scan_with_options(
+            &self.library_configuration.path,
+            Some(0),
+            true,
+        )
+        .wrap_err_with(|| {
+            miette!(
+                "Errored while scanning library directory: {:?}",
+                self.library_configuration.path
+            )
+        })
     }
 }
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use euphony_configuration::DirectoryScan;
+use fs_more::directory::DirectoryScan;
 use miette::{miette, Context, Result};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -124,8 +124,8 @@ impl<'config> ArtistView<'config> {
         for directory in artist_directory_scan.directories {
             let album_directory_name = directory
                 .file_name()
-                .to_str()
                 .ok_or_else(|| miette!("Could not parse directory file name."))?
+                .to_string_lossy()
                 .to_string();
 
             album_map.insert(
@@ -177,11 +177,7 @@ impl<'config> ArtistView<'config> {
     pub fn artist_directory_validation_files(&self) -> Result<Vec<PathBuf>> {
         let artist_directory_scan = self.scan_artist_directory()?;
 
-        Ok(artist_directory_scan
-            .files
-            .into_iter()
-            .map(|item| item.path())
-            .collect())
+        Ok(artist_directory_scan.files.into_iter().collect())
     }
 
     /*
@@ -190,9 +186,10 @@ impl<'config> ArtistView<'config> {
 
     /// Perform a zero-depth directory scan of the artist directory.
     fn scan_artist_directory(&self) -> Result<DirectoryScan> {
-        DirectoryScan::from_directory_path(
+        DirectoryScan::scan_with_options(
             self.artist_directory_in_source_library(),
-            0,
+            Some(0),
+            true,
         )
         .wrap_err_with(|| {
             miette!(

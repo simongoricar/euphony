@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use euphony_configuration::library::LibraryConfiguration;
-use euphony_configuration::{AlbumConfiguration, Configuration, DirectoryScan};
+use euphony_configuration::{AlbumConfiguration, Configuration};
+use fs_more::directory::DirectoryScan;
 use miette::{miette, Context, Result};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -119,19 +120,16 @@ impl<'config> AlbumView<'config> {
     pub fn album_validation_files(&self) -> Result<Vec<PathBuf>> {
         let album_scan = self.scan_album_directory()?;
 
-        Ok(album_scan
-            .files
-            .into_iter()
-            .map(|item| item.path())
-            .collect())
+        Ok(album_scan.files.into_iter().collect())
     }
 
     /// Perform a directory scan of the album directory, respecting the depth configuration
     /// for the particular album.
     fn scan_album_directory(&self) -> Result<DirectoryScan> {
-        DirectoryScan::from_directory_path(
+        DirectoryScan::scan_with_options(
             self.album_directory_in_source_library(),
-            self.configuration.scan.depth,
+            Some(self.configuration.scan.depth as usize),
+            false,
         )
         .wrap_err_with(|| {
             miette!(
@@ -267,22 +265,21 @@ impl<'config> AlbumSourceFileList<'config> {
         let album_directory =
             locked_album_view.album_directory_in_source_library();
 
-        let album_scan = DirectoryScan::from_directory_path(
+        let album_scan = DirectoryScan::scan_with_options(
             &album_directory,
-            locked_album_view.configuration.scan.depth,
+            Some(locked_album_view.configuration.scan.depth as usize),
+            true,
         )?;
 
         let mut audio_files: Vec<PathBuf> = Vec::new();
         let mut data_files: Vec<PathBuf> = Vec::new();
 
-        for file in album_scan.files {
-            let file_absolute_path = file.path();
+        for file_path in album_scan.files {
             // (relative to album source directory)
             let file_relative_path =
-                pathdiff::diff_paths(file_absolute_path, &album_directory)
-                    .ok_or_else(|| {
-                        miette!("Could not generate relative path.")
-                    })?;
+                pathdiff::diff_paths(file_path, &album_directory).ok_or_else(
+                    || miette!("Could not generate relative path."),
+                )?;
 
             if transcoding_configuration
                 .is_path_audio_file_by_extension(&file_relative_path)?
