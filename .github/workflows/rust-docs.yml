@@ -33,7 +33,7 @@ jobs:
     - name: Build documentation
       run: cargo doc --workspace --no-deps --verbose
     - name: Add index.html file
-      run: echo "<meta http-equiv=\"refresh\" content=\"0; url=inversion_list\">" > ./target/doc/index.html
+      run: echo "<meta http-equiv=\"refresh\" content=\"0; url=euphony\">" > ./target/doc/index.html
     - name: Fix missing read permissions on index.html
       run: chmod --changes -R +rX "./target/doc"
     - name: Upload artifact
