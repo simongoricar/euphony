@@ -19,35 +19,35 @@ euphony_library = { path = "./euphony_library" }
 euphony_configuration = { path = "./euphony_configuration" }
 
 # Error handling
-miette = { version = "5.10.0", features = ["fancy"] }
-thiserror = "1.0.51"
+miette = { version = "7.2.0", features = ["fancy"] }
+thiserror = "1.0.58"
 
 # Serialization and deserialization
-serde = { version = "1.0.136", features = ["derive"] }
-serde_json = "1.0.81"
-toml = "0.8.8"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.114"
+toml = "0.8.11"
 
 # Other dependencies
-clap = { version = "4.0.9", features = ["derive"] }
+clap = { version = "4.5.3", features = ["derive"] }
 pathdiff = "0.2.1"
 dunce = "1.0.4"
 state = "0.6.0"
-ratatui = "0.25.0"
+ratatui = "0.26.1"
 crossterm = "0.27.0"
-tokio = { version = "1.28.2", features = ["sync"] }
+tokio = { version = "1.36.0", features = ["sync"] }
 rand = "0.8.5"
-ansi-to-tui = "3.1.0"
-ctrlc = "3.2.4"
-crossbeam = "0.8.2"
+ansi-to-tui = "4.0.1"
+ctrlc = "3.4.4"
+crossbeam = "0.8.4"
 strip-ansi-escapes = "0.2.0"
-oneshot = { version = "0.1.5", default-features = false, features = ["std"] }
+oneshot = { version = "0.1.6", default-features = false, features = ["std"] }
 closure = "0.3.0"
 linked-hash-map = "0.5.6"
 parking_lot = "0.12.1"
-textwrap = "0.16.0"
-chrono = "0.4.26"
+textwrap = "0.16.1"
+chrono = "0.4.35"
 
-fs-more = { git = "https://github.com/simongoricar/fs-more.git", rev = "c3c2e421ca5e6dc09ea7a1af8e34c809dd0e6910", features = ["fs-err", "miette"] }
+fs-more = { git = "https://github.com/simongoricar/fs-more.git", rev = "088c1cb0421836741bffe266c69a9767d676064b", features = ["fs-err", "miette"] }
 
 
 [dependencies]
