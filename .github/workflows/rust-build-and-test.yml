@@ -32,4 +32,4 @@ jobs:
     - name: Run unit and integration tests
       run: cargo nextest run --all-features --all-targets --workspace --verbose
     - name: Run documentation tests
-      run: cargo test --all-features --doc --verbose
+      run: cargo test --all-features --doc --workspace --verbose

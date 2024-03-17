@@ -104,11 +104,13 @@ impl TranscodedAlbumState {
     ///
     /// # Example
     /// ```
-    /// let directory_path = Path::from("D:/MusicLibrary/Ed Harrison/Neotokyo");
+    /// # use std::path::Path;
+    /// # use euphony_library::state::transcoded::TranscodedAlbumState;
+    /// let directory_path = Path::new("D:/MusicLibrary/Ed Harrison/Neotokyo");
     ///
     /// assert_eq!(
-    ///     Self::get_state_file_path_for_directory(directory_path),
-    ///     Path::from("D:/MusicLibrary/Ed Harrison/Neotokyo/.album.transcode-state.euphony`)
+    ///     TranscodedAlbumState::get_state_file_path_for_directory(directory_path),
+    ///     Path::new("D:/MusicLibrary/Ed Harrison/Neotokyo/.album.transcode-state.euphony")
     /// );
     /// ```
     pub fn get_state_file_path_for_directory<P: AsRef<Path>>(

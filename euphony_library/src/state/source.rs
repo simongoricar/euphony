@@ -107,11 +107,13 @@ impl SourceAlbumState {
     ///
     /// # Example
     /// ```
-    /// let directory_path = Path::from("D:/MusicLibrary/Ed Harrison/Neotokyo");
+    /// # use std::path::Path;
+    /// # use euphony_library::state::source::SourceAlbumState;
+    /// let directory_path = Path::new("D:/MusicLibrary/Ed Harrison/Neotokyo");
     ///
     /// assert_eq!(
-    ///     Self::get_state_file_path_for_directory(directory_path),
-    ///     Path::from("D:/MusicLibrary/Ed Harrison/Neotokyo/.album.source-state.euphony`)
+    ///     SourceAlbumState::get_state_file_path_for_directory(directory_path),
+    ///     Path::new("D:/MusicLibrary/Ed Harrison/Neotokyo/.album.source-state.euphony")
     /// );
     /// ```
     pub fn get_state_file_path_for_directory<P: AsRef<Path>>(
