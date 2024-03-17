@@ -2,12 +2,25 @@ name: Build and test Rust code
 
 on:
   push:
-    branches: [ "master", "dev" ]
+    branches:
+      - "master"
+      - "dev"
+    paths:
+      - "**.rs"
   pull_request:
-    branches: [ "master", "dev" ]
+    branches:
+      - "master"
+      - "dev"
+    paths:
+      - "**.rs"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
+
+concurrency:
+  group: "test"
+  cancel-in-progress: false
 
 jobs:
   build-and-test:

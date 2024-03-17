@@ -1,8 +1,10 @@
 name: Publish documentation on release
 
 on:
-  release:
-    types: [released]
+  push:
+    branches: ["master"]
+    paths:
+      - "**.rs"
   workflow_dispatch:
 
 env:
