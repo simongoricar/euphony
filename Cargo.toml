@@ -83,3 +83,4 @@ linked-hash-map = { workspace = true }
 parking_lot = { workspace = true }
 textwrap = { workspace = true }
 chrono = { workspace = true }
+tempfile = "3.23.0"

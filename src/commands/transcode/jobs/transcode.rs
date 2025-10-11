@@ -1,8 +1,10 @@
+use std::io::Seek;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::{fs, thread};
+use tempfile::tempfile;
 
 use crossbeam::channel::Sender;
 use euphony_configuration::get_path_extension_or_empty;
@@ -167,10 +169,28 @@ impl FileJob for TranscodeAudioFileJob {
         /*
          * Step 2: run ffmpeg (transcodes audio)
          */
+        let mut stdout_file = tempfile()
+            .into_diagnostic()
+            .wrap_err_with(|| {
+                miette!("Could not create a temporary file for ffmpeg's stdout.")
+            })?;
+        let mut stderr_file = tempfile()
+            .into_diagnostic()
+            .wrap_err_with(|| {
+                miette!("Could not create a temporary file for ffmpeg's stderr.")
+            })?;
         let mut ffmpeg_child_process = Command::new(&self.ffmpeg_binary_path)
             .args(&self.ffmpeg_arguments)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(stdout_file.try_clone()
+                .into_diagnostic()
+                .wrap_err_with(|| {
+                    miette!("Could not duplicate the stdout temporary file descriptor.")
+                })?)
+            .stderr(stderr_file.try_clone()
+                .into_diagnostic()
+                .wrap_err_with(|| {
+                    miette!("Could not duplicate the stderr temporary file descriptor.")
+                })?)
             .spawn()
             .into_diagnostic()
             .wrap_err_with(|| {
@@ -247,15 +267,12 @@ impl FileJob for TranscodeAudioFileJob {
             Ok(())
         } else {
             // Everything was normal.
-            let ffmpeg_output = ffmpeg_child_process
-                .wait_with_output()
+            let ffmpeg_exit_code = ffmpeg_child_process
+                .wait()
                 .into_diagnostic()
-                .wrap_err_with(|| miette!("Could not get ffmpeg output."))?;
-
-            let ffmpeg_exit_code = ffmpeg_output
-                .status
+                .wrap_err_with(|| miette!("Could not wait for the ffmpeg subprocess."))?
                 .code()
-                .ok_or_else(|| miette!("No ffmpeg exit code?!"))?;
+                .ok_or_else(|| miette!("No ffmpeg exit code! Was it killed by a signal?"))?;
 
             // Extract ffmpeg stdout/stderr/exit code if necessary.
             let processing_result = if ffmpeg_exit_code == 0 {
@@ -269,16 +286,19 @@ impl FileJob for TranscodeAudioFileJob {
 
                 FileJobResult::Okay { verbose_info }
             } else {
-                let ffmpeg_stdout = String::from_utf8(ffmpeg_output.stdout)
+                // Duplicated file handles share seek position, so we need to rewind before reading.
+                stdout_file.seek(std::io::SeekFrom::Start(0)).unwrap();
+                let ffmpeg_stdout = std::io::read_to_string(stdout_file)
                     .into_diagnostic()
                     .wrap_err_with(|| {
-                        miette!("Could not parse ffmpeg stdout.")
+                        miette!("Could not read temporary file with ffmpeg stdout.")
                     })?;
 
-                let ffmpeg_stderr = String::from_utf8(ffmpeg_output.stderr)
+                stderr_file.seek(std::io::SeekFrom::Start(0)).unwrap();
+                let ffmpeg_stderr = std::io::read_to_string(stderr_file)
                     .into_diagnostic()
                     .wrap_err_with(|| {
-                        miette!("could not parse ffmpeg stderr.")
+                        miette!("Could not read temporary file with ffmpeg stderr.")
                     })?;
 
                 let error = format!(
